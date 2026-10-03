@@ -1,21 +1,25 @@
-"""Pre-send gate. ``check(case_dir, draft, approved)`` evaluates the gate
-rules in order and returns ``(result, reasons)`` where result is
+"""Pre-send gate. ``check(case_dir, draft, approved, inbound)`` evaluates
+the gate rules in order and returns ``(result, reasons)`` where result is
 ``"pass"``, ``"block"`` or ``"needs_approval"``.
 
 Rules, in order:
 1. missing ``.floor`` -> block
-2. irreversible action without ``--approved`` -> needs_approval
-3. offer worse than the floor for the case direction -> block
-4. floor value in ``text`` under any normalization -> block
-5. any ``never_disclose`` string in ``text`` -> block
-6. any claim id not in ``plan.facts`` -> block
-7. any marked amount in ``text`` that is not the offer, an option or
+2. missing or unknown ``action`` -> block
+3. irreversible action without ``--approved`` -> needs_approval
+4. ``offer`` present but not a plain number -> block
+5. offer worse than the floor for the case direction -> block
+6. floor value in ``text`` under any normalization -> block
+7. any ``never_disclose`` string in ``text`` -> block
+8. any claim id not in ``plan.facts`` -> block
+9. any marked amount in ``text`` that is not the offer, an option or
    ladder value, the target, an amount inside a fact's text, or an
    amount the counterparty itself stated in ``inbound`` (text or offer)
    -> block ("untraced number")
 
 All rules run; block dominates needs_approval, which dominates pass.
 """
+
+import math
 
 from . import BtError, cases, money
 
@@ -44,7 +48,8 @@ def check(case_dir, draft, approved=False, inbound=None):
     floor = cases.read_floor(case_dir)
     direction = str(brief.get("direction") or "pay").lower()
     text = str(draft.get("text") or "")
-    offer = cases.num(draft.get("offer"))
+    raw_offer = draft.get("offer")
+    offer = cases.num(raw_offer)
 
     findings = []  # (kind, message); kind is "block" or "approval"
 
@@ -56,6 +61,16 @@ def check(case_dir, draft, approved=False, inbound=None):
         findings.append(("block", f"draft action {action!r} not one of {sorted(ACTIONS)}"))
     elif action in IRREVERSIBLE and not approved:
         findings.append(("approval", f"action {action!r} requires --approved"))
+
+    # The floor rule can only compare a plain number; anything else is a
+    # block, never a silent skip.
+    if raw_offer is not None and (
+        isinstance(raw_offer, bool)
+        or not isinstance(raw_offer, (int, float))
+        or not math.isfinite(offer)
+    ):
+        findings.append(("block", "offer must be a number"))
+        offer = None
 
     if floor is not None and offer is not None:
         if direction == "receive":

@@ -8,7 +8,7 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-from . import cases
+from . import BtError, cases
 
 PERIODS_PER_YEAR = {"month": 12, "year": 1}
 
@@ -49,10 +49,20 @@ def total():
     path = ledger_path()
     records = []
     if path.is_file():
-        for line in path.read_text(encoding="utf-8").splitlines():
+        for i, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
             line = line.strip()
-            if line:
-                records.append(json.loads(line))
+            if not line:
+                continue
+            try:
+                record = json.loads(line)
+            except ValueError as e:
+                raise BtError(f"{path.name}:{i}: {e}")
+            if not isinstance(record, dict):
+                raise BtError(f"{path.name}:{i}: expected an object")
+            raw = record.get("saved_per_year")
+            if raw is not None and cases.num(raw) is None:
+                raise BtError(f"{path.name}:{i}: bad saved_per_year")
+            records.append(record)
     by_pack = {}
     saved_total = 0
     for r in records:

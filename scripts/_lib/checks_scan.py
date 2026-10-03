@@ -13,8 +13,9 @@ import subprocess
 from pathlib import Path
 
 # SKIP_DIRS_TOP applies only to direct children of the root; SKIP_PATHS
-# holds exact prefixes: .claude is scanned but .claude/worktrees is not,
-# and evals/holdout is skipped in git mode and in the os.walk fallback.
+# holds exact prefixes: .claude is scanned but .claude/worktrees is not.
+# Rules match the full relative path, so an evals/holdout entry is
+# skipped whether it is a directory, a plain file or a link.
 SKIP_DIRS_ANYWHERE = {".git", "__pycache__", "node_modules"}
 SKIP_DIRS_TOP = {
     ".venv", "venv", "dist", "holdout", ".idea",
@@ -24,12 +25,14 @@ SKIP_PATHS = {(".claude", "worktrees"), ("evals", "holdout")}
 
 # Internal docs quote prose and local paths freely, so prose-rules and
 # no-local-paths skip them; docs/guides and shipped files ARE checked.
+# The root TODOS.md is working state like docs/plans, not shipped prose.
 # Vendored code is verbatim, so paths under the known _vendor roots are
 # exempt from file-size, prose-rules and no-local-paths. Any other
 # directory that happens to be named _vendor IS checked.
 INTERNAL_DOCS = {
     ("docs", "research"), ("docs", "specs"),
     ("docs", "plans"), ("docs", "decisions"),
+    ("TODOS.md",),
 }
 VENDOR_ROOTS = {
     ("scripts", "_lib", "_vendor"),
@@ -121,14 +124,14 @@ def file_list(root):
             for rel in rels
             if rel
             and ((root / rel).is_file() or (root / rel).is_symlink())
-            and not _skipped(Path(rel).parts[:-1])
+            and not _skipped(Path(rel).parts)
         ]
     files = []
     for dirpath, dirnames, filenames in os.walk(root):
         rel = Path(dirpath).relative_to(root)
         dirnames[:] = [d for d in dirnames if not _skipped(rel.parts + (d,))]
         for name in filenames:
-            if name != ".git":  # worktree marker is a file, not a dir
+            if name != ".git" and not _skipped(rel.parts + (name,)):
                 files.append(Path(dirpath) / name)
     return files
 
@@ -154,7 +157,7 @@ def _git_index_links(root):
         meta, _, name = raw.partition(b"\t")
         if name and meta.startswith(b"120000 "):
             rel = Path(os.fsdecode(name))
-            if not _skipped(rel.parts[:-1]):
+            if not _skipped(rel.parts):
                 out.append(str(rel) if _decodable(rel) else display(rel))
     return out
 
@@ -218,8 +221,10 @@ def read_text(path, rel):
 
 def display(rel):
     """str(rel) made safe to print even when the name holds surrogates
-    from an undecodable on-disk filename."""
-    return str(rel).encode("utf-8", "backslashreplace").decode("ascii")
+    or non-ASCII bytes from an undecodable on-disk filename."""
+    return str(rel).encode("utf-8", "backslashreplace").decode(
+        "ascii", "backslashreplace"
+    )
 
 
 def _decodable(rel):

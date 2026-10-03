@@ -4,11 +4,12 @@ import os
 import re
 
 from . import frontmatter
-from .checks_scan import file_list, join
+from .checks_scan import file_list, join, string_values
 
 # Name segments are lowercase alnum joined by single hyphens: no leading,
-# trailing or double hyphens; 1-64 chars total.
-SKILL_NAME = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+# trailing or double hyphens; 1-64 chars total. Applied with fullmatch:
+# match + a $ anchor would still accept a trailing newline.
+SKILL_NAME = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
 SKILL_NAME_MAX = 64
 ALLOWED_FM_KEYS = {"name", "description", "license",
                    "compatibility", "metadata", "allowed-tools"}
@@ -62,6 +63,28 @@ def _check_optional_fields(name, fm, problems):
         )
 
 
+def frontmatter_strings(root):
+    """Yield (rel, string) for every decoded string value in each
+    skills/<name>/SKILL.md frontmatter block, so the content checks can
+    catch escapes (``\\u2014``) that raw line scans cannot see. A linked
+    SKILL.md is skipped (no-symlinks names the link; never read through)
+    and an unparseable block yields nothing: skill-names reports it."""
+    for p in file_list(root):
+        rel = p.relative_to(root)
+        if (
+            len(rel.parts) != 3
+            or rel.parts[0] != "skills"
+            or rel.name != "SKILL.md"
+            or p.is_symlink()
+        ):
+            continue
+        try:
+            fm, _body = frontmatter.parse(p)
+        except Exception:
+            continue
+        yield from ((rel, s) for s in string_values(fm))
+
+
 def check_skill_names(root):
     names = _skill_names(root)
     if names is None:
@@ -69,7 +92,7 @@ def check_skill_names(root):
     problems = []
     for name in names:
         if (
-            not SKILL_NAME.match(name)
+            not SKILL_NAME.fullmatch(name)
             or len(name) > SKILL_NAME_MAX
             or not name.startswith("betterterms-")
         ):
