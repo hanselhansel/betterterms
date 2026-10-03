@@ -158,3 +158,11 @@ sub-100 floor-integer and month-name-date machinery
   match or a month/year conversion applies. The same rule covers
   the inbound offer's period on `accept` (a 1100/month draft
   against a 1100/year inbound with a `once` floor blocks).
+
+## Amendment (2026-10-04): word lists are best effort
+
+Owner decision on 2026-10-04. The guarantees are the hard blocks on structured numbers, the
+character allowlist, and the rule that any digit routes to the user. The number, scale, currency
+and commitment word lists are a best-effort extra signal, not a guarantee: no finite list covers
+every spelling, plural, inflection or foreign word. Known gaps are tracked in TODOS.md. The
+default autonomy (approve each send) means a missed word reaches the user before it is sent.
