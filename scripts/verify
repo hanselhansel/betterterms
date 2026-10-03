@@ -19,6 +19,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from _lib.checks_packs import check_pack_schema
 from _lib.checks_files import (
     check_file_size,
     check_no_bin,
@@ -50,6 +51,7 @@ CHECKS = [
     ("no-symlinks", check_no_symlinks),
     ("no-local-paths", check_no_local_paths),
     ("prose-rules", check_prose_rules),
+    ("pack-schema", check_pack_schema),
     ("file-size", check_file_size),
     ("vendor-sync", check_vendor_sync),
     ("build-fresh", check_build_fresh),
