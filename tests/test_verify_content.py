@@ -2,6 +2,7 @@
 vendor roots, evals holdout and vendor-sync drift."""
 
 import os
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
@@ -30,9 +31,7 @@ class VerifyContentTest(VerifyRepoCase):
 
     def test_local_paths_in_decoded_json_and_yaml_values_fail(self):
         # Raw text keeps escapes; only the decoded value shows the path.
-        (self.root / "c.json").write_text(
-            '{"p": "C:\\\\Users\\\\alice\\\\repo"}\n'
-        )
+        (self.root / "c.json").write_text('{"p": "C:\\\\Users\\\\alice\\\\repo"}\n')
         (self.root / "d.yaml").write_text('p: "C:\\\\Users\\\\bob"\n')
         proc = run_verify(self.root)
         self.assert_failed(proc, "no-local-paths")
@@ -41,15 +40,18 @@ class VerifyContentTest(VerifyRepoCase):
 
     def test_mount_flag_equals_and_root_paths_fail(self):
         root_home = "/" + "root/app/out.log"  # built so this file passes
-        (self.root / "m.txt").write_text(
-            "docker run -v" + MAC_HOME + ":/x img\n"
-        )
+        (self.root / "m.txt").write_text("docker run -v" + MAC_HOME + ":/x img\n")
         (self.root / "e.txt").write_text("HOME=" + MAC_HOME + "\n")
         (self.root / "r.txt").write_text("log: " + root_home + "\n")
         (self.root / "w.txt").write_text("see " + UNIX_HOME[:-5] + " notes\n")
+        # Extended by /ship coverage audit.
+        # Value: protects=a tilde home path to a named dir fails while
+        # ~/.dotfiles pass; fails_when=the ~/ alternative in LOCAL_PATH is
+        # dropped; why_new=only the passing ~/.claude case was tested; seam=none
+        (self.root / "t.txt").write_text("clone into ~" + "/projects/x\n")
         proc = run_verify(self.root)
         self.assert_failed(proc, "no-local-paths")
-        for rel in ("m.txt:1", "e.txt:1", "r.txt:1", "w.txt:1"):
+        for rel in ("m.txt:1", "e.txt:1", "r.txt:1", "w.txt:1", "t.txt:1"):
             self.assertIn(rel, proc.stdout)
 
     @unittest.skipIf(
@@ -90,7 +92,9 @@ class VerifyContentTest(VerifyRepoCase):
 
     def test_skill_name_rejects_bad_hyphens_and_long_names(self):
         for folder in (
-            "betterterms-x-", "betterterms-x--y", "betterterms--x",
+            "betterterms-x-",
+            "betterterms-x--y",
+            "betterterms--x",
             "betterterms-" + "x" * 53,
         ):
             with self.subTest(folder=folder):
@@ -128,9 +132,7 @@ class VerifyContentTest(VerifyRepoCase):
         # A UTF-16 or UTF-32 BOM counts too, on a text suffix or on an
         # extensionless scripts/ entry point.
         (self.root / "nul.md").unlink()
-        (self.root / "bom.yaml").write_bytes(
-            b"\xff\xfea\x00:\x00 \x001\x00\n\x00"
-        )
+        (self.root / "bom.yaml").write_bytes(b"\xff\xfea\x00:\x00 \x001\x00\n\x00")
         (self.root / "scripts").mkdir()
         (self.root / "scripts" / "tool").write_bytes(b"\xfe\xff\x00x\x00=\x001\n")
         proc = run_verify(self.root)
@@ -191,6 +193,17 @@ class VerifyContentTest(VerifyRepoCase):
         self.assert_failed(proc, "vendor-sync")
         self.assertIn("symlinked directory", proc.stdout)
         self.assertIn("linked", proc.stdout)
+        # Extended by /ship coverage audit.
+        # Value: protects=btlib/_vendor/yaml itself symlinked to the canonical
+        # tree FAILs, though its bytes compare equal; fails_when=_payload's
+        # top-level symlink guard is removed and os.walk follows the link;
+        # why_new=only a nested symlink was tested; seam=none
+        (btlib / "_vendor" / "yaml" / "linked").unlink()
+        shutil.rmtree(btlib / "_vendor" / "yaml")
+        (btlib / "_vendor" / "yaml").symlink_to(target)
+        proc = run_verify(self.root)
+        self.assert_failed(proc, "vendor-sync")
+        self.assertIn("_vendor/yaml: symlinked directory", proc.stdout)
 
     def test_em_dash_entities_in_shipped_markdown_fail(self):
         for ent in ("&mdash;", "&#8212;"):
@@ -234,7 +247,8 @@ class VerifyContentTest(VerifyRepoCase):
             with self.subTest(extra=extra):
                 self.write_skill(
                     "---\nname: betterterms-x\ndescription: Does a thing.\n"
-                    + extra + "---\nbody\n"
+                    + extra
+                    + "---\nbody\n"
                 )
                 proc = run_verify(self.root)
                 self.assert_failed(proc, "skill-names")

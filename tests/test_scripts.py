@@ -72,8 +72,16 @@ class BumpVersionTest(unittest.TestCase):
         version_file = self.root / "VERSION"
         before = version_file.read_text()
         for bad in (
-            "1.2", "v1.2.3", "latest", "1.2.3-rc.1", "1.2.3+build",
-            "01.2.3", "1.02.3", "1.2.3 ", "1.2.3\n", "١.٢.٣",
+            "1.2",
+            "v1.2.3",
+            "latest",
+            "1.2.3-rc.1",
+            "1.2.3+build",
+            "01.2.3",
+            "1.02.3",
+            "1.2.3 ",
+            "1.2.3\n",
+            "١.٢.٣",
         ):
             with self.subTest(version=bad):
                 proc = call(self.bump, [bad])
@@ -109,8 +117,9 @@ class BumpVersionTest(unittest.TestCase):
         # be restored (old bytes back, new files removed).
         (self.root / "a.txt").write_text("old a\n")
         (self.root / "zz").write_text("not a dir\n")
-        self.stub_build_outputs({"a.txt": "new a\n", "b.txt": "new b\n",
-                                 "zz/x.txt": "x\n"})
+        self.stub_build_outputs(
+            {"a.txt": "new a\n", "b.txt": "new b\n", "zz/x.txt": "x\n"}
+        )
         proc = call(self.bump, ["1.2.3"])
         self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
         self.assertEqual((self.root / "VERSION").read_text(), "0.1.0\n")
@@ -139,6 +148,14 @@ class BumpVersionTest(unittest.TestCase):
             proc = call(self.bump, ["--check"])
             self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
             self.assertIn("semver", proc.stderr)
+        # Extended by /ship coverage audit.
+        # Value: protects=--check exits 2 naming a missing VERSION instead of
+        # crashing; fails_when=the is_file guard in check() is removed;
+        # why_new=only malformed VERSION contents were tested; seam=none
+        (self.root / "VERSION").unlink()
+        proc = call(self.bump, ["--check"])
+        self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+        self.assertIn("VERSION file missing", proc.stderr)
 
     def test_check_passes_on_clean_tree(self):
         self.assertEqual(call(self.bump, ["--check"]).returncode, 0)
@@ -160,7 +177,10 @@ class BumpVersionTest(unittest.TestCase):
         ):
             proc = subprocess.run(
                 [sys.executable, str(self.root / "scripts" / name), *argv],
-                cwd=self.root, capture_output=True, text=True, timeout=120,
+                cwd=self.root,
+                capture_output=True,
+                text=True,
+                timeout=120,
             )
             self.assertEqual(
                 proc.returncode, 0, name + ": " + proc.stdout + proc.stderr
