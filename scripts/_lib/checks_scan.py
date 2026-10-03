@@ -1,9 +1,9 @@
 """Shared file-scanning machinery for the repo verification checks.
 
-Most checks scan the same file list, computed once per verify run: the
-git file list when the root is a git repo, os.walk otherwise, filtered
-by the skip rules below. The exception is vendor-sync, which walks the
-two copied trees on disk directly.
+The content checks scan one file list, computed once per verify run:
+the git file list when the root is a git repo, os.walk otherwise,
+filtered by the skip rules below. Checks that compare trees byte for
+byte (vendor-sync) walk the disk directly instead.
 """
 
 import codecs
@@ -51,10 +51,20 @@ _UTF_BOMS = (
     codecs.BOM_UTF16_BE,
 )
 
-# Suffixes that name a file as text; an extensionless entry point under
-# scripts/ counts too. Binary bytes inside a text-named file are an
-# error, not a skippable binary.
-TEXT_SUFFIXES = {".md", ".py", ".js", ".json", ".yaml", ".yml", ".txt", ".toml"}
+# Suffixes measured against the file-size line cap; extensionless
+# files under scripts/ count too.
+SOURCE_SUFFIXES = {".py", ".js", ".ts", ".sh"}
+
+# Suffixes whose decoded JSON/YAML string values the content checks
+# scan in addition to the raw lines.
+DATA_SUFFIXES = {".json", ".yaml", ".yml"}
+
+# Suffixes that name a file as text: every suffix the file-size or a
+# content check scans, plus prose markdown and plain-text config
+# names; an extensionless entry point under scripts/ counts too.
+# Binary bytes inside a text-named file are an error, not a skippable
+# binary.
+TEXT_SUFFIXES = SOURCE_SUFFIXES | DATA_SUFFIXES | {".md", ".txt", ".toml"}
 
 
 class BinaryFileError(Exception):
@@ -80,17 +90,21 @@ def _skipped(parts):
 
 def git_relpaths(root):
     """Tracked plus non-ignored untracked files when root is a git repo;
-    None otherwise, so callers fall back to os.walk."""
+    None otherwise, so callers fall back to os.walk. Names are decoded
+    with surrogateescape so an undecodable filename reaches the checks
+    (which FAIL on it) instead of crashing the listing."""
     if not (root / ".git").exists():
         return None
     try:
         r = subprocess.run(
             ["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z"],
-            cwd=root, capture_output=True, text=True, timeout=SUBPROCESS_TIMEOUT,
+            cwd=root, capture_output=True, timeout=SUBPROCESS_TIMEOUT,
         )
     except (OSError, subprocess.TimeoutExpired):
         return None
-    return r.stdout.split("\0") if r.returncode == 0 else None
+    if r.returncode != 0:
+        return None
+    return [os.fsdecode(raw) for raw in r.stdout.split(b"\0")]
 
 
 @functools.cache
@@ -100,11 +114,13 @@ def file_list(root):
     Callers clear the cache with file_list.cache_clear()."""
     rels = git_relpaths(root)
     if rels is not None:
+        # Tracked symlinks stay in the list even when their target is
+        # missing or not a file: no-symlinks names the link itself.
         return [
             root / rel
             for rel in rels
             if rel
-            and (root / rel).is_file()
+            and ((root / rel).is_file() or (root / rel).is_symlink())
             and not _skipped(Path(rel).parts[:-1])
         ]
     files = []
@@ -115,6 +131,59 @@ def file_list(root):
             if name != ".git":  # worktree marker is a file, not a dir
                 files.append(Path(dirpath) / name)
     return files
+
+
+def _git_index_links(root):
+    """Tracked symlinks (index mode 120000) as display-ready relative
+    paths, or None when root is not a git repo or git cannot answer.
+    Index modes catch links that core.symlinks=false checked out as
+    plain files."""
+    if not (root / ".git").exists():
+        return None
+    try:
+        r = subprocess.run(
+            ["git", "ls-files", "-s", "-z"],
+            cwd=root, capture_output=True, timeout=SUBPROCESS_TIMEOUT,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if r.returncode != 0:
+        return None
+    out = []
+    for raw in r.stdout.split(b"\0"):
+        meta, _, name = raw.partition(b"\t")
+        if name and meta.startswith(b"120000 "):
+            rel = Path(os.fsdecode(name))
+            if not _skipped(rel.parts[:-1]):
+                out.append(str(rel) if _decodable(rel) else display(rel))
+    return out
+
+
+def symlinks(root):
+    """Display-ready relative paths of every symlink under root, sorted.
+
+    Git mode reads index modes for tracked links and islink over the
+    scanned list for untracked ones (git reports a symlinked directory
+    as the link itself, never descending). Walk mode tests islink on
+    the scanned files plus directory entries, since file_list never
+    reports directories; os.walk does not follow the links."""
+    found = set()
+    for p in file_list(root):
+        if p.is_symlink():
+            found.add(_display_rel(p.relative_to(root)))
+    indexed = _git_index_links(root)
+    if indexed is not None:
+        found.update(indexed)
+    else:
+        for dirpath, dirnames, _files in os.walk(root):
+            rel = Path(dirpath).relative_to(root)
+            dirnames[:] = [
+                d for d in dirnames if not _skipped(rel.parts + (d,))
+            ]
+            for d in dirnames:
+                if (Path(dirpath) / d).is_symlink():
+                    found.add(_display_rel(rel / d))
+    return sorted(found)
 
 
 def junk_file(name):
@@ -131,18 +200,15 @@ def _text_named(rel):
 
 
 def read_text(path, rel):
-    """File text, or None for binary or unreadable files. Files holding
-    text in a non-UTF-8 encoding raise UnicodeDecodeError so the calling
-    check can FAIL with the path instead of skipping silently; a
-    UTF-16/32 BOM marks text in any file, whatever its suffix. A
-    text-named file (see _text_named) holding NUL bytes raises
-    BinaryFileError for the same reason."""
-    try:
-        data = path.read_bytes()
-    except OSError:
-        return None
+    """File text, or None for binary files. A file holding NUL bytes
+    under a text name (see _text_named) raises BinaryFileError; a file
+    that fails UTF-8 decoding raises UnicodeDecodeError (a UTF-16/32 BOM
+    counts as not UTF-8 under any name); a read error (PermissionError
+    or another OSError) propagates. The calling check FAILs with the
+    path instead of skipping silently."""
+    data = path.read_bytes()
     if data.startswith(_UTF_BOMS):
-        return data.decode("utf-8")
+        raise UnicodeDecodeError("utf-8", data, 0, 1, "UTF-16/32 byte-order mark")
     if b"\0" in data:
         if _text_named(rel):
             raise BinaryFileError(rel)
@@ -150,17 +216,46 @@ def read_text(path, rel):
     return data.decode("utf-8")
 
 
+def display(rel):
+    """str(rel) made safe to print even when the name holds surrogates
+    from an undecodable on-disk filename."""
+    return str(rel).encode("utf-8", "backslashreplace").decode("ascii")
+
+
+def _decodable(rel):
+    """Whether str(rel) survives a strict UTF-8 encode; names decoded
+    with surrogateescape fail this."""
+    try:
+        str(rel).encode("utf-8")
+        return True
+    except UnicodeEncodeError:
+        return False
+
+
+def _display_rel(rel):
+    """str(rel) when it prints safely, display(rel) otherwise."""
+    return str(rel) if _decodable(rel) else display(rel)
+
+
 def texts(root, bad, skip):
     """Yield (rel, text) for every scanned file that skip(rel) accepts
-    and that decodes as UTF-8 text. Unreadable and binary files yield
-    nothing; a file that fails UTF-8 decoding, or that holds binary
-    bytes under a text name, appends '{rel}: ...' to bad instead."""
+    and that decodes as UTF-8 text. Undecodable filenames, unreadable
+    files, binary bytes under a text name and non-UTF-8 content append
+    '{rel}: ...' to bad instead of yielding."""
     for p in file_list(root):
         rel = p.relative_to(root)
+        if not _decodable(rel):
+            bad.append(f"{display(rel)}: undecodable filename")
+            continue
         if skip(rel):
             continue
+        if p.is_symlink():
+            continue  # links fail no-symlinks; never read through
         try:
             text = read_text(p, rel)
+        except OSError as e:
+            bad.append(f"{rel}: cannot read ({e.strerror or e})")
+            continue
         except BinaryFileError:
             bad.append(f"{rel}: binary content in a text file")
             continue
@@ -169,6 +264,15 @@ def texts(root, bad, skip):
             continue
         if text is not None:
             yield rel, text
+
+
+def string_values(value):
+    """Every string value inside a parsed JSON/YAML structure."""
+    if isinstance(value, str):
+        yield value
+    elif isinstance(value, (dict, list)):
+        for v in (value.values() if isinstance(value, dict) else value):
+            yield from string_values(v)
 
 
 def tail(result, n=5):

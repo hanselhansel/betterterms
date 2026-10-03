@@ -14,8 +14,10 @@ silently merged. Anchors without aliases are fine. ``dump(obj)`` is
 ``yaml.dump`` on a SafeDumper that never emits anchors or aliases, with
 insertion-order keys, unicode allowed and block (not flow) style.
 Documents nested past the interpreter's recursion limit raise
-:class:`Error` too. YAML failures surface as :class:`Error`, never as
-``yaml.YAMLError``.
+:class:`Error` too. Any failure while parsing or constructing values
+surfaces as :class:`Error`, never as ``yaml.YAMLError`` or a bare
+``ValueError``/``KeyError``/``TypeError`` from a tag constructor, and
+carries the offending node's line when one is known.
 """
 
 from ._vendor import yaml
@@ -34,8 +36,8 @@ def _line(mark):
     return mark.line + 1 if mark is not None else None
 
 
-def _reraise(e):
-    mark = getattr(e, "problem_mark", None)
+def _reraise(e, fallback_mark=None):
+    mark = getattr(e, "problem_mark", None) or fallback_mark
     raise Error(getattr(e, "problem", None) or str(e), _line(mark)) from e
 
 
@@ -54,6 +56,24 @@ class _Loader(yaml.SafeLoader):
                 _line(event.start_mark),
             )
         return super().compose_node(parent, index)
+
+    def construct_object(self, node, deep=False):
+        # Tag constructors can raise bare exceptions (ValueError from an
+        # out-of-range timestamp, KeyError from a bad !!bool value, ...);
+        # re-raise them as Error with the node's line so callers get one
+        # failure type. Errors already carrying a problem_mark keep it.
+        try:
+            return super().construct_object(node, deep=deep)
+        except (Error, RecursionError):
+            raise
+        except yaml.YAMLError as e:
+            _reraise(e, getattr(node, "start_mark", None))
+        except Exception as e:
+            detail = str(e) or "failed"
+            raise Error(
+                f"{type(e).__name__}: {detail}",
+                _line(getattr(node, "start_mark", None)),
+            ) from e
 
     def construct_mapping(self, node, deep=False):
         seen = set()
@@ -88,6 +108,8 @@ def load(text):
         raise Error("nesting too deep") from e
     except yaml.YAMLError as e:
         _reraise(e)
+    except Exception as e:
+        raise Error(f"{type(e).__name__}: {e or 'failed'}") from e
 
 
 class _Dumper(yaml.SafeDumper):

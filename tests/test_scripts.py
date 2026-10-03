@@ -2,6 +2,7 @@ import contextlib
 import importlib.machinery
 import importlib.util
 import io
+import os
 import shutil
 import subprocess
 import sys
@@ -47,16 +48,8 @@ def call(mod, argv):
     )
 
 
-class FakeRun:
-    """Stands in for subprocess.run so bump tests never spawn a process."""
-
-    def __init__(self, rc):
-        self.rc = rc
-        self.calls = []
-
-    def __call__(self, argv, cwd=None, **_kw):
-        self.calls.append(argv)
-        return types.SimpleNamespace(returncode=self.rc)
+def _raise(exc):
+    raise exc
 
 
 class BumpVersionTest(unittest.TestCase):
@@ -65,20 +58,41 @@ class BumpVersionTest(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.root = make_repo(self.tmp.name)
         self.bump = load_script(self.root, "bump-version", "bt_bump_under_test")
+        # Bump targets derive from the VERSION on disk, never a literal
+        # that could collide with or regress the real version.
+        v = (self.root / "VERSION").read_text().strip().split(".")
+        self.next_version = f"{v[0]}.{v[1]}.{int(v[2]) + 1}"
 
-    def stub_build(self, rc):
-        fake = FakeRun(rc)
-        real = self.bump.subprocess
-        self.bump.subprocess = types.SimpleNamespace(run=fake)
-        self.addCleanup(setattr, self.bump, "subprocess", real)
-        return fake
+    def stub_build_outputs(self, files=None, exc=None):
+        """Swap the build-module loader so bump sees canned outputs (or
+        a generator failure); the write-path guard stays real."""
+        real_build = self.bump._build_module()
+        fake = types.SimpleNamespace(
+            expected=(
+                lambda root, version=None: files
+                if exc is None
+                else _raise(exc)
+            ),
+            _check_write_path=real_build._check_write_path,
+        )
+        real = self.bump._build_module
+        self.bump._build_module = lambda: fake
+        self.addCleanup(setattr, self.bump, "_build_module", real)
 
     def test_bad_args_exit_2_without_writing(self):
         version_file = self.root / "VERSION"
         before = version_file.read_text()
         for bad in (
-            "1.2", "v1.2.3", "latest", "1.2.3-rc.1", "1.2.3+build",
-            "01.2.3", "1.02.3", "1.2.3 ", "1.2.3\n", "١.٢.٣",
+            "1.2",
+            "v1.2.3",
+            "latest",
+            "1.2.3-rc.1",
+            "1.2.3+build",
+            "01.2.3",
+            "1.02.3",
+            "1.2.3 ",
+            "1.2.3\n",
+            "١.٢.٣",
         ):
             with self.subTest(version=bad):
                 proc = call(self.bump, [bad])
@@ -92,15 +106,99 @@ class BumpVersionTest(unittest.TestCase):
         self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
         self.assertIn("Usage", proc.stderr)
 
-    def test_bump_writes_version_and_reruns_build(self):
-        fake = self.stub_build(0)
-        proc = call(self.bump, ["1.2.3"])
+    def test_bump_writes_version_and_build_outputs(self):
+        self.stub_build_outputs({"gen/out.txt": "v1\n"})
+        proc = call(self.bump, [self.next_version])
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
-        self.assertEqual((self.root / "VERSION").read_text(), "1.2.3\n")
         self.assertEqual(
-            fake.calls,
-            [[sys.executable, str((self.root / "scripts" / "build").resolve())]],
+            (self.root / "VERSION").read_text(), self.next_version + "\n"
         )
+        self.assertEqual((self.root / "gen" / "out.txt").read_text(), "v1\n")
+
+    def test_bump_computes_outputs_before_any_write(self):
+        # A generator failure leaves VERSION and the tree untouched.
+        version_file = self.root / "VERSION"
+        before = version_file.read_text()
+        self.stub_build_outputs(exc=ValueError("two generators produce g.txt"))
+        proc = call(self.bump, [self.next_version])
+        self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+        self.assertEqual(version_file.read_text(), before)
+
+    def test_bump_restores_touched_files_on_write_failure(self):
+        # 'zz' exists as a file, so writing zz/x.txt fails mid-way after
+        # a.txt and VERSION were already written: every touched file must
+        # be restored (old bytes back, new files removed).
+        (self.root / "a.txt").write_text("old a\n")
+        (self.root / "zz").write_text("not a dir\n")
+        version_before = (self.root / "VERSION").read_bytes()
+        self.stub_build_outputs(
+            {"a.txt": "new a\n", "b.txt": "new b\n", "zz/x.txt": "x\n"}
+        )
+        proc = call(self.bump, [self.next_version])
+        self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+        self.assertEqual((self.root / "VERSION").read_bytes(), version_before)
+        self.assertEqual((self.root / "a.txt").read_text(), "old a\n")
+        self.assertFalse((self.root / "b.txt").exists())
+
+    def test_bump_stamps_new_version_into_generated_outputs(self):
+        # Generators get the version explicitly: outputs computed for a
+        # bump carry the NEW version even though VERSION on disk still
+        # holds the old one while they are computed.
+        build = self.root / "scripts" / "build"
+        build.write_text(
+            build.read_text().replace(
+                "GENERATORS = []",
+                "GENERATORS = [lambda root, version: {\n"
+                "    'gen/version.txt': 'version ' + version + '\\n',\n"
+                "    'gen/manifest.json': "
+                "'{\"version\": \"' + version + '\"}',\n"
+                "}]",
+                1,
+            )
+        )
+        proc = call(self.bump, [self.next_version])
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertEqual(
+            (self.root / "gen" / "version.txt").read_text(),
+            f"version {self.next_version}\n",
+        )
+        self.assertEqual(
+            call(self.bump, ["--check"]).returncode, 0
+        )
+        build_mod = load_script(self.root, "build", "bt_build_embedded")
+        self.assertEqual(build_mod.main(["--check"]), 0)
+
+    def test_bump_restores_missing_version_on_write_failure(self):
+        (self.root / "VERSION").unlink()
+        (self.root / "zz").write_text("not a dir\n")
+        self.stub_build_outputs({"zz/x.txt": "x\n"})
+        proc = call(self.bump, [self.next_version])
+        self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+        self.assertFalse((self.root / "VERSION").exists())
+
+    @unittest.skipIf(os.name == "nt", "needs POSIX symlinks")
+    def test_bump_refuses_symlinked_targets(self):
+        # A generated path under a link, or VERSION itself as a link,
+        # is refused before any write.
+        real = self.root / "real"
+        real.mkdir()
+        (self.root / "gen").symlink_to(real, target_is_directory=True)
+        version_before = (self.root / "VERSION").read_text()
+        self.stub_build_outputs({"gen/out.txt": "x\n", "ok.txt": "y\n"})
+        proc = call(self.bump, [self.next_version])
+        self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+        self.assertIn("symlink", proc.stderr)
+        self.assertEqual((self.root / "VERSION").read_text(), version_before)
+        self.assertFalse((self.root / "ok.txt").exists())
+        self.assertFalse((real / "out.txt").exists())
+        # VERSION itself a link is refused with nothing else to write.
+        (self.root / "gen").unlink()
+        (self.root / "VERSION").unlink()
+        (self.root / "VERSION").symlink_to(real / "V")
+        self.stub_build_outputs({})
+        proc = call(self.bump, [self.next_version])
+        self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+        self.assertFalse((real / "V").exists())
 
     def test_check_fails_when_version_not_semver(self):
         (self.root / "VERSION").write_text("not-semver\n")
@@ -116,26 +214,17 @@ class BumpVersionTest(unittest.TestCase):
             proc = call(self.bump, ["--check"])
             self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
             self.assertIn("semver", proc.stderr)
+        # Extended by /ship coverage audit.
+        # Value: protects=--check exits 2 naming a missing VERSION instead of
+        # crashing; fails_when=the is_file guard in check() is removed;
+        # why_new=only malformed VERSION contents were tested; seam=none
+        (self.root / "VERSION").unlink()
+        proc = call(self.bump, ["--check"])
+        self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+        self.assertIn("VERSION file missing", proc.stderr)
 
     def test_check_passes_on_clean_tree(self):
         self.assertEqual(call(self.bump, ["--check"]).returncode, 0)
-
-    def test_bump_restores_version_when_build_fails(self):
-        self.stub_build(1)
-        (self.root / "VERSION").write_text("0.1.0\n")
-        proc = call(self.bump, ["1.2.3"])
-        self.assertNotEqual(proc.returncode, 0, proc.stdout + proc.stderr)
-        self.assertEqual((self.root / "VERSION").read_text(), "0.1.0\n")
-        self.assertIn("0.1.0", proc.stderr)
-
-    def test_bump_removes_version_when_build_fails_without_prior(self):
-        self.stub_build(1)
-        version_file = self.root / "VERSION"
-        version_file.unlink()
-        proc = call(self.bump, ["1.2.3"])
-        self.assertNotEqual(proc.returncode, 0, proc.stdout + proc.stderr)
-        self.assertFalse(version_file.exists())
-        self.assertIn("VERSION", proc.stderr)
 
     def test_cli_smoke(self):
         proc = subprocess.run(
@@ -149,17 +238,22 @@ class BumpVersionTest(unittest.TestCase):
 
     def test_bump_then_verify_still_passes(self):
         for name, argv in (
-            ("bump-version", ["0.2.0"]),
+            ("bump-version", [self.next_version]),
             ("verify", [str(self.root)]),
         ):
             proc = subprocess.run(
                 [sys.executable, str(self.root / "scripts" / name), *argv],
-                cwd=self.root, capture_output=True, text=True, timeout=120,
+                cwd=self.root,
+                capture_output=True,
+                text=True,
+                timeout=120,
             )
             self.assertEqual(
                 proc.returncode, 0, name + ": " + proc.stdout + proc.stderr
             )
-        self.assertEqual((self.root / "VERSION").read_text(), "0.2.0\n")
+        self.assertEqual(
+            (self.root / "VERSION").read_text(), self.next_version + "\n"
+        )
 
     # Generated by /ship coverage audit.
     # Value: protects=bump-version --check fails when a built JSON manifest's
@@ -174,7 +268,7 @@ class BumpVersionTest(unittest.TestCase):
         build.write_text(
             build.read_text().replace(
                 "GENERATORS = []",
-                "GENERATORS = [lambda root: {\n"
+                "GENERATORS = [lambda root, version: {\n"
                 "    'plugin.json': '{\"version\": \"9.9.9\"}',\n"
                 "    'unbuilt.json': '{\"version\": \"0.0.0\"}',\n"
                 "    'notes.md': 'version: 0.0.0',\n"
@@ -205,80 +299,91 @@ class BuildManifestTest(unittest.TestCase):
         self.root = make_repo(self.tmp.name)
         self.build = load_script(self.root, "build", "bt_build_under_test")
 
-    def test_build_writes_manifest_and_check_catches_orphans(self):
-        self.build.GENERATORS = [lambda root: {"gen/out.txt": "v1\n"}]
+    def test_build_writes_files_and_never_deletes(self):
+        self.build.GENERATORS = [
+            lambda root, version: {"gen/out.txt": "v1\n"}
+        ]
         self.assertEqual(self.build.main([]), 0)
         self.assertEqual((self.root / "gen" / "out.txt").read_text(), "v1\n")
-        manifest = self.root / ".generated-files"
-        self.assertTrue(manifest.is_file())
-        self.assertEqual(manifest.read_text(), "gen/out.txt\n")
-        self.assertEqual(self.build.main(["--check"]), 0)
-
-        # A path dropped from the generators becomes an orphan.
-        self.build.GENERATORS = [lambda root: {"gen/other.txt": "v2\n"}]
-        self.assertEqual(self.build.main(["--check"]), 1)
-        self.assertEqual(self.build.main([]), 0)
-        self.assertFalse((self.root / "gen" / "out.txt").exists())
-        self.assertEqual(self.build.main(["--check"]), 0)
-
-    def test_no_generators_removes_stale_manifest_and_orphans(self):
-        self.build.GENERATORS = [lambda root: {"gen/out.txt": "v1\n"}]
-        self.build.main([])
-        self.assertTrue((self.root / ".generated-files").is_file())
-        self.assertTrue((self.root / "gen" / "out.txt").is_file())
-        self.build.GENERATORS = []
-        self.assertEqual(self.build.main([]), 0)
         self.assertFalse((self.root / ".generated-files").exists())
-        self.assertFalse((self.root / "gen" / "out.txt").exists())
         self.assertEqual(self.build.main(["--check"]), 0)
 
-    def test_check_fails_on_drift_and_missing_manifest(self):
-        self.build.GENERATORS = [lambda root: {"g.txt": "v1"}]
+        # A path dropped from the generators is left on disk: build never
+        # deletes files.
+        self.build.GENERATORS = [
+            lambda root, version: {"gen/other.txt": "v2\n"}
+        ]
+        self.assertEqual(self.build.main([]), 0)
+        self.assertTrue((self.root / "gen" / "out.txt").is_file())
+        self.assertEqual((self.root / "gen" / "other.txt").read_text(), "v2\n")
+        self.assertEqual(self.build.main(["--check"]), 0)
+
+    def test_check_fails_on_drift_and_missing_output(self):
+        self.build.GENERATORS = [lambda root, version: {"g.txt": "v1"}]
+        self.assertEqual(self.build.main(["--check"]), 1)
         self.build.main([])
         (self.root / "g.txt").write_text("tampered")
         self.assertEqual(self.build.main(["--check"]), 1)
         self.build.main([])
-        (self.root / ".generated-files").unlink()
+        (self.root / "g.txt").unlink()
         self.assertEqual(self.build.main(["--check"]), 1)
 
-    # Generated by /ship coverage audit.
-    # Value: protects=build never deletes a file outside the repo root, even
-    # when .generated-files lists a ../ path; fails_when=the is_relative_to
-    # guard on orphan deletion is removed or weakened; why_new=orphan tests
-    # only use in-root paths; seam=none
-    def test_orphan_cleanup_never_deletes_outside_root(self):
-        outside = Path(self.tmp.name).parent / f"{Path(self.tmp.name).name}-victim.txt"
-        outside.write_text("keep me\n")
-        self.addCleanup(outside.unlink, missing_ok=True)
-        (self.root / ".generated-files").write_text(f"../{outside.name}\n")
-        self.build.GENERATORS = [lambda root: {"gen/out.txt": "v1\n"}]
-        with contextlib.redirect_stdout(io.StringIO()):
-            self.assertEqual(self.build.main([]), 0)
-        self.assertEqual(outside.read_text(), "keep me\n")
-        self.assertEqual((self.root / ".generated-files").read_text(), "gen/out.txt\n")
+    def test_bad_generated_paths_raise(self):
+        for rel in ("../x", "/abs", ".git/HEAD"):
+            with self.subTest(rel=rel):
+                self.build.GENERATORS = [
+                    lambda root, version, rel=rel: {rel: "x\n"}
+                ]
+                with self.assertRaises(ValueError):
+                    call(self.build, [])
+                with self.assertRaises(ValueError):
+                    call(self.build, ["--check"])
+                self.assertFalse((self.root / ".generated-files").exists())
 
-    # Generated by /ship coverage audit.
-    # Value: protects=build rejects unknown args with exit 2 and refuses two
-    # generators claiming one relpath, writing nothing in either case;
-    # fails_when=the argv guard or the duplicate-relpath ValueError in
-    # expected() is removed; why_new=build tests use only [] and --check;
-    # seam=none
+    @unittest.skipIf(os.name == "nt", "needs POSIX symlinks")
+    def test_build_refuses_symlinked_targets(self):
+        # A generated path that is a link or sits under one is refused
+        # before any file is written.
+        real = self.root / "real"
+        real.mkdir()
+        (self.root / "gen").symlink_to(real, target_is_directory=True)
+        self.build.GENERATORS = [
+            lambda root, version: {"gen/out.txt": "x\n", "ok.txt": "y\n"}
+        ]
+        with self.assertRaises(ValueError):
+            call(self.build, [])
+        self.assertFalse((self.root / "ok.txt").exists())
+        self.assertFalse((real / "out.txt").exists())
+        # The path itself as a link, or an escaping parent link, fail.
+        (self.root / "gen").unlink()
+        (self.root / "ok.txt").symlink_to(real / "out.txt")
+        self.build.GENERATORS = [lambda root, version: {"ok.txt": "y\n"}]
+        with self.assertRaises(ValueError):
+            call(self.build, [])
+        self.assertFalse((real / "out.txt").exists())
+        outside = Path(self.tmp.name) / "outside"
+        outside.mkdir()
+        (self.root / "esc").symlink_to(outside, target_is_directory=True)
+        self.build.GENERATORS = [lambda root, version: {"esc/x.txt": "x\n"}]
+        with self.assertRaises(ValueError):
+            call(self.build, [])
+        self.assertFalse((outside / "x.txt").exists())
+
     def test_bad_arg_exits_2_and_duplicate_relpath_raises(self):
-        self.build.GENERATORS = [lambda root: {"g.txt": "v1\n"}]
+        self.build.GENERATORS = [lambda root, version: {"g.txt": "v1\n"}]
         proc = call(self.build, ["--bogus"])
         self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
         self.assertIn("Usage", proc.stderr)
         self.assertEqual(call(self.build, ["--check", "extra"]).returncode, 2)
         self.assertFalse((self.root / "g.txt").exists())
         self.build.GENERATORS = [
-            lambda root: {"g.txt": "a\n"},
-            lambda root: {"g.txt": "b\n"},
+            lambda root, version: {"g.txt": "a\n"},
+            lambda root, version: {"g.txt": "b\n"},
         ]
         with self.assertRaises(ValueError) as cm:
             call(self.build, [])
         self.assertIn("two generators produce g.txt", str(cm.exception))
         self.assertFalse((self.root / "g.txt").exists())
-        self.assertFalse((self.root / ".generated-files").exists())
 
     def test_cli_smoke(self):
         proc = subprocess.run(
