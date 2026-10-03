@@ -10,6 +10,6 @@ Evidence behind the betterterms specs, gathered 2026-10-03.
 | 2026-10-03-company-readiness.md | How companies respond to inbound agents; the company-side opportunity |
 | 2026-10-03-naming.md | Name options and conflicts |
 
-The wider scan (Hacker News, Reddit, X pain data and segment reports) stays local at
-`~/Archive/research/2026-10-03-agent-pain-scan/` and is not part of this repo.
-Review these files for local paths before the repo goes public.
+The wider scan (Hacker News, Reddit, X pain data and segment reports) stays local
+and is not part of this repo. Review these files for local paths before the repo
+goes public.
