@@ -1,0 +1,82 @@
+#!/usr/bin/env python3
+"""Repo verification checks.
+
+Usage: python3 scripts/verify [ROOT|all]
+
+ROOT defaults to the repo containing this script and must hold VERSION
+and kit.config.json ('all' means the same; anything else exits 2).
+Prints `PASS <name>`, `FAIL <name>: <reason>` or `SKIP <name>: <reason>`
+per check and exits 1 when any FAILs.
+
+The checks live in scripts/_lib/checks_*.py; this file is the CLI.
+"""
+
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from _lib.checks_files import (
+    check_file_size,
+    check_no_bin,
+    check_no_local_paths,
+    check_no_root_claude_md,
+    check_no_symlinks,
+)
+from _lib.checks_prose import check_prose_rules
+from _lib.checks_scan import file_list
+from _lib.checks_skills import check_skill_names
+from _lib.checks_tools import (
+    check_build_fresh,
+    check_claude_validate,
+    check_gemini_validate,
+    check_unit_tests,
+    check_vendor_sync,
+    check_version_sync,
+)
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+_ROOT_FILES = ("VERSION", "kit.config.json")
+
+CHECKS = [
+    ("unit-tests", check_unit_tests),
+    ("skill-names", check_skill_names),
+    ("no-bin", check_no_bin),
+    ("no-root-claude-md", check_no_root_claude_md),
+    ("no-symlinks", check_no_symlinks),
+    ("no-local-paths", check_no_local_paths),
+    ("prose-rules", check_prose_rules),
+    ("file-size", check_file_size),
+    ("vendor-sync", check_vendor_sync),
+    ("build-fresh", check_build_fresh),
+    ("version-sync", check_version_sync),
+    ("claude-validate", check_claude_validate),
+    ("gemini-validate", check_gemini_validate),
+]
+
+
+def main(argv):
+    if len(argv) > 1:
+        print(__doc__.strip(), file=sys.stderr)
+        return 2
+    root = REPO_ROOT if not argv or argv[0] == "all" else Path(argv[0]).resolve()
+    required = root.is_dir() and all((root / f).is_file() for f in _ROOT_FILES)
+    if not required:
+        print(f"error: {root} is not a repo root (need VERSION + kit.config.json)",
+              file=sys.stderr)
+        return 2
+    file_list.cache_clear()
+    failures = 0
+    for name, fn in CHECKS:
+        try:
+            status, detail = fn(root)
+        except Exception as e:
+            status, detail = "FAIL", f"internal error: {e}"
+        print(f"{status} {name}" + (f": {detail}" if detail else ""))
+        if status == "FAIL":
+            failures += 1
+    return 1 if failures else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

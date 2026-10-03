@@ -1,0 +1,106 @@
+#!/usr/bin/env python3
+"""Regenerate host manifests from kit.config.json + VERSION.
+
+Each generator in GENERATORS is a callable ``gen(root, version) ->
+{relpath: content}`` producing repo-relative files
+(`.claude-plugin/plugin.json`, `plugin.json`, `gemini-extension.json`,
+`commands/*.md`, ...). build passes the VERSION file's version;
+bump-version passes the version being bumped to. When GENERATORS is
+empty, build is a no-op and --check passes.
+
+Build never deletes files: it writes generated files, and --check only
+compares each generated file's expected content with disk. Generated
+paths must be relative, stay inside the repo and not touch `.git/`;
+anything else raises ValueError. So does a write target that resolves
+outside the repo or goes through a symlink: the repo holds no links.
+
+Usage: build [--check]
+  (no args)   write every generated file
+  --check     exit 1 if any generated file is missing or differs
+"""
+
+import sys
+from pathlib import Path, PurePosixPath
+
+ROOT = Path(__file__).resolve().parent.parent
+
+GENERATORS = []
+
+
+def _check_relpath(rel):
+    """Generated paths must be relative, inside the repo, and outside
+    `.git/`; anything else is a generator bug worth crashing on."""
+    parts = PurePosixPath(rel).parts
+    if (
+        PurePosixPath(rel).is_absolute()
+        or not parts
+        or ".." in parts
+        or parts[0] == ".git"
+    ):
+        raise ValueError(f"bad generated path {rel!r}")
+
+
+def _check_write_path(path):
+    """A write target must resolve inside the repo and cross no
+    symlinks: a linked file or parent lands the bytes elsewhere."""
+    if not path.resolve().is_relative_to(ROOT):
+        raise ValueError(f"{path} resolves outside the repo")
+    p = path
+    while p != ROOT and p != p.parent:
+        if p.is_symlink():
+            raise ValueError(f"{path} goes through symlink {p}")
+        p = p.parent
+
+
+def expected(root, version=None):
+    """Return {relpath: content} for every registered generator.
+
+    Generators are called as gen(root, version); a None version is
+    read from root/VERSION."""
+    if version is None and GENERATORS:
+        version = (root / "VERSION").read_text(encoding="utf-8").strip()
+    out = {}
+    for gen in GENERATORS:
+        for rel, content in gen(root, version).items():
+            _check_relpath(rel)
+            if rel in out:
+                raise ValueError(f"two generators produce {rel}")
+            out[rel] = content
+    return out
+
+
+def main(argv):
+    if argv and argv != ["--check"]:
+        print(__doc__.strip(), file=sys.stderr)
+        return 2
+    files = expected(ROOT)
+    if "--check" in argv:
+        stale = [
+            rel
+            for rel, content in sorted(files.items())
+            if not (ROOT / rel).is_file()
+            or (ROOT / rel).read_text(encoding="utf-8") != content
+        ]
+        if stale:
+            print("generated files out of date:", file=sys.stderr)
+            for rel in stale:
+                print(f"  {rel}", file=sys.stderr)
+            print("run scripts/build", file=sys.stderr)
+            return 1
+        print("build check passed" if files else "build check passed (no generators registered)")
+        return 0
+    targets = sorted(files.items())
+    for rel, _content in targets:
+        _check_write_path(ROOT / rel)
+    for rel, content in targets:
+        path = ROOT / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
+        print(f"wrote {rel}")
+    if not files:
+        print("no generators registered; nothing to build")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
