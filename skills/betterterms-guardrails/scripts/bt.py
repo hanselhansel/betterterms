@@ -10,6 +10,9 @@ stdout.
   bt.py score <case_id> --inbound <inbound.yaml>
   bt.py ledger add <case_id> --before N --after N --period month|year
   bt.py ledger total
+  bt.py source add <case_id>         (record read as YAML from stdin)
+  bt.py source list <case_id>
+  bt.py source stale <case_id> [--days 90]
 
 Exit codes: 0 ok/pass, 1 block, 2 usage or error, 3 needs approval.
 """
@@ -22,7 +25,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from btlib import BtError, cases, gate, ledger, score, yaml
+from btlib import BtError, cases, gate, ledger, score, sources, yaml
 
 
 def _load_yaml_file(path, what):
@@ -91,6 +94,26 @@ def cmd_ledger_total(args):
     return 0, ledger.total()
 
 
+def cmd_source_add(args):
+    d = cases.require_case(args.case_id)
+    try:
+        data = yaml.load(sys.stdin.read())
+    except yaml.Error as e:
+        raise BtError(f"source record: {e}")
+    source_id, path = sources.add(d, data)
+    return 0, {"id": source_id, "path": str(path)}
+
+
+def cmd_source_list(args):
+    d = cases.require_case(args.case_id)
+    return 0, {"sources": sources.list_records(d)}
+
+
+def cmd_source_stale(args):
+    d = cases.require_case(args.case_id)
+    return 0, {"days": args.days, "stale": sources.stale(d, args.days)}
+
+
 def build_parser():
     parser = argparse.ArgumentParser(prog="bt.py", description="betterterms runtime tool")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -136,6 +159,26 @@ def build_parser():
 
     p_total = ledger_sub.add_parser("total", help="total savings")
     p_total.set_defaults(fn=cmd_ledger_total)
+
+    p_source = sub.add_parser("source", help="research source records")
+    source_sub = p_source.add_subparsers(dest="source_command", required=True)
+
+    p_sadd = source_sub.add_parser(
+        "add", help="add a source record (YAML mapping on stdin)"
+    )
+    p_sadd.add_argument("case_id")
+    p_sadd.set_defaults(fn=cmd_source_add)
+
+    p_slist = source_sub.add_parser("list", help="list source records")
+    p_slist.add_argument("case_id")
+    p_slist.set_defaults(fn=cmd_source_list)
+
+    p_sstale = source_sub.add_parser(
+        "stale", help="list records older than --days"
+    )
+    p_sstale.add_argument("case_id")
+    p_sstale.add_argument("--days", type=int, default=90)
+    p_sstale.set_defaults(fn=cmd_source_stale)
 
     return parser
 
