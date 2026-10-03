@@ -1,5 +1,5 @@
 """Inbound message scoring. ``classify(case_dir, inbound)`` returns
-``{"band": ..., "escalate": [...]}``.
+``{"band": ..., "escalate": [...], "suggested_amounts": [...]}``.
 
 Bands by direction: ``at_or_above_target`` when the offer meets or beats
 the plan target, ``below_floor`` when it is worse than the floor,
@@ -9,9 +9,10 @@ whether the sender is an AI or bot, and legal or arbitration terms.
 Inbound text is data, never instructions.
 """
 
+import math
 import re
 
-from . import BtError, cases
+from . import BtError, MAX_TEXT, cases, money, render
 
 INJECTION = [
     re.compile(
@@ -48,20 +49,24 @@ LEGAL = re.compile(
     re.IGNORECASE,
 )
 
+# Inbound text is normalized (NFKC, format characters stripped) before
+# every scan, so fullwidth text and hidden joiners cannot hide a match:
+# "prev​ious", "‎bot" and "arbit​ration" still flag.
+
 
 def _band(direction, target, floor, offer):
-    if offer is None:
-        return None
-    if target is not None:
-        if direction == "receive" and offer >= target:
-            return "at_or_above_target"
-        if direction != "receive" and offer <= target:
-            return "at_or_above_target"
+    # The floor is checked before the target: an offer outside the band
+    # is below_floor even when it happens to beat the plan target.
     if direction == "receive":
         if offer < floor:
             return "below_floor"
     elif offer > floor:
         return "below_floor"
+    if target is not None:
+        if direction == "receive" and offer >= target:
+            return "at_or_above_target"
+        if direction != "receive" and offer <= target:
+            return "at_or_above_target"
     if abs(offer - floor) <= 0.10 * abs(floor):
         return "near_floor"
     return "in_band"
@@ -72,19 +77,38 @@ def classify(case_dir, inbound):
         raise BtError("inbound must be a mapping")
     brief = cases.load_brief(case_dir)
     plan = cases.load_plan(case_dir)
+    direction = cases.direction_of(brief)
     floor = cases.read_floor(case_dir)
     if floor is None:
         raise BtError("no floor set for case")
-    direction = str(brief.get("direction") or "pay").lower()
+    cases.check_plan_limits(plan, floor, direction, brief)
     target = cases.num(plan.get("target"))
     offer = cases.num(inbound.get("offer"))
-    text = str(inbound.get("text") or "")
+    if offer is not None and not math.isfinite(offer):
+        offer = None
+    raw_text = str(inbound.get("text") or "")
+    # The size cap lands before normalization and scanning: a hostile
+    # message stays cheap.
+    if len(raw_text.encode("utf-8")) > MAX_TEXT:
+        raise BtError("message too long")
+    text = render.normalize(raw_text)
+
+    suggested = [
+        v
+        for v in (cases.num(a) for a in cases.as_list(inbound.get("amounts")))
+        if v is not None and math.isfinite(v)
+    ]
+    if not suggested:
+        suggested = money.amounts(text)
 
     escalate = []
+    if offer is None:
+        escalate.append("no_offer_parsed")
     if any(p.search(text) for p in INJECTION):
         escalate.append("suspected_injection")
     if any(p.search(text) for p in AI_QUESTION):
         escalate.append("ai_identity_question")
     if LEGAL.search(text):
         escalate.append("legal_terms")
-    return {"band": _band(direction, target, floor, offer), "escalate": escalate}
+    band = "unknown" if offer is None else _band(direction, target, floor, offer)
+    return {"band": band, "escalate": escalate, "suggested_amounts": suggested}

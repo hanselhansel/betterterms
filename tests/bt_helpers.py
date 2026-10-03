@@ -62,6 +62,23 @@ def write_draft(tmpdir, draft):
     return path
 
 
+def send_draft(template="hi", **kw):
+    """A well-formed send draft under the structured-amounts contract.
+    ``offer`` defaults to 1100 (inside the band for a pay floor of
+    1200); any key may be overridden or removed with ``key=None``."""
+    d = {"action": "send", "offer": 1100, "period": "once",
+         "template": template, "claims": []}
+    d.update(kw)
+    return d
+
+
+def inbound_msg(offer=None, text="", amounts=None):
+    """An inbound.yaml mapping: counterparty text, the extracted
+    ``amounts`` list, and an optional numeric offer."""
+    return {"offer": offer, "text": text,
+            "amounts": [] if amounts is None else amounts}
+
+
 BRIEF_PAY = {
     "pack": "bills",
     "mode": "act",
@@ -93,6 +110,37 @@ PLAN_BILLS = {
         {"id": "f2", "text": "policy allows retention offers", "source": "https://example.com/policy"},
     ],
 }
+
+
+_KEEP = object()
+
+
+def plan_for(direction, floor, target=_KEEP):
+    """A plan whose target, option and ladder values sit inside the
+    band for the given direction and floor, so the plan-vs-limits check
+    does not trip. PLAN_BILLS is shaped for a pay floor of 1200; other
+    setups derive values from the floor. ``target`` overrides the plan
+    target, including to None."""
+    if floor is None:
+        return dict(PLAN_BILLS)
+    if direction == "receive":
+        plan = dict(
+            PLAN_BILLS,
+            target=floor + 10000,
+            options=[{"label": "a", "value": floor + 5000, "terms": "x"}],
+            ladder=[{"value": floor + 2000, "reason": "r"}],
+        )
+    elif floor == 1200:
+        plan = dict(PLAN_BILLS)
+    else:
+        plan = dict(
+            PLAN_BILLS,
+            options=[{"label": "a", "value": floor - 5, "terms": "x"}],
+            ladder=[{"value": floor - 2, "reason": "r"}],
+        )
+    if target is not _KEEP:
+        plan["target"] = target
+    return plan
 
 
 class BtTestCase(unittest.TestCase):

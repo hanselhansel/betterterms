@@ -12,12 +12,14 @@ from .checks_scan import (
     string_values,
     texts,
 )
+from .checks_skills import frontmatter_strings
 
-# "leverag\w*" bans every form of "leverage": the noun as well as the
-# verb, because this rule cannot tell parts of speech apart.
+# Every stem ends in \w* so inflected forms (crucially, robustness,
+# leveraged) are banned too: the rule cannot tell parts of speech apart.
 BANNED_WORDS = re.compile(
-    r"\b(delv\w*|pivotal|crucial|showcas\w*|leverag\w*|robust|comprehensive|"
-    r"nuanced|underscor\w*|foster\w*|moreover|furthermore)\b",
+    r"\b(delv\w*|pivotal\w*|crucial\w*|showcas\w*|leverag\w*|robust\w*|"
+    r"comprehensive\w*|nuanc\w*|underscor\w*|foster\w*|moreover\w*|"
+    r"furthermore\w*)\b",
     re.IGNORECASE,
 )
 EM_DASH = "—"
@@ -61,4 +63,6 @@ def check_prose_rules(root):
             continue
         for s in string_values(data):
             _prose_hit(f"{rel}: string value", s, bad)
+    for rel, s in frontmatter_strings(root):
+        _prose_hit(f"{rel}: frontmatter", s, bad)
     return ("FAIL", join(bad)) if bad else ("PASS", "")

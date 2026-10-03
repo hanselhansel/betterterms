@@ -15,6 +15,7 @@ Exit codes: 0 ok/pass, 1 block, 2 usage or error, 3 needs approval.
 """
 
 import argparse
+import getpass
 import json
 import sys
 from pathlib import Path
@@ -44,7 +45,11 @@ def cmd_case_new(args):
 
 def cmd_case_set_floor(args):
     d = cases.require_case(args.case_id)
-    cases.set_floor(d, sys.stdin.read())
+    if sys.stdin.isatty():
+        raw = getpass.getpass("Walk-away number (hidden): ")
+    else:
+        raw = sys.stdin.read()
+    cases.set_floor(d, raw)
     return 0, {"ok": True}
 
 
@@ -62,10 +67,11 @@ def cmd_gate(args):
     d = cases.require_case(args.case_id)
     draft = _load_yaml_file(args.draft, "draft")
     inbound = _load_yaml_file(args.inbound, "inbound") if args.inbound else None
-    result, reasons = gate.check(d, draft, approved=args.approved, inbound=inbound)
+    result, reasons, rendered = gate.check(d, draft, approved=args.approved, inbound=inbound)
     return {"pass": 0, "block": 1, "needs_approval": 3}[result], {
         "result": result,
         "reasons": reasons,
+        "rendered": rendered,
     }
 
 
@@ -110,7 +116,7 @@ def build_parser():
     p_gate.add_argument("case_id")
     p_gate.add_argument("--draft", required=True, help="path to draft.yaml")
     p_gate.add_argument("--approved", action="store_true")
-    p_gate.add_argument("--inbound", help="path to inbound.yaml this draft answers; amounts in it count as traced")
+    p_gate.add_argument("--inbound", help="path to inbound.yaml this draft answers; {quote:n} placeholders, the offer period and accept checks read it")
     p_gate.set_defaults(fn=cmd_gate)
 
     p_score = sub.add_parser("score", help="score an inbound message")
@@ -140,6 +146,8 @@ def main(argv):
         code, out = args.fn(args)
     except (BtError, OSError, ValueError) as e:
         code, out = 2, {"error": str(e)}
+    except Exception as e:  # never a traceback; JSON or nothing
+        code, out = 2, {"error": f"unexpected {type(e).__name__}: {e}"}
     print(json.dumps(out, default=str))
     return code
 

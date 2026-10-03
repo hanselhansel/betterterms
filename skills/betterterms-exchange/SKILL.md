@@ -24,11 +24,18 @@ The full turn procedure is in `references/turn-procedure.md`. Follow it.
 
 ## Outputs
 
-- `inbound.yaml` in the case folder: `{offer, text}` for this turn, where
-  `offer` is a number or null.
-- `draft.yaml`: `{action, offer, text, claims}`, where `action` is one of
-  `send`, `accept`, `cancel`, `pay`, `sign`, `dispute` and `claims` lists
-  fact ids from `plan.yaml`.
+- `inbound.yaml` in the case folder: `{offer, period, text, amounts}`
+  for this turn. `offer` is a number or null; `period` is `once`,
+  `month`, or `year`, the period the counterparty's offer is per;
+  `amounts` is the ordered list of every number the counterparty
+  stated, so `{quote:n}` placeholders can reference them.
+- `draft.yaml`: `{action, offer, period, template, claims}`. `action`
+  is one of `send`, `accept`, `cancel`, `pay`, `sign`, `dispute`;
+  `offer` is a plain number or null (never a string like "$1,250");
+  `period` is `once`, `month`, or `year`; `template` is the message
+  text with placeholders, never a bare price; `claims` lists fact ids
+  from `plan.yaml`. The sent text is the `rendered` value the gate
+  returns, verbatim.
 - One appended entry per message in `thread.md`, stamped `in` or `out`
   with ISO time and `approved_by_user: yes|no`.
 
@@ -40,26 +47,44 @@ or ask for their offer when it is not. Then gate, send, and log as below.
 
 ## One turn
 
-1. Write `inbound.yaml` with the counterparty's offer and text.
+1. Write `inbound.yaml` with the counterparty's offer, the period it
+   is per (`once`, `month`, or `year`), and the text.
 2. Score it:
 
    `python3 ../betterterms-guardrails/scripts/bt.py score <case_id> --inbound <path>/inbound.yaml`
 
-   Read the band and the escalate list.
+   Read the band and the escalate list:
+
+   - `unknown`, `near_floor`, `below_floor`: escalate to the user.
+   - `at_or_above_target`: ask the user to approve acceptance.
+   - `in_band`: negotiate per the plan.
 3. Verify new claims in the message ("lowest price", "expires today",
    rival quotes) against the fact list or a fresh source check.
-4. Pick one move per the turn procedure. Draft `draft.yaml`. Every id in
-   `claims` must exist in `plan.yaml` facts.
+4. Pick one move per the turn procedure. Draft `draft.yaml`. Every id
+   in `claims` must exist in `plan.yaml` facts. Write money only
+   through placeholders: `{offer}` for your offer with its period,
+   `{target}`, `{option:<label>}`, `{ladder:<n>}` for plan values,
+   `{fact:<id>}` for a fact's text (this claims the id too), and
+   `{quote:<n>}` for the n-th amount in inbound `amounts`. Never type a
+   price into the template directly.
 5. Gate it. When this turn answers an inbound message, pass it so
-   amounts the counterparty itself stated count as traced:
+   `{quote:n}` placeholders resolve:
 
    `python3 ../betterterms-guardrails/scripts/bt.py gate <case_id> --draft <path>/draft.yaml --inbound <path>/inbound.yaml`
 
-   - Exit 0, `pass`: send per the autonomy level.
-   - Exit 3, `needs_approval`: ask the user for an explicit yes, then
-     re-run with `--approved`.
-   - Exit 1, `block`: redraft once without the blocked content and
-     re-gate. A second block means escalate to the user.
+   - Exit 0, `pass`: send the `rendered` text verbatim per the autonomy
+     level.
+   - Exit 3, `needs_approval`: the action is irreversible, or coach
+     mode, autonomy 1, or the review scan flagged the rendered text.
+     Show the user the `rendered` text and reasons, ask for an explicit
+     yes, then re-run with `--approved`. `--approved` is honest only
+     after that yes, and the yes gets quoted in `thread.md`.
+   - Exit 1, `block`: when the reason is "outside your limits; escalate
+     to the user", escalate to the user and do not redraft toward a
+     guessed limit. On any other block, redraft once without the blocked
+     content and re-gate. A second block means escalate to the user.
+     The gate may be probed by repeated calls, so this redraft-once
+     then-escalate rule is the cap on gate calls per turn.
    - Exit 2: usage or file error. Fix the call.
 6. Send per autonomy: level 1 hands the draft to the user; level 2 asks
    yes before each send; levels 3 and 4 send inside the approved plan.
