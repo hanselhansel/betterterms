@@ -1,5 +1,6 @@
 """Skill folder and SKILL.md frontmatter rules."""
 
+import os
 import re
 
 from . import frontmatter
@@ -73,10 +74,14 @@ def check_skill_names(root):
             or not name.startswith("betterterms-")
         ):
             problems.append(f"skills/{name}: folder must be betterterms-[a-z0-9-]")
-        skill_md = root / "skills" / name / "SKILL.md"
-        if not skill_md.is_file():
+        # Exact-case check via os.listdir: 'skill.md' must not satisfy
+        # the requirement on case-insensitive filesystems, where
+        # is_file() would wrongly find it.
+        skill_dir = root / "skills" / name
+        if "SKILL.md" not in os.listdir(skill_dir):
             problems.append(f"skills/{name}: missing SKILL.md")
             continue
+        skill_md = skill_dir / "SKILL.md"
         try:
             fm, body = frontmatter.parse(skill_md)
         except Exception as e:

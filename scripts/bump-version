@@ -3,9 +3,10 @@
 
 Usage: bump-version --check | <new-version>
   --check        verify every generated manifest's version equals VERSION
-  <new-version>  X.Y.Z; computes all build outputs first, then writes
-                 VERSION and every generated file; on any write failure
-                 every touched file is restored to its prior bytes
+  <new-version>  X.Y.Z; computes all build outputs with the new
+                 version first, then writes VERSION and every generated
+                 file; on any write failure every touched file is
+                 restored to its prior bytes
 """
 
 import importlib.machinery
@@ -40,7 +41,7 @@ def check():
         print(f"VERSION {version!r} is not X.Y.Z semver", file=sys.stderr)
         return 2
     problems = []
-    for rel in sorted(_build_module().expected(ROOT)):
+    for rel in sorted(_build_module().expected(ROOT, version)):
         path = ROOT / rel
         if not path.is_file():
             continue  # unbuilt manifests are build-fresh's problem
@@ -64,8 +65,9 @@ def bump(new):
     if not SEMVER.fullmatch(new):
         print(f"bad version {new!r}; expected X.Y.Z", file=sys.stderr)
         return 2
-    # Compute every build output before touching the tree.
-    files = _build_module().expected(ROOT)
+    # Compute every build output with the new version before touching
+    # the tree.
+    files = _build_module().expected(ROOT, new)
     version_file = ROOT / "VERSION"
     touched = {}
     for path in (version_file, *(ROOT / rel for rel in files)):

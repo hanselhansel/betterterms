@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """Regenerate host manifests from kit.config.json + VERSION.
 
-Each generator in GENERATORS is a callable ``gen(root) -> {relpath:
-content}`` producing repo-relative files (`.claude-plugin/plugin.json`,
-`plugin.json`, `gemini-extension.json`, `commands/*.md`, ...). When
-GENERATORS is empty, build is a no-op and --check passes.
+Each generator in GENERATORS is a callable ``gen(root, version) ->
+{relpath: content}`` producing repo-relative files
+(`.claude-plugin/plugin.json`, `plugin.json`, `gemini-extension.json`,
+`commands/*.md`, ...). build passes the VERSION file's version;
+bump-version passes the version being bumped to. When GENERATORS is
+empty, build is a no-op and --check passes.
 
 Build never deletes files: it writes generated files, and --check only
 compares each generated file's expected content with disk. Generated
@@ -37,11 +39,16 @@ def _check_relpath(rel):
         raise ValueError(f"bad generated path {rel!r}")
 
 
-def expected(root):
-    """Return {relpath: content} for every registered generator."""
+def expected(root, version=None):
+    """Return {relpath: content} for every registered generator.
+
+    Generators are called as gen(root, version); a None version is
+    read from root/VERSION."""
+    if version is None and GENERATORS:
+        version = (root / "VERSION").read_text(encoding="utf-8").strip()
     out = {}
     for gen in GENERATORS:
-        for rel, content in gen(root).items():
+        for rel, content in gen(root, version).items():
             _check_relpath(rel)
             if rel in out:
                 raise ValueError(f"two generators produce {rel}")

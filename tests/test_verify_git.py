@@ -136,6 +136,21 @@ class GitModeTest(unittest.TestCase):
         self.assertEqual(out, [])
         self.assertTrue(any("undecodable filename" in b and "bad-" in b for b in bad))
 
+    @unittest.skipIf(os.name == "nt", "needs POSIX symlinks")
+    def test_tracked_symlinks_checked_not_followed(self):
+        # git ls-files reports symlinks; they are checked by link
+        # target, never followed into their contents.
+        (self.root / "abs.txt").symlink_to(MAC_HOME)
+        (self.root / "rel.txt").symlink_to(".." + "/" + "Users/x")
+        (self.root / "dangling.txt").symlink_to("no-such-target")
+        (self.root / "good_link.txt").symlink_to("VERSION")
+        proc = run_verify(self.root)
+        assert_failed(self, proc, "no-local-paths")
+        self.assertIn("abs.txt: symlink to absolute path", proc.stdout)
+        self.assertIn("rel.txt: symlink to local path", proc.stdout)
+        self.assertIn("dangling.txt: dangling symlink", proc.stdout)
+        self.assertNotIn("good_link.txt", proc.stdout)
+
     def test_git_file_list_computed_once_per_run(self):
         calls = []
         real = checks_scan.git_relpaths

@@ -32,7 +32,8 @@ class VerifyToolChecksTest(unittest.TestCase):
         build.write_text(
             build.read_text().replace(
                 "GENERATORS = []",
-                "GENERATORS = [lambda root: {'stale.txt': 'expected\\n'}]",
+                "GENERATORS = "
+                "[lambda root, version: {'stale.txt': 'expected\\n'}]",
                 1,
             )
         )

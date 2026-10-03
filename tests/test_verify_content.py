@@ -13,9 +13,11 @@ from test_verify import (
     UNIX_HOME,
     WIN_HOME_FWD,
     VerifyRepoCase,
+    checks_scan,
     make_repo_root,
     run_verify,
 )
+from _lib import checks_files
 
 
 class VerifyContentTest(VerifyRepoCase):
@@ -212,6 +214,77 @@ class VerifyContentTest(VerifyRepoCase):
                 proc = run_verify(self.root)
                 self.assert_failed(proc, "prose-rules")
                 self.assertIn("em dash", proc.stdout)
+
+    def test_text_suffixes_cover_every_scanned_suffix(self):
+        # .sh and .ts are text names: NUL bytes inside them FAIL as
+        # binary-in-text instead of being skipped like real binaries.
+        (self.root / "s.sh").write_bytes(b"echo \x00\n")
+        (self.root / "t.ts").write_bytes(b"let x\x00\n")
+        proc = run_verify(self.root)
+        self.assert_failed(proc, "no-local-paths")
+        self.assertIn("s.sh: binary content in a text file", proc.stdout)
+        self.assertIn("t.ts: binary content in a text file", proc.stdout)
+        # And TEXT_SUFFIXES derives from the suffix sets the checks
+        # scan, so a suffix added to a check cannot drift out of it.
+        self.assertTrue(checks_files.SOURCE_SUFFIXES <= checks_scan.TEXT_SUFFIXES)
+        self.assertTrue(checks_files.DATA_SUFFIXES <= checks_scan.TEXT_SUFFIXES)
+        self.assertIn(".md", checks_scan.TEXT_SUFFIXES)
+
+    def test_colon_left_edge_flags_home_paths_except_url_schemes(self):
+        # ':' counts as a left edge (PATH entries, host:container
+        # mounts) unless it ends an http:, https: or file: scheme.
+        (self.root / "p.txt").write_text("PATH=/bin:" + UNIX_HOME + "\n")
+        (self.root / "c.txt").write_text(
+            "docker -v /img:" + "/" + "root/app\n"
+        )
+        (self.root / "s.txt").write_text("PATH=$PATH:" + MAC_HOME + "/bin\n")
+        proc = run_verify(self.root)
+        self.assert_failed(proc, "no-local-paths")
+        for rel in ("p.txt:1", "c.txt:1", "s.txt:1"):
+            self.assertIn(rel, proc.stdout)
+        for rel in ("p.txt", "c.txt", "s.txt"):
+            (self.root / rel).unlink()
+        (self.root / "u.txt").write_text(
+            "see http:/"
+            + "home/x then https:/"
+            + "Users/x and file:/"
+            + "root/x\n"
+        )
+        proc = run_verify(self.root)
+        self.assertNotIn("FAIL no-local-paths", proc.stdout)
+
+    def test_dash_v_and_file_uri_edges_for_unix_homes(self):
+        # /home and /root take the same left edges as /Users: '-v'
+        # mounts, '=' and file:/// URIs all count.
+        (self.root / "v.txt").write_text(
+            "docker run -v"
+            + "/"
+            + "home/u/data -v"
+            + "/"
+            + "root/d -v"
+            + "/"
+            + "home/v:/z img\n"
+        )
+        (self.root / "e.txt").write_text("ROOTFS=" + "/" + "root/app\n")
+        (self.root / "f.txt").write_text(
+            "uri " + "file://" + "/" + "root/app\n"
+        )
+        proc = run_verify(self.root)
+        self.assert_failed(proc, "no-local-paths")
+        for rel in ("v.txt:1", "e.txt:1", "f.txt:1"):
+            self.assertIn(rel, proc.stdout)
+
+    def test_skill_md_must_be_exact_case(self):
+        # 'skill.md' does not satisfy the SKILL.md requirement, even on
+        # case-insensitive filesystems where is_file() would find it.
+        d = self.root / "skills" / "betterterms-x"
+        d.mkdir(parents=True)
+        (d / "skill.md").write_text(
+            "---\nname: betterterms-x\ndescription: Does a thing.\n---\nbody\n"
+        )
+        proc = run_verify(self.root)
+        self.assert_failed(proc, "skill-names")
+        self.assertIn("missing SKILL.md", proc.stdout)
 
     def test_optional_frontmatter_field_types(self):
         # Valid optional fields pass.

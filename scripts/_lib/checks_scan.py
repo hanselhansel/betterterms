@@ -51,10 +51,20 @@ _UTF_BOMS = (
     codecs.BOM_UTF16_BE,
 )
 
-# Suffixes that name a file as text; an extensionless entry point under
-# scripts/ counts too. Binary bytes inside a text-named file are an
-# error, not a skippable binary.
-TEXT_SUFFIXES = {".md", ".py", ".js", ".json", ".yaml", ".yml", ".txt", ".toml"}
+# Suffixes measured against the file-size line cap; extensionless
+# files under scripts/ count too.
+SOURCE_SUFFIXES = {".py", ".js", ".ts", ".sh"}
+
+# Suffixes whose decoded JSON/YAML string values the content checks
+# scan in addition to the raw lines.
+DATA_SUFFIXES = {".json", ".yaml", ".yml"}
+
+# Suffixes that name a file as text: every suffix the file-size or a
+# content check scans, plus prose markdown and plain-text config
+# names; an extensionless entry point under scripts/ counts too.
+# Binary bytes inside a text-named file are an error, not a skippable
+# binary.
+TEXT_SUFFIXES = SOURCE_SUFFIXES | DATA_SUFFIXES | {".md", ".txt", ".toml"}
 
 
 class BinaryFileError(Exception):
@@ -104,11 +114,13 @@ def file_list(root):
     Callers clear the cache with file_list.cache_clear()."""
     rels = git_relpaths(root)
     if rels is not None:
+        # Tracked symlinks stay in the list even when their target is
+        # missing or not a file: no-local-paths checks the link itself.
         return [
             root / rel
             for rel in rels
             if rel
-            and (root / rel).is_file()
+            and ((root / rel).is_file() or (root / rel).is_symlink())
             and not _skipped(Path(rel).parts[:-1])
         ]
     files = []
@@ -179,6 +191,8 @@ def texts(root, bad, skip):
             continue
         if skip(rel):
             continue
+        if p.is_symlink():
+            continue  # checked by link target, never followed
         try:
             text = read_text(p, rel)
         except OSError as e:

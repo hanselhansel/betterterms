@@ -62,7 +62,11 @@ class BumpVersionTest(unittest.TestCase):
         """Swap the build-module loader so bump sees canned outputs (or
         a generator failure) without a subprocess."""
         fake = types.SimpleNamespace(
-            expected=lambda root: files if exc is None else _raise(exc)
+            expected=(
+                lambda root, version=None: files
+                if exc is None
+                else _raise(exc)
+            )
         )
         real = self.bump._build_module
         self.bump._build_module = lambda: fake
@@ -117,14 +121,43 @@ class BumpVersionTest(unittest.TestCase):
         # be restored (old bytes back, new files removed).
         (self.root / "a.txt").write_text("old a\n")
         (self.root / "zz").write_text("not a dir\n")
+        version_before = (self.root / "VERSION").read_bytes()
         self.stub_build_outputs(
             {"a.txt": "new a\n", "b.txt": "new b\n", "zz/x.txt": "x\n"}
         )
         proc = call(self.bump, ["1.2.3"])
         self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
-        self.assertEqual((self.root / "VERSION").read_text(), "0.1.0\n")
+        self.assertEqual((self.root / "VERSION").read_bytes(), version_before)
         self.assertEqual((self.root / "a.txt").read_text(), "old a\n")
         self.assertFalse((self.root / "b.txt").exists())
+
+    def test_bump_stamps_new_version_into_generated_outputs(self):
+        # Generators get the version explicitly: outputs computed for a
+        # bump carry the NEW version even though VERSION on disk still
+        # holds the old one while they are computed.
+        build = self.root / "scripts" / "build"
+        build.write_text(
+            build.read_text().replace(
+                "GENERATORS = []",
+                "GENERATORS = [lambda root, version: {\n"
+                "    'gen/version.txt': 'version ' + version + '\\n',\n"
+                "    'gen/manifest.json': "
+                "'{\"version\": \"' + version + '\"}',\n"
+                "}]",
+                1,
+            )
+        )
+        proc = call(self.bump, ["0.2.0"])
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertEqual(
+            (self.root / "gen" / "version.txt").read_text(),
+            "version 0.2.0\n",
+        )
+        self.assertEqual(
+            call(self.bump, ["--check"]).returncode, 0
+        )
+        build_mod = load_script(self.root, "build", "bt_build_embedded")
+        self.assertEqual(build_mod.main(["--check"]), 0)
 
     def test_bump_restores_missing_version_on_write_failure(self):
         (self.root / "VERSION").unlink()
@@ -200,7 +233,7 @@ class BumpVersionTest(unittest.TestCase):
         build.write_text(
             build.read_text().replace(
                 "GENERATORS = []",
-                "GENERATORS = [lambda root: {\n"
+                "GENERATORS = [lambda root, version: {\n"
                 "    'plugin.json': '{\"version\": \"9.9.9\"}',\n"
                 "    'unbuilt.json': '{\"version\": \"0.0.0\"}',\n"
                 "    'notes.md': 'version: 0.0.0',\n"
@@ -232,7 +265,9 @@ class BuildManifestTest(unittest.TestCase):
         self.build = load_script(self.root, "build", "bt_build_under_test")
 
     def test_build_writes_files_and_never_deletes(self):
-        self.build.GENERATORS = [lambda root: {"gen/out.txt": "v1\n"}]
+        self.build.GENERATORS = [
+            lambda root, version: {"gen/out.txt": "v1\n"}
+        ]
         self.assertEqual(self.build.main([]), 0)
         self.assertEqual((self.root / "gen" / "out.txt").read_text(), "v1\n")
         self.assertFalse((self.root / ".generated-files").exists())
@@ -240,14 +275,16 @@ class BuildManifestTest(unittest.TestCase):
 
         # A path dropped from the generators is left on disk: build never
         # deletes files.
-        self.build.GENERATORS = [lambda root: {"gen/other.txt": "v2\n"}]
+        self.build.GENERATORS = [
+            lambda root, version: {"gen/other.txt": "v2\n"}
+        ]
         self.assertEqual(self.build.main([]), 0)
         self.assertTrue((self.root / "gen" / "out.txt").is_file())
         self.assertEqual((self.root / "gen" / "other.txt").read_text(), "v2\n")
         self.assertEqual(self.build.main(["--check"]), 0)
 
     def test_check_fails_on_drift_and_missing_output(self):
-        self.build.GENERATORS = [lambda root: {"g.txt": "v1"}]
+        self.build.GENERATORS = [lambda root, version: {"g.txt": "v1"}]
         self.assertEqual(self.build.main(["--check"]), 1)
         self.build.main([])
         (self.root / "g.txt").write_text("tampered")
@@ -259,7 +296,9 @@ class BuildManifestTest(unittest.TestCase):
     def test_bad_generated_paths_raise(self):
         for rel in ("../x", "/abs", ".git/HEAD"):
             with self.subTest(rel=rel):
-                self.build.GENERATORS = [lambda root, rel=rel: {rel: "x\n"}]
+                self.build.GENERATORS = [
+                    lambda root, version, rel=rel: {rel: "x\n"}
+                ]
                 with self.assertRaises(ValueError):
                     call(self.build, [])
                 with self.assertRaises(ValueError):
@@ -267,15 +306,15 @@ class BuildManifestTest(unittest.TestCase):
                 self.assertFalse((self.root / ".generated-files").exists())
 
     def test_bad_arg_exits_2_and_duplicate_relpath_raises(self):
-        self.build.GENERATORS = [lambda root: {"g.txt": "v1\n"}]
+        self.build.GENERATORS = [lambda root, version: {"g.txt": "v1\n"}]
         proc = call(self.build, ["--bogus"])
         self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
         self.assertIn("Usage", proc.stderr)
         self.assertEqual(call(self.build, ["--check", "extra"]).returncode, 2)
         self.assertFalse((self.root / "g.txt").exists())
         self.build.GENERATORS = [
-            lambda root: {"g.txt": "a\n"},
-            lambda root: {"g.txt": "b\n"},
+            lambda root, version: {"g.txt": "a\n"},
+            lambda root, version: {"g.txt": "b\n"},
         ]
         with self.assertRaises(ValueError) as cm:
             call(self.build, [])

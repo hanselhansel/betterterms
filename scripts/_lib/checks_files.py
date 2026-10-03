@@ -5,10 +5,13 @@ file-size measures source files: every scanned file whose suffix is
 """
 
 import json
+import os
 import re
 
 from . import miniyaml
 from .checks_scan import (
+    DATA_SUFFIXES,
+    SOURCE_SUFFIXES,
     file_list,
     is_internal_doc,
     is_vendor,
@@ -19,27 +22,23 @@ from .checks_scan import (
 
 MAX_SOURCE_LINES = 400
 
-# Written so these lines cannot match themselves. POSIX home paths need
-# a non-URL left edge unless they follow the file: scheme or a '-v'/'='
-# mount-style flag; /home/<x> counts at whitespace or end of line too,
-# and the root home counts like the user homes. Windows home paths
-# match either slash direction, any case.
+# Written so these lines cannot match themselves. POSIX home paths
+# match after '-v', after '=', after ':' (unless that colon ends an
+# http:, https: or file: scheme, so URLs do not count while PATH
+# entries and host:container mounts do), and after any other char
+# that is not '/', a word char or ':'. file:/// URIs count for the
+# user and root homes; /home/<x> needs a name ended by '/', whitespace,
+# ':' or end of line, and the root home counts like the user homes.
+# Windows home
+# paths match either slash direction, any case, with the drive letter
+# not preceded by another letter (a URL scheme tail cannot reach it).
 LOCAL_PATH = re.compile(
-    r"(?<![/\w:])(?:/root/|/home/[\w.-]+(?=[/\s]|$))"
-    r"|(?:(?<=-v)|(?<![/\w:]))(?:/Users/)"
-    r"|file:///(?:Users|home)/"
+    r"(?:(?<=-v)|(?<![/\w:])|(?<=:)(?<!http:)(?<!https:)(?<!file:))"
+    r"(?:/(?:root|Users)/|/home/[\w.-]+(?=[/\s:]|$))"
+    r"|file:///(?:Users|home|root)/"
     r"|~/[A-Za-z0-9_]"
-    r"|(?i:[A-Za-z]:[/\\]Users[/\\])"
+    r"|(?<![A-Za-z])(?i:[A-Za-z]:[/\\]Users[/\\])"
 )
-
-# Suffixes whose decoded string values get the same local-path scan, so
-# a JSON-escaped Windows home still counts.
-DATA_SUFFIXES = {".json", ".yaml", ".yml"}
-
-# Suffixes measured against MAX_SOURCE_LINES; extensionless files under
-# scripts/ count too.
-SOURCE_SUFFIXES = {".py", ".js", ".ts", ".sh"}
-
 
 def check_no_bin(root):
     if (root / "bin").exists():
@@ -79,6 +78,16 @@ def check_no_local_paths(root):
             LOCAL_PATH.search(s) for s in _decoded_strings(rel, text)
         ):
             bad.append(f"{rel}: string value")
+    for p in file_list(root):
+        rel = p.relative_to(root)
+        if p.is_symlink() and not skip(rel):
+            target = os.readlink(p)
+            if os.path.isabs(target):
+                bad.append(f"{rel}: symlink to absolute path {target!r}")
+            elif LOCAL_PATH.search(target):
+                bad.append(f"{rel}: symlink to local path {target!r}")
+            elif not p.exists():
+                bad.append(f"{rel}: dangling symlink {target!r}")
     return ("FAIL", join(bad)) if bad else ("PASS", "")
 
 
