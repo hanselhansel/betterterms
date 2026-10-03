@@ -93,7 +93,6 @@ def check_skill_names(root):
     if not skills.is_dir():
         return "SKIP", "no skills/ directory"
     problems = []
-    notes = []
     for folder in sorted(skills.iterdir()):
         if not folder.is_dir():
             continue
@@ -102,10 +101,7 @@ def check_skill_names(root):
             problems.append(f"skills/{name}: folder must be betterterms-[a-z0-9-]")
         skill_md = folder / "SKILL.md"
         if not skill_md.is_file():
-            # A folder may land before its SKILL.md (parallel lanes).
-            # Packaging checks in later steps catch a permanently absent
-            # SKILL.md; report it as a note, not a failure.
-            notes.append(f"skills/{name} has no SKILL.md yet")
+            problems.append(f"skills/{name}: missing SKILL.md")
             continue
         try:
             fm, body = frontmatter.parse(skill_md)
@@ -122,9 +118,7 @@ def check_skill_names(root):
         body_lines = len(body.splitlines())
         if body_lines > MAX_SKILL_BODY_LINES:
             problems.append(f"skills/{name}: body {body_lines} lines > {MAX_SKILL_BODY_LINES}")
-    if problems:
-        return "FAIL", _join(problems)
-    return "PASS", _join(notes)
+    return ("FAIL", _join(problems)) if problems else ("PASS", "")
 
 
 def check_no_bin(root):
