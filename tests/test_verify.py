@@ -77,12 +77,12 @@ class VerifyRepoCase(unittest.TestCase):
 
     def add_skill(self, folder="betterterms-x", name="betterterms-x", extra_body=""):
         d = self.root / "skills" / folder
-        d.mkdir(parents=True)
+        d.mkdir(parents=True, exist_ok=True)
         (d / "SKILL.md").write_text(SKILL.format(name=name) + extra_body)
 
     def write_skill(self, text):
         d = self.root / "skills" / "betterterms-x"
-        d.mkdir(parents=True)
+        d.mkdir(parents=True, exist_ok=True)
         (d / "SKILL.md").write_text(text)
 
     def assert_failed(self, proc, check):
@@ -338,7 +338,10 @@ class VerifyCheckTest(VerifyRepoCase):
                 "missing SKILL.md",
                 "skill-names",
                 "missing SKILL.md",
-                lambda: (self.root / "skills" / "betterterms-x").mkdir(parents=True),
+                lambda: (
+                    (self.root / "skills" / "betterterms-x").mkdir(parents=True),
+                    (self.root / "skills" / "betterterms-x" / "note.txt").write_text("x\n"),
+                ),
             ),
             (
                 "missing description",

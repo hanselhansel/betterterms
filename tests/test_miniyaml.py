@@ -78,6 +78,28 @@ class LoadTest(unittest.TestCase):
             miniyaml.load(42)
         self.assertIsNone(cm.exception.line)
 
+    def test_constructor_value_error_becomes_error_with_line(self):
+        # '2026-02-30' parses as a timestamp node, then datetime.date
+        # raises ValueError during construction: Error must carry the
+        # offending scalar's line.
+        with self.assertRaises(miniyaml.Error) as cm:
+            miniyaml.load("a: 1\nd: 2026-02-30\n")
+        self.assertEqual(cm.exception.line, 2)
+        self.assertIn("out of range", str(cm.exception))
+        with self.assertRaises(miniyaml.Error) as cm:
+            miniyaml.load("- 2026-02-30\n")
+        self.assertEqual(cm.exception.line, 1)
+
+    def test_bad_or_unknown_tag_values_become_error_with_line(self):
+        # '!!bool maybe' hits a KeyError in the bool constructor; an
+        # unknown tag hits ConstructorError. Both surface as Error with
+        # the node's line, never as a bare KeyError/YAMLError.
+        for text in ("x: !!bool maybe\n", "x: !!nosuchtag y\n"):
+            with self.subTest(text=text):
+                with self.assertRaises(miniyaml.Error) as cm:
+                    miniyaml.load(text)
+                self.assertEqual(cm.exception.line, 1)
+
     # Value: protects=a duplicate mapping key raises naming its line instead of
     # silently overwriting plan data; fails_when=the duplicate-key guard in
     # _Loader.construct_mapping is removed; seam=none

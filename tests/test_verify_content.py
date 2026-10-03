@@ -1,6 +1,7 @@
 """Content-scanning verify checks: local-path patterns, UTF-8 decoding,
 vendor roots, evals holdout and vendor-sync drift."""
 
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -26,6 +27,42 @@ class VerifyContentTest(VerifyRepoCase):
         self.assertIn("f.txt:1", proc.stdout)
         self.assertIn("h.txt:1", proc.stdout)
         self.assertIn("w.txt:1", proc.stdout)
+
+    def test_local_paths_in_decoded_json_and_yaml_values_fail(self):
+        # Raw text keeps escapes; only the decoded value shows the path.
+        (self.root / "c.json").write_text(
+            '{"p": "C:\\\\Users\\\\alice\\\\repo"}\n'
+        )
+        (self.root / "d.yaml").write_text('p: "C:\\\\Users\\\\bob"\n')
+        proc = run_verify(self.root)
+        self.assert_failed(proc, "no-local-paths")
+        self.assertIn("c.json: string value", proc.stdout)
+        self.assertIn("d.yaml: string value", proc.stdout)
+
+    def test_mount_flag_equals_and_root_paths_fail(self):
+        root_home = "/" + "root/app/out.log"  # built so this file passes
+        (self.root / "m.txt").write_text(
+            "docker run -v" + MAC_HOME + ":/x img\n"
+        )
+        (self.root / "e.txt").write_text("HOME=" + MAC_HOME + "\n")
+        (self.root / "r.txt").write_text("log: " + root_home + "\n")
+        (self.root / "w.txt").write_text("see " + UNIX_HOME[:-5] + " notes\n")
+        proc = run_verify(self.root)
+        self.assert_failed(proc, "no-local-paths")
+        for rel in ("m.txt:1", "e.txt:1", "r.txt:1", "w.txt:1"):
+            self.assertIn(rel, proc.stdout)
+
+    @unittest.skipIf(
+        os.name == "nt" or os.geteuid() == 0, "needs a non-root POSIX user"
+    )
+    def test_unreadable_file_fails_naming_path(self):
+        p = self.root / "locked.txt"
+        p.write_text("x\n")
+        p.chmod(0)
+        self.addCleanup(p.chmod, 0o644)
+        proc = run_verify(self.root)
+        self.assert_failed(proc, "no-local-paths")
+        self.assertIn("locked.txt: cannot read", proc.stdout)
 
     def test_non_utf8_text_file_fails_but_binary_skipped(self):
         (self.root / "img.bin").write_bytes(b"\x89PNG\x00\x0d\x0a\x1a\x0a")
@@ -104,9 +141,14 @@ class VerifyContentTest(VerifyRepoCase):
         (self.root / "bom.yaml").unlink()
         (self.root / "scripts" / "tool").unlink()
         (self.root / "raw.bin").write_bytes(b"\x00\x01\x02")
-        (self.root / "blob.bin").write_bytes(b"\xff\xfe\x00\x00rest")
         proc = run_verify(self.root)
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        # But a UTF-16/32 BOM FAILs as not UTF-8 under ANY suffix: such
+        # content can never be valid UTF-8.
+        (self.root / "blob.bin").write_bytes(b"\xff\xfe\x00\x00rest")
+        proc = run_verify(self.root)
+        self.assert_failed(proc, "no-local-paths")
+        self.assertIn("blob.bin: not valid UTF-8", proc.stdout)
 
     def test_vendor_sync_ignores_junk_and_names_first_drift(self):
         # A NON-empty vendored tree: two small files mirrored both ways.
@@ -131,6 +173,72 @@ class VerifyContentTest(VerifyRepoCase):
         proc = run_verify(self.root)
         self.assert_failed(proc, "vendor-sync")
         self.assertIn("b.py", proc.stdout)
+
+    @unittest.skipIf(os.name == "nt", "needs POSIX symlinks")
+    def test_vendor_sync_fails_on_symlinked_directory(self):
+        # A symlinked dir is never followed (its contents could drift
+        # invisibly); it FAILs the check by name instead.
+        btlib = self.root / "skills/betterterms-guardrails/scripts/btlib"
+        canon = self.root / "scripts/_lib"
+        for base in (btlib / "_vendor" / "yaml", canon / "_vendor" / "yaml"):
+            base.mkdir(parents=True)
+            (base / "a.py").write_text("A\n")
+        (btlib / "yaml.py").write_text("same\n")
+        (canon / "miniyaml.py").write_text("same\n")
+        target = canon / "_vendor" / "yaml"
+        (btlib / "_vendor" / "yaml" / "linked").symlink_to(target)
+        proc = run_verify(self.root)
+        self.assert_failed(proc, "vendor-sync")
+        self.assertIn("symlinked directory", proc.stdout)
+        self.assertIn("linked", proc.stdout)
+
+    def test_em_dash_entities_in_shipped_markdown_fail(self):
+        for ent in ("&mdash;", "&#8212;"):
+            with self.subTest(entity=ent):
+                self.add_skill(extra_body=f"offer one {ent} offer two\n")
+                proc = run_verify(self.root)
+                self.assert_failed(proc, "prose-rules")
+                self.assertIn("em dash", proc.stdout)
+
+    def test_optional_frontmatter_field_types(self):
+        # Valid optional fields pass.
+        self.write_skill(
+            "---\n"
+            "name: betterterms-x\n"
+            "description: Does a thing.\n"
+            "license: MIT\n"
+            "compatibility: needs git\n"
+            "metadata:\n  author: someone\n  version: '1'\n"
+            "allowed-tools: [Read, Bash]\n"
+            "---\nbody\n"
+        )
+        proc = run_verify(self.root)
+        self.assertNotIn("FAIL skill-names", proc.stdout)
+        # And the string form of allowed-tools is fine too.
+        self.write_skill(
+            "---\nname: betterterms-x\ndescription: Does a thing.\n"
+            "allowed-tools: Read\n---\nbody\n"
+        )
+        self.assertNotIn("FAIL skill-names", run_verify(self.root).stdout)
+
+        cases = [
+            ("license: 2026\n", "license must be a string"),
+            ("compatibility: 5\n", "compatibility must be a string"),
+            ("compatibility: " + "x" * 501 + "\n", "<= 500 chars"),
+            ("metadata: [a, b]\n", "metadata must map strings to strings"),
+            ("metadata:\n  author: 7\n", "metadata must map strings to strings"),
+            ("allowed-tools: [Read, 7]\n", "allowed-tools must be a string or list"),
+            ("allowed-tools:\n  x: y\n", "allowed-tools must be a string or list"),
+        ]
+        for extra, message in cases:
+            with self.subTest(extra=extra):
+                self.write_skill(
+                    "---\nname: betterterms-x\ndescription: Does a thing.\n"
+                    + extra + "---\nbody\n"
+                )
+                proc = run_verify(self.root)
+                self.assert_failed(proc, "skill-names")
+                self.assertIn(message, proc.stdout)
 
 
 if __name__ == "__main__":

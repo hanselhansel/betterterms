@@ -3,14 +3,15 @@
 
 Usage: bump-version --check | <new-version>
   --check        verify every generated manifest's version equals VERSION
-  <new-version>  X.Y.Z; writes VERSION, then reruns scripts/build
+  <new-version>  X.Y.Z; computes all build outputs first, then writes
+                 VERSION and every generated file; on any write failure
+                 every touched file is restored to its prior bytes
 """
 
 import importlib.machinery
 import importlib.util
 import json
 import re
-import subprocess
 import sys
 from pathlib import Path
 
@@ -34,7 +35,7 @@ def check():
     if not version_file.is_file():
         print("VERSION file missing", file=sys.stderr)
         return 2
-    version = version_file.read_text().strip()
+    version = version_file.read_text(encoding="utf-8").strip()
     if not SEMVER.fullmatch(version):
         print(f"VERSION {version!r} is not X.Y.Z semver", file=sys.stderr)
         return 2
@@ -44,7 +45,7 @@ def check():
         if not path.is_file():
             continue  # unbuilt manifests are build-fresh's problem
         try:
-            data = json.loads(path.read_text())
+            data = json.loads(path.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, UnicodeDecodeError):
             continue  # non-JSON generated files carry no version field
         if isinstance(data, dict) and "version" in data and str(data["version"]) != version:
@@ -63,20 +64,28 @@ def bump(new):
     if not SEMVER.fullmatch(new):
         print(f"bad version {new!r}; expected X.Y.Z", file=sys.stderr)
         return 2
+    # Compute every build output before touching the tree.
+    files = _build_module().expected(ROOT)
     version_file = ROOT / "VERSION"
-    old = version_file.read_text() if version_file.is_file() else None
-    version_file.write_text(new + "\n")
-    result = subprocess.run(
-        [sys.executable, str(ROOT / "scripts" / "build")], cwd=ROOT
-    )
-    if result.returncode != 0:
-        if old is None:
-            version_file.unlink(missing_ok=True)
-            print("build failed; removed VERSION (it did not exist before)", file=sys.stderr)
-        else:
-            version_file.write_text(old)
-            print(f"build failed; restored VERSION to {old.strip()!r}", file=sys.stderr)
-        return result.returncode or 1
+    touched = {}
+    for path in (version_file, *(ROOT / rel for rel in files)):
+        touched[path] = path.read_bytes() if path.is_file() else None
+    done = False
+    try:
+        version_file.write_text(new + "\n", encoding="utf-8")
+        for rel, content in sorted(files.items()):
+            path = ROOT / rel
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(content, encoding="utf-8")
+        done = True
+    finally:
+        if not done:
+            for path, old in touched.items():
+                if old is None:
+                    path.unlink(missing_ok=True)
+                else:
+                    path.write_bytes(old)
+            print("bump failed; restored every touched file", file=sys.stderr)
     print(f"VERSION set to {new}")
     return 0
 
@@ -85,7 +94,11 @@ def main(argv):
     if argv == ["--check"]:
         return check()
     if len(argv) == 1:
-        return bump(argv[0])
+        try:
+            return bump(argv[0])
+        except Exception as e:
+            print(f"bump-version: {e}", file=sys.stderr)
+            return 1
     print(__doc__.strip(), file=sys.stderr)
     return 2
 

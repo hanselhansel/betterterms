@@ -24,8 +24,17 @@ class VerifyToolChecksTest(unittest.TestCase):
     @unittest.skipIf(os.name == "nt", "fake validators are POSIX shell scripts")
     def test_failing_script_or_validator_fails_named_check(self):
         root = make_repo(Path(self.tmp.name) / "repo")
-        # build --check fails on an orphan; bump-version --check on bad semver.
-        (root / ".generated-files").write_text("stale.txt\n")
+        # build --check fails on a stale generated file; bump-version
+        # --check on bad semver.
+        build = root / "scripts" / "build"
+        build.write_text(
+            build.read_text().replace(
+                "GENERATORS = []",
+                "GENERATORS = [lambda root: {'stale.txt': 'expected\\n'}]",
+                1,
+            )
+        )
+        (root / "stale.txt").write_text("drifted\n")
         (root / "VERSION").write_text("not-semver\n")
         (root / ".claude-plugin").mkdir()
         (root / ".claude-plugin" / "plugin.json").write_text('{"name": "x"}\n')
@@ -42,7 +51,7 @@ class VerifyToolChecksTest(unittest.TestCase):
         with mock.patch.dict(os.environ, {"PATH": path}):
             proc = run_verify(root)
         assert_failed(self, proc, "build-fresh")
-        self.assertIn("stale.txt (no longer generated)", proc.stdout)
+        self.assertIn("stale.txt", proc.stdout)
         assert_failed(self, proc, "version-sync")
         self.assertIn("not X.Y.Z semver", proc.stdout)
         assert_failed(self, proc, "claude-validate")
@@ -106,6 +115,18 @@ class VerifyToolChecksTest(unittest.TestCase):
         self.assertNotIn("Makefile", proc.stdout)
         (root / "scripts" / "tool").write_text("x = 1\n" * 400)
         self.assertIn("PASS file-size", run_verify(root).stdout)
+
+    def test_file_size_counts_ts_and_sh_sources(self):
+        root = Path(self.tmp.name)
+        make_repo_root(root)
+        (root / "big.ts").write_text("x = 1\n" * 401)
+        (root / "big.sh").write_text("echo x\n" * 401)
+        (root / "big.txt").write_text("row\n" * 401)
+        proc = run_verify(root)
+        assert_failed(self, proc, "file-size")
+        self.assertIn("big.ts (401 lines > 400)", proc.stdout)
+        self.assertIn("big.sh (401 lines > 400)", proc.stdout)
+        self.assertNotIn("big.txt", proc.stdout)
 
 
 if __name__ == "__main__":

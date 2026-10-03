@@ -6,9 +6,10 @@ content}`` producing repo-relative files (`.claude-plugin/plugin.json`,
 `plugin.json`, `gemini-extension.json`, `commands/*.md`, ...). When
 GENERATORS is empty, build is a no-op and --check passes.
 
-Whenever generators produce output, build also writes `.generated-files`
-at the root listing the sorted generated relpaths; `--check` fails on
-paths a previous manifest lists that are no longer generated (orphans).
+Build never deletes files: it writes generated files, and --check only
+compares each generated file's expected content with disk. Generated
+paths must be relative, stay inside the repo and not touch `.git/`;
+anything else raises ValueError.
 
 Usage: build [--check]
   (no args)   write every generated file
@@ -16,13 +17,24 @@ Usage: build [--check]
 """
 
 import sys
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 ROOT = Path(__file__).resolve().parent.parent
 
 GENERATORS = []
 
-MANIFEST = ".generated-files"
+
+def _check_relpath(rel):
+    """Generated paths must be relative, inside the repo, and outside
+    `.git/`; anything else is a generator bug worth crashing on."""
+    parts = PurePosixPath(rel).parts
+    if (
+        PurePosixPath(rel).is_absolute()
+        or not parts
+        or ".." in parts
+        or parts[0] == ".git"
+    ):
+        raise ValueError(f"bad generated path {rel!r}")
 
 
 def expected(root):
@@ -30,58 +42,39 @@ def expected(root):
     out = {}
     for gen in GENERATORS:
         for rel, content in gen(root).items():
+            _check_relpath(rel)
             if rel in out:
                 raise ValueError(f"two generators produce {rel}")
             out[rel] = content
     return out
 
 
-def outputs(root):
-    """Generated files plus, when any exist, the `.generated-files`
-    manifest recording their sorted relpaths."""
-    files = expected(root)
-    if files:
-        files[MANIFEST] = "".join(f"{rel}\n" for rel in sorted(files))
-    return files
-
-
 def main(argv):
     if argv and argv != ["--check"]:
         print(__doc__.strip(), file=sys.stderr)
         return 2
-    files = outputs(ROOT)
-    manifest = ROOT / MANIFEST
-    previous = manifest.read_text().splitlines() if manifest.is_file() else []
+    files = expected(ROOT)
     if "--check" in argv:
         stale = [
             rel
             for rel, content in sorted(files.items())
-            if not (ROOT / rel).is_file() or (ROOT / rel).read_text() != content
+            if not (ROOT / rel).is_file()
+            or (ROOT / rel).read_text(encoding="utf-8") != content
         ]
-        orphans = [rel for rel in previous if rel not in files]
-        if stale or orphans:
+        if stale:
             print("generated files out of date:", file=sys.stderr)
             for rel in stale:
                 print(f"  {rel}", file=sys.stderr)
-            for rel in orphans:
-                print(f"  {rel} (no longer generated)", file=sys.stderr)
             print("run scripts/build", file=sys.stderr)
             return 1
         print("build check passed" if files else "build check passed (no generators registered)")
         return 0
-    for rel in previous:
-        # Drop files the last build generated that are orphaned now.
-        path = ROOT / rel
-        if rel not in files and path.is_file() and path.resolve().is_relative_to(ROOT):
-            path.unlink()
-            print(f"deleted orphan {rel}")
     for rel, content in sorted(files.items()):
         path = ROOT / rel
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(content)
+        path.write_text(content, encoding="utf-8")
         print(f"wrote {rel}")
     if not files:
-        manifest.unlink(missing_ok=True)
         print("no generators registered; nothing to build")
     return 0
 

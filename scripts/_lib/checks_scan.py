@@ -1,8 +1,9 @@
 """Shared file-scanning machinery for the repo verification checks.
 
-Every check scans the same file list, computed once per verify run: the
-git file list when the root is a git repo, os.walk otherwise, filtered
-by the skip rules below.
+The content checks scan one file list, computed once per verify run:
+the git file list when the root is a git repo, os.walk otherwise,
+filtered by the skip rules below. Checks that compare trees byte for
+byte (vendor-sync) walk the disk directly instead.
 """
 
 import codecs
@@ -53,11 +54,11 @@ _UTF_BOMS = (
 # Suffixes that name a file as text; an extensionless entry point under
 # scripts/ counts too. Binary bytes inside a text-named file are an
 # error, not a skippable binary.
-TEXT_SUFFIXES = {".md", ".py", ".json", ".yaml", ".yml", ".txt", ".toml"}
+TEXT_SUFFIXES = {".md", ".py", ".js", ".json", ".yaml", ".yml", ".txt", ".toml"}
 
 
 class BinaryFileError(Exception):
-    """A text-named file holds NUL bytes or a UTF-16/32 BOM."""
+    """A text-named file holds NUL bytes."""
 
 
 def is_internal_doc(rel):
@@ -79,17 +80,21 @@ def _skipped(parts):
 
 def git_relpaths(root):
     """Tracked plus non-ignored untracked files when root is a git repo;
-    None otherwise, so callers fall back to os.walk."""
+    None otherwise, so callers fall back to os.walk. Names are decoded
+    with surrogateescape so an undecodable filename reaches the checks
+    (which FAIL on it) instead of crashing the listing."""
     if not (root / ".git").exists():
         return None
     try:
         r = subprocess.run(
             ["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z"],
-            cwd=root, capture_output=True, text=True, timeout=SUBPROCESS_TIMEOUT,
+            cwd=root, capture_output=True, timeout=SUBPROCESS_TIMEOUT,
         )
     except (OSError, subprocess.TimeoutExpired):
         return None
-    return r.stdout.split("\0") if r.returncode == 0 else None
+    if r.returncode != 0:
+        return None
+    return [os.fsdecode(raw) for raw in r.stdout.split(b"\0")]
 
 
 @functools.cache
@@ -130,21 +135,72 @@ def _text_named(rel):
 
 
 def read_text(path, rel):
-    """File text, or None for binary or unreadable files. Files holding
-    text in a non-UTF-8 encoding raise UnicodeDecodeError so the calling
-    check can FAIL with the path instead of skipping silently; a
-    text-named file (see _text_named) holding NUL bytes or a UTF-16/32
-    BOM raises BinaryFileError for the same reason."""
-    try:
-        data = path.read_bytes()
-    except OSError:
-        return None
-    if b"\0" in data or data.startswith(_UTF_BOMS):
+    """File text, or None for binary files. A file holding NUL bytes
+    under a text name (see _text_named) raises BinaryFileError; a file
+    that fails UTF-8 decoding raises UnicodeDecodeError (a UTF-16/32 BOM
+    counts as not UTF-8 under any name); a read error (PermissionError
+    or another OSError) propagates. The calling check FAILs with the
+    path instead of skipping silently."""
+    data = path.read_bytes()
+    if data.startswith(_UTF_BOMS):
+        raise UnicodeDecodeError("utf-8", data, 0, 1, "UTF-16/32 byte-order mark")
+    if b"\0" in data:
         if _text_named(rel):
             raise BinaryFileError(rel)
-        if b"\0" in data:
-            return None
+        return None
     return data.decode("utf-8")
+
+
+def display(rel):
+    """str(rel) made safe to print even when the name holds surrogates
+    from an undecodable on-disk filename."""
+    return str(rel).encode("utf-8", "backslashreplace").decode("ascii")
+
+
+def _decodable(rel):
+    """Whether str(rel) survives a strict UTF-8 encode; names decoded
+    with surrogateescape fail this."""
+    try:
+        str(rel).encode("utf-8")
+        return True
+    except UnicodeEncodeError:
+        return False
+
+
+def texts(root, bad, skip):
+    """Yield (rel, text) for every scanned file that skip(rel) accepts
+    and that decodes as UTF-8 text. Undecodable filenames, unreadable
+    files, binary bytes under a text name and non-UTF-8 content append
+    '{rel}: ...' to bad instead of yielding."""
+    for p in file_list(root):
+        rel = p.relative_to(root)
+        if not _decodable(rel):
+            bad.append(f"{display(rel)}: undecodable filename")
+            continue
+        if skip(rel):
+            continue
+        try:
+            text = read_text(p, rel)
+        except OSError as e:
+            bad.append(f"{rel}: cannot read ({e.strerror or e})")
+            continue
+        except BinaryFileError:
+            bad.append(f"{rel}: binary content in a text file")
+            continue
+        except UnicodeDecodeError:
+            bad.append(f"{rel}: not valid UTF-8")
+            continue
+        if text is not None:
+            yield rel, text
+
+
+def string_values(value):
+    """Every string value inside a parsed JSON/YAML structure."""
+    if isinstance(value, str):
+        yield value
+    elif isinstance(value, (dict, list)):
+        for v in (value.values() if isinstance(value, dict) else value):
+            yield from string_values(v)
 
 
 def tail(result, n=5):

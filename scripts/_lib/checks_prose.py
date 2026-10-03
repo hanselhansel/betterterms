@@ -4,12 +4,13 @@ import json
 import re
 
 from . import miniyaml
-from .checks_files import texts
 from .checks_scan import (
     file_list,
     is_internal_doc,
     is_vendor,
     join,
+    string_values,
+    texts,
 )
 
 # "leverag\w*" bans every form of "leverage": the noun as well as the
@@ -20,23 +21,16 @@ BANNED_WORDS = re.compile(
     re.IGNORECASE,
 )
 EM_DASH = "—"
+# HTML entity spellings of the same character.
+EM_DASH_ENTITY = re.compile(r"&(mdash|#8212);", re.IGNORECASE)
 
 
 def _prose_hit(label, text, bad):
-    if EM_DASH in text:
+    if EM_DASH in text or EM_DASH_ENTITY.search(text):
         bad.append(f"{label}: em dash")
     m = BANNED_WORDS.search(text)
     if m:
         bad.append(f"{label}: banned word {m.group(0)!r}")
-
-
-def _strings(value):
-    """Every string value inside a parsed JSON/YAML structure."""
-    if isinstance(value, str):
-        yield value
-    elif isinstance(value, (dict, list)):
-        for v in (value.values() if isinstance(value, dict) else value):
-            yield from _strings(v)
 
 
 def _data_files(root):
@@ -63,6 +57,6 @@ def check_prose_rules(root):
         except (OSError, UnicodeDecodeError, ValueError, miniyaml.Error) as e:
             bad.append(f"{rel}: cannot parse ({e})")
             continue
-        for s in _strings(data):
+        for s in string_values(data):
             _prose_hit(f"{rel}: string value", s, bad)
     return ("FAIL", join(bad)) if bad else ("PASS", "")
