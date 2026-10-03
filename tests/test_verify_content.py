@@ -13,11 +13,9 @@ from test_verify import (
     UNIX_HOME,
     WIN_HOME_FWD,
     VerifyRepoCase,
-    checks_scan,
     make_repo_root,
     run_verify,
 )
-from _lib import checks_files
 
 
 class VerifyContentTest(VerifyRepoCase):
@@ -224,11 +222,33 @@ class VerifyContentTest(VerifyRepoCase):
         self.assert_failed(proc, "no-local-paths")
         self.assertIn("s.sh: binary content in a text file", proc.stdout)
         self.assertIn("t.ts: binary content in a text file", proc.stdout)
-        # And TEXT_SUFFIXES derives from the suffix sets the checks
-        # scan, so a suffix added to a check cannot drift out of it.
-        self.assertTrue(checks_files.SOURCE_SUFFIXES <= checks_scan.TEXT_SUFFIXES)
-        self.assertTrue(checks_files.DATA_SUFFIXES <= checks_scan.TEXT_SUFFIXES)
-        self.assertIn(".md", checks_scan.TEXT_SUFFIXES)
+
+    def test_home_name_ending_at_colon_fails(self):
+        # /home/<name> counts when ':' follows the name too, on any
+        # left edge (mount specs, PATH entries), not only after '-v'.
+        (self.root / "m.txt").write_text("mnt=" + "/" + "home/a:/z\n")
+        (self.root / "p.txt").write_text("PATH=/bin:" + "/" + "home/u:/sbin\n")
+        proc = run_verify(self.root)
+        self.assert_failed(proc, "no-local-paths")
+        self.assertIn("m.txt:1", proc.stdout)
+        self.assertIn("p.txt:1", proc.stdout)
+
+    @unittest.skipIf(os.name == "nt", "needs POSIX symlinks")
+    def test_walk_mode_symlinks_fail_no_symlinks(self):
+        # With no .git the walk reports file links and dir links alike,
+        # never following the dir link into its contents.
+        real = self.root / "real"
+        real.mkdir()
+        (real / "f.txt").write_text("x\n")
+        (self.root / "file-link").symlink_to("VERSION")
+        (self.root / "dir-link").symlink_to(
+            "real", target_is_directory=True
+        )
+        proc = run_verify(self.root)
+        self.assert_failed(proc, "no-symlinks")
+        self.assertIn("file-link", proc.stdout)
+        self.assertIn("dir-link", proc.stdout)
+        self.assertIn("PASS no-local-paths", proc.stdout)
 
     def test_colon_left_edge_flags_home_paths_except_url_schemes(self):
         # ':' counts as a left edge (PATH entries, host:container

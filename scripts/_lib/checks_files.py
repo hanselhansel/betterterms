@@ -5,7 +5,6 @@ file-size measures source files: every scanned file whose suffix is
 """
 
 import json
-import os
 import re
 
 from . import miniyaml
@@ -17,6 +16,7 @@ from .checks_scan import (
     is_vendor,
     join,
     string_values,
+    symlinks,
     texts,
 )
 
@@ -29,9 +29,9 @@ MAX_SOURCE_LINES = 400
 # that is not '/', a word char or ':'. file:/// URIs count for the
 # user and root homes; /home/<x> needs a name ended by '/', whitespace,
 # ':' or end of line, and the root home counts like the user homes.
-# Windows home
-# paths match either slash direction, any case, with the drive letter
-# not preceded by another letter (a URL scheme tail cannot reach it).
+# Windows home paths match either slash direction, any case, with the
+# drive letter not preceded by another letter (a URL scheme tail
+# cannot reach it).
 LOCAL_PATH = re.compile(
     r"(?:(?<=-v)|(?<![/\w:])|(?<=:)(?<!http:)(?<!https:)(?<!file:))"
     r"(?:/(?:root|Users)/|/home/[\w.-]+(?=[/\s:]|$))"
@@ -39,6 +39,7 @@ LOCAL_PATH = re.compile(
     r"|~/[A-Za-z0-9_]"
     r"|(?<![A-Za-z])(?i:[A-Za-z]:[/\\]Users[/\\])"
 )
+
 
 def check_no_bin(root):
     if (root / "bin").exists():
@@ -53,6 +54,12 @@ def check_no_root_claude_md(root):
         if p.name.lower() in ("claude.md", "agents.md")
     ]
     return ("FAIL", join(bad)) if bad else ("PASS", "")
+
+
+def check_no_symlinks(root):
+    """The repo holds no symlinks at all; name every one found."""
+    bad = symlinks(root)
+    return ("FAIL", "; ".join(bad)) if bad else ("PASS", "")
 
 
 def _decoded_strings(rel, text):
@@ -78,16 +85,6 @@ def check_no_local_paths(root):
             LOCAL_PATH.search(s) for s in _decoded_strings(rel, text)
         ):
             bad.append(f"{rel}: string value")
-    for p in file_list(root):
-        rel = p.relative_to(root)
-        if p.is_symlink() and not skip(rel):
-            target = os.readlink(p)
-            if os.path.isabs(target):
-                bad.append(f"{rel}: symlink to absolute path {target!r}")
-            elif LOCAL_PATH.search(target):
-                bad.append(f"{rel}: symlink to local path {target!r}")
-            elif not p.exists():
-                bad.append(f"{rel}: dangling symlink {target!r}")
     return ("FAIL", join(bad)) if bad else ("PASS", "")
 
 

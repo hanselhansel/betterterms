@@ -115,7 +115,7 @@ def file_list(root):
     rels = git_relpaths(root)
     if rels is not None:
         # Tracked symlinks stay in the list even when their target is
-        # missing or not a file: no-local-paths checks the link itself.
+        # missing or not a file: no-symlinks names the link itself.
         return [
             root / rel
             for rel in rels
@@ -131,6 +131,59 @@ def file_list(root):
             if name != ".git":  # worktree marker is a file, not a dir
                 files.append(Path(dirpath) / name)
     return files
+
+
+def _git_index_links(root):
+    """Tracked symlinks (index mode 120000) as display-ready relative
+    paths, or None when root is not a git repo or git cannot answer.
+    Index modes catch links that core.symlinks=false checked out as
+    plain files."""
+    if not (root / ".git").exists():
+        return None
+    try:
+        r = subprocess.run(
+            ["git", "ls-files", "-s", "-z"],
+            cwd=root, capture_output=True, timeout=SUBPROCESS_TIMEOUT,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if r.returncode != 0:
+        return None
+    out = []
+    for raw in r.stdout.split(b"\0"):
+        meta, _, name = raw.partition(b"\t")
+        if name and meta.startswith(b"120000 "):
+            rel = Path(os.fsdecode(name))
+            if not _skipped(rel.parts[:-1]):
+                out.append(str(rel) if _decodable(rel) else display(rel))
+    return out
+
+
+def symlinks(root):
+    """Display-ready relative paths of every symlink under root, sorted.
+
+    Git mode reads index modes for tracked links and islink over the
+    scanned list for untracked ones (git reports a symlinked directory
+    as the link itself, never descending). Walk mode tests islink on
+    the scanned files plus directory entries, since file_list never
+    reports directories; os.walk does not follow the links."""
+    found = set()
+    for p in file_list(root):
+        if p.is_symlink():
+            found.add(_display_rel(p.relative_to(root)))
+    indexed = _git_index_links(root)
+    if indexed is not None:
+        found.update(indexed)
+    else:
+        for dirpath, dirnames, _files in os.walk(root):
+            rel = Path(dirpath).relative_to(root)
+            dirnames[:] = [
+                d for d in dirnames if not _skipped(rel.parts + (d,))
+            ]
+            for d in dirnames:
+                if (Path(dirpath) / d).is_symlink():
+                    found.add(_display_rel(rel / d))
+    return sorted(found)
 
 
 def junk_file(name):
@@ -179,6 +232,11 @@ def _decodable(rel):
         return False
 
 
+def _display_rel(rel):
+    """str(rel) when it prints safely, display(rel) otherwise."""
+    return str(rel) if _decodable(rel) else display(rel)
+
+
 def texts(root, bad, skip):
     """Yield (rel, text) for every scanned file that skip(rel) accepts
     and that decodes as UTF-8 text. Undecodable filenames, unreadable
@@ -192,7 +250,7 @@ def texts(root, bad, skip):
         if skip(rel):
             continue
         if p.is_symlink():
-            continue  # checked by link target, never followed
+            continue  # links fail no-symlinks; never read through
         try:
             text = read_text(p, rel)
         except OSError as e:

@@ -74,10 +74,12 @@ def check_skill_names(root):
             or not name.startswith("betterterms-")
         ):
             problems.append(f"skills/{name}: folder must be betterterms-[a-z0-9-]")
+        skill_dir = root / "skills" / name
+        if skill_dir.is_symlink():
+            continue  # links fail no-symlinks; never descend
         # Exact-case check via os.listdir: 'skill.md' must not satisfy
         # the requirement on case-insensitive filesystems, where
         # is_file() would wrongly find it.
-        skill_dir = root / "skills" / name
         if "SKILL.md" not in os.listdir(skill_dir):
             problems.append(f"skills/{name}: missing SKILL.md")
             continue

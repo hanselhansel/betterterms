@@ -11,7 +11,8 @@ empty, build is a no-op and --check passes.
 Build never deletes files: it writes generated files, and --check only
 compares each generated file's expected content with disk. Generated
 paths must be relative, stay inside the repo and not touch `.git/`;
-anything else raises ValueError.
+anything else raises ValueError. So does a write target that resolves
+outside the repo or goes through a symlink: the repo holds no links.
 
 Usage: build [--check]
   (no args)   write every generated file
@@ -37,6 +38,18 @@ def _check_relpath(rel):
         or parts[0] == ".git"
     ):
         raise ValueError(f"bad generated path {rel!r}")
+
+
+def _check_write_path(path):
+    """A write target must resolve inside the repo and cross no
+    symlinks: a linked file or parent lands the bytes elsewhere."""
+    if not path.resolve().is_relative_to(ROOT):
+        raise ValueError(f"{path} resolves outside the repo")
+    p = path
+    while p != ROOT and p != p.parent:
+        if p.is_symlink():
+            raise ValueError(f"{path} goes through symlink {p}")
+        p = p.parent
 
 
 def expected(root, version=None):
@@ -76,7 +89,10 @@ def main(argv):
             return 1
         print("build check passed" if files else "build check passed (no generators registered)")
         return 0
-    for rel, content in sorted(files.items()):
+    targets = sorted(files.items())
+    for rel, _content in targets:
+        _check_write_path(ROOT / rel)
+    for rel, content in targets:
         path = ROOT / rel
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content, encoding="utf-8")

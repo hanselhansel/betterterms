@@ -2,6 +2,7 @@ import contextlib
 import importlib.machinery
 import importlib.util
 import io
+import os
 import shutil
 import subprocess
 import sys
@@ -57,16 +58,22 @@ class BumpVersionTest(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.root = make_repo(self.tmp.name)
         self.bump = load_script(self.root, "bump-version", "bt_bump_under_test")
+        # Bump targets derive from the VERSION on disk, never a literal
+        # that could collide with or regress the real version.
+        v = (self.root / "VERSION").read_text().strip().split(".")
+        self.next_version = f"{v[0]}.{v[1]}.{int(v[2]) + 1}"
 
     def stub_build_outputs(self, files=None, exc=None):
         """Swap the build-module loader so bump sees canned outputs (or
-        a generator failure) without a subprocess."""
+        a generator failure); the write-path guard stays real."""
+        real_build = self.bump._build_module()
         fake = types.SimpleNamespace(
             expected=(
                 lambda root, version=None: files
                 if exc is None
                 else _raise(exc)
-            )
+            ),
+            _check_write_path=real_build._check_write_path,
         )
         real = self.bump._build_module
         self.bump._build_module = lambda: fake
@@ -101,9 +108,11 @@ class BumpVersionTest(unittest.TestCase):
 
     def test_bump_writes_version_and_build_outputs(self):
         self.stub_build_outputs({"gen/out.txt": "v1\n"})
-        proc = call(self.bump, ["1.2.3"])
+        proc = call(self.bump, [self.next_version])
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
-        self.assertEqual((self.root / "VERSION").read_text(), "1.2.3\n")
+        self.assertEqual(
+            (self.root / "VERSION").read_text(), self.next_version + "\n"
+        )
         self.assertEqual((self.root / "gen" / "out.txt").read_text(), "v1\n")
 
     def test_bump_computes_outputs_before_any_write(self):
@@ -111,7 +120,7 @@ class BumpVersionTest(unittest.TestCase):
         version_file = self.root / "VERSION"
         before = version_file.read_text()
         self.stub_build_outputs(exc=ValueError("two generators produce g.txt"))
-        proc = call(self.bump, ["1.2.3"])
+        proc = call(self.bump, [self.next_version])
         self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
         self.assertEqual(version_file.read_text(), before)
 
@@ -125,7 +134,7 @@ class BumpVersionTest(unittest.TestCase):
         self.stub_build_outputs(
             {"a.txt": "new a\n", "b.txt": "new b\n", "zz/x.txt": "x\n"}
         )
-        proc = call(self.bump, ["1.2.3"])
+        proc = call(self.bump, [self.next_version])
         self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
         self.assertEqual((self.root / "VERSION").read_bytes(), version_before)
         self.assertEqual((self.root / "a.txt").read_text(), "old a\n")
@@ -147,11 +156,11 @@ class BumpVersionTest(unittest.TestCase):
                 1,
             )
         )
-        proc = call(self.bump, ["0.2.0"])
+        proc = call(self.bump, [self.next_version])
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         self.assertEqual(
             (self.root / "gen" / "version.txt").read_text(),
-            "version 0.2.0\n",
+            f"version {self.next_version}\n",
         )
         self.assertEqual(
             call(self.bump, ["--check"]).returncode, 0
@@ -163,9 +172,33 @@ class BumpVersionTest(unittest.TestCase):
         (self.root / "VERSION").unlink()
         (self.root / "zz").write_text("not a dir\n")
         self.stub_build_outputs({"zz/x.txt": "x\n"})
-        proc = call(self.bump, ["1.2.3"])
+        proc = call(self.bump, [self.next_version])
         self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
         self.assertFalse((self.root / "VERSION").exists())
+
+    @unittest.skipIf(os.name == "nt", "needs POSIX symlinks")
+    def test_bump_refuses_symlinked_targets(self):
+        # A generated path under a link, or VERSION itself as a link,
+        # is refused before any write.
+        real = self.root / "real"
+        real.mkdir()
+        (self.root / "gen").symlink_to(real, target_is_directory=True)
+        version_before = (self.root / "VERSION").read_text()
+        self.stub_build_outputs({"gen/out.txt": "x\n", "ok.txt": "y\n"})
+        proc = call(self.bump, [self.next_version])
+        self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+        self.assertIn("symlink", proc.stderr)
+        self.assertEqual((self.root / "VERSION").read_text(), version_before)
+        self.assertFalse((self.root / "ok.txt").exists())
+        self.assertFalse((real / "out.txt").exists())
+        # VERSION itself a link is refused with nothing else to write.
+        (self.root / "gen").unlink()
+        (self.root / "VERSION").unlink()
+        (self.root / "VERSION").symlink_to(real / "V")
+        self.stub_build_outputs({})
+        proc = call(self.bump, [self.next_version])
+        self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+        self.assertFalse((real / "V").exists())
 
     def test_check_fails_when_version_not_semver(self):
         (self.root / "VERSION").write_text("not-semver\n")
@@ -205,7 +238,7 @@ class BumpVersionTest(unittest.TestCase):
 
     def test_bump_then_verify_still_passes(self):
         for name, argv in (
-            ("bump-version", ["0.2.0"]),
+            ("bump-version", [self.next_version]),
             ("verify", [str(self.root)]),
         ):
             proc = subprocess.run(
@@ -218,7 +251,9 @@ class BumpVersionTest(unittest.TestCase):
             self.assertEqual(
                 proc.returncode, 0, name + ": " + proc.stdout + proc.stderr
             )
-        self.assertEqual((self.root / "VERSION").read_text(), "0.2.0\n")
+        self.assertEqual(
+            (self.root / "VERSION").read_text(), self.next_version + "\n"
+        )
 
     # Generated by /ship coverage audit.
     # Value: protects=bump-version --check fails when a built JSON manifest's
@@ -304,6 +339,35 @@ class BuildManifestTest(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     call(self.build, ["--check"])
                 self.assertFalse((self.root / ".generated-files").exists())
+
+    @unittest.skipIf(os.name == "nt", "needs POSIX symlinks")
+    def test_build_refuses_symlinked_targets(self):
+        # A generated path that is a link or sits under one is refused
+        # before any file is written.
+        real = self.root / "real"
+        real.mkdir()
+        (self.root / "gen").symlink_to(real, target_is_directory=True)
+        self.build.GENERATORS = [
+            lambda root, version: {"gen/out.txt": "x\n", "ok.txt": "y\n"}
+        ]
+        with self.assertRaises(ValueError):
+            call(self.build, [])
+        self.assertFalse((self.root / "ok.txt").exists())
+        self.assertFalse((real / "out.txt").exists())
+        # The path itself as a link, or an escaping parent link, fail.
+        (self.root / "gen").unlink()
+        (self.root / "ok.txt").symlink_to(real / "out.txt")
+        self.build.GENERATORS = [lambda root, version: {"ok.txt": "y\n"}]
+        with self.assertRaises(ValueError):
+            call(self.build, [])
+        self.assertFalse((real / "out.txt").exists())
+        outside = Path(self.tmp.name) / "outside"
+        outside.mkdir()
+        (self.root / "esc").symlink_to(outside, target_is_directory=True)
+        self.build.GENERATORS = [lambda root, version: {"esc/x.txt": "x\n"}]
+        with self.assertRaises(ValueError):
+            call(self.build, [])
+        self.assertFalse((outside / "x.txt").exists())
 
     def test_bad_arg_exits_2_and_duplicate_relpath_raises(self):
         self.build.GENERATORS = [lambda root, version: {"g.txt": "v1\n"}]

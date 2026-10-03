@@ -137,19 +137,44 @@ class GitModeTest(unittest.TestCase):
         self.assertTrue(any("undecodable filename" in b and "bad-" in b for b in bad))
 
     @unittest.skipIf(os.name == "nt", "needs POSIX symlinks")
-    def test_tracked_symlinks_checked_not_followed(self):
-        # git ls-files reports symlinks; they are checked by link
-        # target, never followed into their contents.
-        (self.root / "abs.txt").symlink_to(MAC_HOME)
-        (self.root / "rel.txt").symlink_to(".." + "/" + "Users/x")
-        (self.root / "dangling.txt").symlink_to("no-such-target")
-        (self.root / "good_link.txt").symlink_to("VERSION")
+    def test_symlinks_fail_no_symlinks(self):
+        # The repo holds no symlinks at all: tracked and untracked file
+        # links, dir links and dangling links are each named, while the
+        # other checks stay silent about them.
+        real = self.root / "real"
+        real.mkdir()
+        (real / "f.txt").write_text("x\n")
+        (self.root / "file-link").symlink_to("VERSION")
+        (self.root / "dir-link").symlink_to(
+            "real", target_is_directory=True
+        )
+        (self.root / "dangling").symlink_to("no-such-target")
+        self.git("add", "-A")
+        (self.root / "untracked-link").symlink_to("VERSION")
         proc = run_verify(self.root)
-        assert_failed(self, proc, "no-local-paths")
-        self.assertIn("abs.txt: symlink to absolute path", proc.stdout)
-        self.assertIn("rel.txt: symlink to local path", proc.stdout)
-        self.assertIn("dangling.txt: dangling symlink", proc.stdout)
-        self.assertNotIn("good_link.txt", proc.stdout)
+        assert_failed(self, proc, "no-symlinks")
+        for name in ("file-link", "dir-link", "dangling", "untracked-link"):
+            self.assertIn(name, proc.stdout)
+        self.assertIn("PASS no-local-paths", proc.stdout)
+        self.assertIn("PASS prose-rules", proc.stdout)
+
+    def test_index_symlink_checked_out_as_file_fails(self):
+        # A 120000 index entry checked out as a plain file (the
+        # core.symlinks=false shape) is invisible to islink, but the
+        # index mode still gives the link away.
+        (self.root / "plain-link").write_text("VERSION\n")
+        sha = subprocess.run(
+            [GIT, "hash-object", "-w", "--stdin"],
+            cwd=self.root, input="VERSION", text=True,
+            capture_output=True, check=True, env=git_env(),
+        ).stdout.strip()
+        self.git(
+            "update-index", "--add", "--cacheinfo", f"120000,{sha},plain-link"
+        )
+        proc = run_verify(self.root)
+        assert_failed(self, proc, "no-symlinks")
+        self.assertIn("plain-link", proc.stdout)
+        self.assertIn("PASS no-local-paths", proc.stdout)
 
     def test_git_file_list_computed_once_per_run(self):
         calls = []

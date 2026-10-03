@@ -37,6 +37,8 @@ def _data_files(root):
     """kit.config.json plus skills/**/*.{json,yaml,yml}, vendor exempt."""
     for p in file_list(root):
         rel = p.relative_to(root)
+        if p.is_symlink():
+            continue  # links fail no-symlinks; never read through
         in_skills = rel.parts[0] == "skills" and p.suffix in (".json", ".yaml", ".yml")
         if not is_vendor(rel) and (in_skills or rel.parts == ("kit.config.json",)):
             yield p, rel

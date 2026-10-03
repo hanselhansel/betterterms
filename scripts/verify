@@ -21,6 +21,7 @@ from _lib.checks_files import (
     check_no_bin,
     check_no_local_paths,
     check_no_root_claude_md,
+    check_no_symlinks,
 )
 from _lib.checks_prose import check_prose_rules
 from _lib.checks_scan import file_list
@@ -42,6 +43,7 @@ CHECKS = [
     ("skill-names", check_skill_names),
     ("no-bin", check_no_bin),
     ("no-root-claude-md", check_no_root_claude_md),
+    ("no-symlinks", check_no_symlinks),
     ("no-local-paths", check_no_local_paths),
     ("prose-rules", check_prose_rules),
     ("file-size", check_file_size),
