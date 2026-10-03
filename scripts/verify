@@ -7,353 +7,35 @@ ROOT defaults to the repo containing this script and must hold VERSION
 and kit.config.json ('all' means the same; anything else exits 2).
 Prints `PASS <name>`, `FAIL <name>: <reason>` or `SKIP <name>: <reason>`
 per check and exits 1 when any FAILs.
+
+The checks live in scripts/_lib/checks_*.py; this file is the CLI.
 """
 
-import json
-import os
-import re
-import shutil
-import subprocess
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from _lib import frontmatter, miniyaml
+from _lib.checks_files import (
+    check_file_size,
+    check_no_bin,
+    check_no_local_paths,
+    check_no_root_claude_md,
+)
+from _lib.checks_prose import check_prose_rules
+from _lib.checks_scan import _file_list
+from _lib.checks_skills import check_skill_names
+from _lib.checks_tools import (
+    check_build_fresh,
+    check_claude_validate,
+    check_gemini_validate,
+    check_unit_tests,
+    check_vendor_sync,
+    check_version_sync,
+)
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 _ROOT_FILES = ("VERSION", "kit.config.json")
-
-# SKIP_DIRS_TOP applies only to direct children of the root; SKIP_PATHS
-# holds exact prefixes: .claude is scanned but .claude/worktrees is not.
-SKIP_DIRS_ANYWHERE = {".git", "__pycache__", "node_modules"}
-SKIP_DIRS_TOP = {
-    ".venv", "venv", "dist", "holdout", ".idea",
-    ".mypy_cache", ".pytest_cache", ".ruff_cache", ".promptfoo",
-}
-SKIP_PATHS = {(".claude", "worktrees")}
-
-# Internal docs quote prose and local paths freely, so prose-rules and
-# no-local-paths skip them; docs/guides and shipped files ARE checked.
-# Vendored code is verbatim, so any path under a _vendor dir is exempt
-# from file-size, prose-rules and no-local-paths.
-INTERNAL_DOCS = {
-    ("docs", "research"), ("docs", "specs"),
-    ("docs", "plans"), ("docs", "decisions"),
-}
-VENDOR_PART = "_vendor"
-
-SKILL_NAME = re.compile(r"^[a-z0-9-]{1,64}$")
-ALLOWED_FM_KEYS = {"name", "description", "license",
-                   "compatibility", "metadata", "allowed-tools"}
-BANNED_WORDS = re.compile(
-    r"\b(delv\w*|pivotal|crucial|showcas\w*|leverag\w*|robust|comprehensive|"
-    r"nuanced|underscor\w*|foster\w*|moreover|furthermore)\b",
-    re.IGNORECASE,
-)
-EM_DASH = "\u2014"
-# Written so these lines cannot match themselves. POSIX home paths need
-# a non-URL left edge; Windows home paths match any case.
-LOCAL_PATH = re.compile(
-    r"(?<![/\w:])(?:/Users/|/home/[\w.-]+/)"
-    r"|~/[A-Za-z0-9_]"
-    r"|(?i:[A-Za-z]:\\Users\\)"
-)
-MAX_SOURCE_LINES = 400
-MAX_SKILL_BODY_LINES = 500
-MAX_DESCRIPTION_CHARS = 1024
-UNIT_TEST_TIMEOUT = 300
-SUBPROCESS_TIMEOUT = 120
-
-
-def _is_internal_doc(rel):
-    return any(rel.parts[: len(skip)] == skip for skip in INTERNAL_DOCS)
-
-
-def _is_vendor(rel):
-    return VENDOR_PART in rel.parts
-
-
-def _skipped(parts):
-    """Whether directory parts hit a skip rule."""
-    return bool(parts) and (
-        parts[0] in SKIP_DIRS_TOP
-        or any(part in SKIP_DIRS_ANYWHERE for part in parts)
-        or any(parts[: len(s)] == s for s in SKIP_PATHS)
-    )
-
-
-def _git_relpaths(root):
-    """Tracked plus non-ignored untracked files when root is a git repo;
-    None otherwise, so callers fall back to os.walk."""
-    if not (root / ".git").exists():
-        return None
-    try:
-        r = subprocess.run(
-            ["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z"],
-            cwd=root, capture_output=True, text=True, timeout=SUBPROCESS_TIMEOUT,
-        )
-    except (OSError, subprocess.TimeoutExpired):
-        return None
-    return r.stdout.split("\0") if r.returncode == 0 else None
-
-
-_LIST_CACHE = {}
-
-
-def _file_list(root):
-    """The scan file list for root, computed once per verify run: the git
-    file list when available, os.walk otherwise, filtered by skip rules."""
-    key = str(root)
-    if key in _LIST_CACHE:
-        return _LIST_CACHE[key]
-    rels = _git_relpaths(root)
-    if rels is not None:
-        files = [
-            root / rel
-            for rel in rels
-            if rel
-            and (root / rel).is_file()
-            and not _skipped(Path(rel).parts[:-1])
-        ]
-    else:
-        files = []
-        for dirpath, dirnames, filenames in os.walk(root):
-            rel = Path(dirpath).relative_to(root)
-            dirnames[:] = [d for d in dirnames if not _skipped(rel.parts + (d,))]
-            for name in filenames:
-                if name != ".git":  # worktree marker is a file, not a dir
-                    files.append(Path(dirpath) / name)
-    _LIST_CACHE[key] = files
-    return files
-
-
-def _tail(result, n=5):
-    text = (result.stderr or "") + (result.stdout or "")
-    return " | ".join(text.strip().splitlines()[-n:])
-
-
-def _join(items, n=8):
-    shown = items[:n]
-    if len(items) > n:
-        shown.append(f"+{len(items) - n} more")
-    return "; ".join(shown)
-
-
-# --- checks ------------------------------------------------------------------
-
-def check_unit_tests(root):
-    if not (root / "tests").is_dir():
-        return "SKIP", "no tests/ directory"
-    r = subprocess.run(
-        [sys.executable, "-m", "unittest", "discover", "-s", "tests"],
-        cwd=root, capture_output=True, text=True, timeout=UNIT_TEST_TIMEOUT,
-    )
-    return ("PASS", "") if r.returncode == 0 else ("FAIL", _tail(r))
-
-
-def check_skill_names(root):
-    skills = root / "skills"
-    if not skills.is_dir():
-        return "SKIP", "no skills/ directory"
-    problems = []
-    for folder in sorted(skills.iterdir()):
-        if not folder.is_dir():
-            continue
-        name = folder.name
-        if not SKILL_NAME.match(name) or not name.startswith("betterterms-"):
-            problems.append(f"skills/{name}: folder must be betterterms-[a-z0-9-]")
-        skill_md = folder / "SKILL.md"
-        if not skill_md.is_file():
-            problems.append(f"skills/{name}: missing SKILL.md")
-            continue
-        try:
-            fm, body = frontmatter.parse(skill_md)
-        except Exception as e:
-            problems.append(f"skills/{name}: {e}")
-            continue
-        extra = sorted(str(k) for k in fm if k not in ALLOWED_FM_KEYS)
-        if extra:
-            problems.append(f"skills/{name}: unexpected keys: {', '.join(extra)}")
-        if fm.get("name") != name:
-            problems.append(f"skills/{name}: name {fm.get('name')!r} != folder")
-        desc = fm.get("description")
-        if not isinstance(desc, str) or not desc.strip():
-            problems.append(f"skills/{name}: missing description")
-        elif len(desc) > MAX_DESCRIPTION_CHARS:
-            problems.append(f"skills/{name}: description {len(desc)} chars > {MAX_DESCRIPTION_CHARS}")
-        body_lines = len(body.splitlines())
-        if body_lines > MAX_SKILL_BODY_LINES:
-            problems.append(f"skills/{name}: body {body_lines} lines > {MAX_SKILL_BODY_LINES}")
-    return ("FAIL", _join(problems)) if problems else ("PASS", "")
-
-
-def check_no_bin(root):
-    if (root / "bin").exists():
-        return "FAIL", "top-level bin/ is not allowed"
-    return "PASS", ""
-
-
-def check_no_root_claude_md(root):
-    bad = [
-        str(p.relative_to(root))
-        for p in _file_list(root)
-        if p.name.lower() in ("claude.md", "agents.md")
-    ]
-    return ("FAIL", _join(bad)) if bad else ("PASS", "")
-
-
-def check_no_local_paths(root):
-    bad = []
-    for p in _file_list(root):
-        rel = p.relative_to(root)
-        if _is_internal_doc(rel) or _is_vendor(rel):
-            continue
-        try:
-            text = p.read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError):
-            continue
-        for i, line in enumerate(text.splitlines(), 1):
-            if LOCAL_PATH.search(line):
-                bad.append(f"{rel}:{i}")
-    return ("FAIL", _join(bad)) if bad else ("PASS", "")
-
-
-def _prose_hit(label, text, bad):
-    if EM_DASH in text:
-        bad.append(f"{label}: em dash")
-    m = BANNED_WORDS.search(text)
-    if m:
-        bad.append(f"{label}: banned word {m.group(0)!r}")
-
-
-def _strings(value):
-    """Every string value inside a parsed JSON/YAML structure."""
-    if isinstance(value, str):
-        yield value
-    elif isinstance(value, (dict, list)):
-        for v in (value.values() if isinstance(value, dict) else value):
-            yield from _strings(v)
-
-
-def _data_files(root):
-    """kit.config.json plus skills/**/*.{json,yaml,yml}, vendor exempt."""
-    for p in _file_list(root):
-        rel = p.relative_to(root)
-        in_skills = rel.parts[0] == "skills" and p.suffix in (".json", ".yaml", ".yml")
-        if not _is_vendor(rel) and (in_skills or rel.parts == ("kit.config.json",)):
-            yield p, rel
-
-
-def check_prose_rules(root):
-    bad = []
-    for p in _file_list(root):
-        rel = p.relative_to(root)
-        if p.suffix != ".md" or _is_internal_doc(rel) or _is_vendor(rel):
-            continue
-        try:
-            text = p.read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError):
-            continue
-        for i, line in enumerate(text.splitlines(), 1):
-            _prose_hit(f"{rel}:{i}", line, bad)
-    for p, rel in _data_files(root):
-        try:
-            text = p.read_text(encoding="utf-8")
-            data = json.loads(text) if p.suffix == ".json" else miniyaml.load(text)
-        except (OSError, UnicodeDecodeError, ValueError, miniyaml.Error) as e:
-            bad.append(f"{rel}: cannot parse ({e})")
-            continue
-        for s in _strings(data):
-            _prose_hit(f"{rel}: string value", s, bad)
-    return ("FAIL", _join(bad)) if bad else ("PASS", "")
-
-
-def check_file_size(root):
-    bad = []
-    for p in _file_list(root):
-        rel = p.relative_to(root)
-        scripts_file = rel.parts and rel.parts[0] == "scripts" and "." not in p.name
-        if _is_vendor(rel) or (p.suffix not in (".py", ".js") and not scripts_file):
-            continue
-        try:
-            n = len(p.read_text(encoding="utf-8").splitlines())
-        except (OSError, UnicodeDecodeError):
-            continue
-        if n > MAX_SOURCE_LINES:
-            bad.append(f"{rel} ({n} lines > {MAX_SOURCE_LINES})")
-    return ("FAIL", _join(bad)) if bad else ("PASS", "")
-
-
-def _run_script(root, name, *args):
-    path = root / "scripts" / name
-    if not path.is_file():
-        return "SKIP", f"no scripts/{name}"
-    r = subprocess.run(
-        [sys.executable, str(path), *args], cwd=root,
-        capture_output=True, text=True, timeout=SUBPROCESS_TIMEOUT,
-    )
-    return ("PASS", "") if r.returncode == 0 else ("FAIL", _tail(r))
-
-
-def _payload(p):
-    """{relpath: bytes} under a dir (skips __pycache__), a file's own
-    bytes keyed "", or {} when the path does not exist."""
-    if p.is_file():
-        return {"": p.read_bytes()}
-    out = {}
-    if p.is_dir():
-        for f in sorted(p.rglob("*")):
-            rel = f.relative_to(p)
-            if f.is_file() and "__pycache__" not in rel.parts:
-                out[str(rel)] = f.read_bytes()
-    return out
-
-
-def check_vendor_sync(root):
-    """btlib ships byte-identical copies of the YAML layer; SKIP when
-    skills/betterterms-guardrails/scripts/btlib is absent."""
-    btlib = root / "skills/betterterms-guardrails/scripts/btlib"
-    if not btlib.is_dir():
-        return "SKIP", "no skills/betterterms-guardrails/scripts/btlib"
-    problems = [
-        f"btlib/{rel} is not identical to scripts/_lib/{src}"
-        for rel, src in (("_vendor/yaml", "_vendor/yaml"), ("yaml.py", "miniyaml.py"))
-        if _payload(btlib / rel) != _payload(root / "scripts/_lib" / src)
-    ]
-    return ("FAIL", _join(problems)) if problems else ("PASS", "")
-
-
-def check_build_fresh(root):
-    return _run_script(root, "build", "--check")
-
-
-def check_version_sync(root):
-    return _run_script(root, "bump-version", "--check")
-
-
-def _validate(root, marker, tool, args, skip_msg):
-    """Run a host tool's validator when its manifest and binary exist."""
-    if not (root / marker).is_file():
-        return "SKIP", skip_msg
-    if shutil.which(tool) is None:
-        return "SKIP", f"{tool} not installed"
-    r = subprocess.run(
-        [tool, *args],
-        cwd=root, capture_output=True, text=True, timeout=SUBPROCESS_TIMEOUT,
-    )
-    return ("PASS", "") if r.returncode == 0 else ("FAIL", _tail(r))
-
-
-def check_claude_validate(root):
-    return _validate(root, ".claude-plugin/plugin.json", "claude",
-                     ["plugin", "validate", "."], "no .claude-plugin/plugin.json")
-
-
-def check_gemini_validate(root):
-    return _validate(root, "gemini-extension.json", "gemini",
-                     ["extensions", "validate", "."], "no gemini-extension.json")
-
 
 CHECKS = [
     ("unit-tests", check_unit_tests),
@@ -381,7 +63,7 @@ def main(argv):
         print(f"error: {root} is not a repo root (need VERSION + kit.config.json)",
               file=sys.stderr)
         return 2
-    _LIST_CACHE.clear()
+    _file_list.cache_clear()
     failures = 0
     for name, fn in CHECKS:
         try:

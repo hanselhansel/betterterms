@@ -26,6 +26,8 @@ body
 # Built at runtime so this file itself contains no local paths.
 MAC_HOME = "/" + "Users/hansel/repo"
 UNIX_HOME = "/" + "home/hansel/repo"
+FILE_URI_HOME = "file://" + MAC_HOME
+WIN_HOME_FWD = "C:/" + "Users/hansel/repo"
 
 
 def load_verify():
@@ -38,8 +40,13 @@ def load_verify():
 
 VERIFY_MOD = load_verify()
 
+# Loading verify puts scripts/ on sys.path, so _lib resolves here and is
+# the same package object the checks in verify use.
+from _lib import checks_scan
+
 
 def run_verify(root):
+    checks_scan._file_list.cache_clear()
     out, err = io.StringIO(), io.StringIO()
     with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
         code = VERIFY_MOD.main([str(root)])
@@ -59,7 +66,9 @@ def assert_failed(case, proc, check):
     case.assertIn(f"FAIL {check}", proc.stdout)
 
 
-class VerifyCheckTest(unittest.TestCase):
+class VerifyRepoCase(unittest.TestCase):
+    """Base for tests that run verify against a throwaway repo root."""
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
@@ -79,6 +88,8 @@ class VerifyCheckTest(unittest.TestCase):
     def assert_failed(self, proc, check):
         assert_failed(self, proc, check)
 
+
+class VerifyCheckTest(VerifyRepoCase):
     def test_bad_root_exits_2(self):
         with tempfile.TemporaryDirectory() as empty:
             proc = run_verify(Path(empty))
@@ -200,7 +211,7 @@ class VerifyCheckTest(unittest.TestCase):
 
     def test_non_git_root_walks_files(self):
         # Explicit fallback coverage: no .git here, so os.walk is used.
-        self.assertIsNone(VERIFY_MOD._git_relpaths(self.root))
+        self.assertIsNone(checks_scan._git_relpaths(self.root))
         (self.root / "deep" / "deeper").mkdir(parents=True)
         (self.root / "deep" / "deeper" / "n.txt").write_text(f"{MAC_HOME}\n")
         self.assert_failed(run_verify(self.root), "no-local-paths")

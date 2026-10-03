@@ -15,7 +15,10 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-SEMVER = re.compile(r"^\d+\.\d+\.\d+$")
+# ASCII digits only, no leading zeros; always compared with fullmatch so
+# trailing newlines or Unicode digits cannot slip through.
+SEMVER = re.compile(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)")
+HEADING = re.compile(r"^##\s+(\S+)")
 
 
 def _build_module():
@@ -27,16 +30,34 @@ def _build_module():
     return mod
 
 
+def _top_changelog_version():
+    """The X.Y.Z in the first '## <ver>' heading of CHANGELOG.md, or None
+    when the file is missing or has no version heading."""
+    path = ROOT / "CHANGELOG.md"
+    if not path.is_file():
+        return None
+    for line in path.read_text(encoding="utf-8").splitlines():
+        m = HEADING.match(line)
+        if m and SEMVER.fullmatch(m.group(1)):
+            return m.group(1)
+    return None
+
+
 def check():
     version_file = ROOT / "VERSION"
     if not version_file.is_file():
         print("VERSION file missing", file=sys.stderr)
         return 2
     version = version_file.read_text().strip()
-    if not SEMVER.match(version):
+    if not SEMVER.fullmatch(version):
         print(f"VERSION {version!r} is not X.Y.Z semver", file=sys.stderr)
         return 2
     problems = []
+    top = _top_changelog_version()
+    if top != version:
+        problems.append(
+            f"CHANGELOG.md: top version heading {top!r} != VERSION {version!r}"
+        )
     for rel in sorted(_build_module().expected(ROOT)):
         path = ROOT / rel
         if not path.is_file():
@@ -48,7 +69,7 @@ def check():
         if isinstance(data, dict) and "version" in data and str(data["version"]) != version:
             problems.append(f"{rel}: version {data['version']!r} != VERSION {version!r}")
     if problems:
-        print("manifest versions out of sync:", file=sys.stderr)
+        print("versions out of sync:", file=sys.stderr)
         for p in problems:
             print(f"  {p}", file=sys.stderr)
         print("run scripts/bump-version", file=sys.stderr)
@@ -58,7 +79,7 @@ def check():
 
 
 def bump(new):
-    if not SEMVER.match(new):
+    if not SEMVER.fullmatch(new):
         print(f"bad version {new!r}; expected X.Y.Z", file=sys.stderr)
         return 2
     version_file = ROOT / "VERSION"

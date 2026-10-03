@@ -1,14 +1,18 @@
-"""YAML loading and dumping for betterterms dev scripts.
+"""YAML loading and dumping helpers.
 
-A thin wrapper over the vendored pure-Python PyYAML in
-``scripts/_lib/_vendor/yaml`` (see ``_vendor/README.md``); importing it
-through this package keeps ``import yaml`` on sys.path free of it.
+A thin wrapper over the vendored pure-Python PyYAML in the ``_vendor``
+package next to this module (see ``_vendor/README.md``); importing it
+through this module keeps ``import yaml`` on sys.path free of it. This
+file is byte-copied into other packages, so it must stay free of
+repo-rooted paths.
 
 Contract: ``load(text)`` returns what ``yaml.safe_load(text)`` returns,
 except that duplicate mapping keys raise :class:`Error` naming the
-1-based line. ``dump(obj)`` is ``yaml.safe_dump`` with insertion-order
-keys, unicode allowed and block (not flow) style. YAML failures surface
-as :class:`Error`, never as ``yaml.YAMLError``.
+1-based line and aliases (``*name``) raise :class:`Error`, so anchored
+data cannot be expanded exponentially. Anchors without aliases are
+fine. ``dump(obj)`` is ``yaml.safe_dump`` with insertion-order keys,
+unicode allowed and block (not flow) style. YAML failures surface as
+:class:`Error`, never as ``yaml.YAMLError``.
 """
 
 from ._vendor import yaml
@@ -32,12 +36,29 @@ def _reraise(e):
     raise Error(getattr(e, "problem", None) or str(e), _line(mark)) from e
 
 
+_MERGE_TAG = "tag:yaml.org,2002:merge"
+
+
 class _Loader(yaml.SafeLoader):
-    """SafeLoader that refuses duplicate mapping keys."""
+    """SafeLoader that refuses aliases and duplicate mapping keys."""
+
+    def compose_node(self, parent, index):
+        if self.check_event(yaml.AliasEvent):
+            event = self.get_event()
+            raise Error(
+                f"alias *{event.anchor} is not supported",
+                _line(event.start_mark),
+            )
+        return super().compose_node(parent, index)
 
     def construct_mapping(self, node, deep=False):
         seen = set()
         for key_node, _value_node in node.value:
+            # ``<<`` merge keys have no scalar key; super() expands them
+            # via flatten_mapping, so merged pairs are never double-counted
+            # and an explicit key still overrides a merged one.
+            if key_node.tag == _MERGE_TAG:
+                continue
             key = self.construct_object(key_node, deep=True)
             try:
                 duplicate = key in seen

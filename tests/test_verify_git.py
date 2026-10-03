@@ -11,8 +11,8 @@ from test_verify import (
     GIT,
     MAC_HOME,
     UNIX_HOME,
-    VERIFY_MOD,
     assert_failed,
+    checks_scan,
     make_repo_root,
     run_verify,
 )
@@ -65,19 +65,31 @@ class GitModeTest(unittest.TestCase):
         self.assertNotIn(".venv", proc.stdout)
         self.assertNotIn("node_modules", proc.stdout)
 
+    def test_tracked_evals_holdout_files_are_skipped(self):
+        holdout = self.root / "evals" / "holdout"
+        holdout.mkdir(parents=True)
+        (holdout / "cases.md").write_text("em \u2014 dash\n")
+        (self.root / "evals" / "scored.md").write_text("em \u2014 dash\n")
+        subprocess.run([GIT, "add", "-A"], cwd=self.root, check=True)
+        proc = run_verify(self.root)
+        assert_failed(self, proc, "prose-rules")
+        self.assertIn("evals/scored.md", proc.stdout)
+        self.assertNotIn("holdout", proc.stdout)
+
     def test_git_file_list_computed_once_per_run(self):
         calls = []
-        real = VERIFY_MOD._git_relpaths
+        real = checks_scan._git_relpaths
 
         def counting(root):
             calls.append(root)
             return real(root)
 
-        VERIFY_MOD._git_relpaths = counting
+        checks_scan._git_relpaths = counting
         try:
             run_verify(self.root)
         finally:
-            VERIFY_MOD._git_relpaths = real
+            checks_scan._git_relpaths = real
+            checks_scan._file_list.cache_clear()
         self.assertEqual(len(calls), 1)
 
 

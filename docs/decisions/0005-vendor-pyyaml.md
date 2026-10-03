@@ -1,6 +1,6 @@
 # 0005. Bundle PyYAML instead of a hand-written YAML subset
 
-Status: accepted (pending owner confirmation). Date: 2026-10-03.
+Status: accepted (owner confirmed 2026-10-03). Date: 2026-10-03.
 
 ## Context
 Specs store case files and SKILL.md frontmatter as YAML, and the toolkit must run with Python 3

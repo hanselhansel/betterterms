@@ -32,15 +32,6 @@ def _scan(path):
     return lines[1:], None
 
 
-def block(path):
-    """The newline-terminated frontmatter block text, or None when the
-    file has no closed frontmatter block."""
-    block_lines, body = _scan(path)
-    if block_lines is None or body is None:
-        return None
-    return "\n".join(block_lines) + "\n"
-
-
 def parse(path):
     """Return (frontmatter_dict, body). A file without a frontmatter block
     parses as ({}, whole text)."""

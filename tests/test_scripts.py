@@ -21,7 +21,7 @@ def make_repo(tmp):
     shutil.copytree(
         SCRIPTS, root / "scripts", ignore=shutil.ignore_patterns("__pycache__")
     )
-    for name in ("VERSION", "kit.config.json"):
+    for name in ("VERSION", "kit.config.json", "CHANGELOG.md"):
         shutil.copy2(REPO / name, root / name)
     return root
 
@@ -76,7 +76,10 @@ class BumpVersionTest(unittest.TestCase):
     def test_bad_args_exit_2_without_writing(self):
         version_file = self.root / "VERSION"
         before = version_file.read_text()
-        for bad in ("1.2", "v1.2.3", "latest", "1.2.3-rc.1", "1.2.3+build"):
+        for bad in (
+            "1.2", "v1.2.3", "latest", "1.2.3-rc.1", "1.2.3+build",
+            "01.2.3", "1.02.3", "1.2.3 ", "1.2.3\n", "١.٢.٣",
+        ):
             with self.subTest(version=bad):
                 proc = call(self.bump, [bad])
                 self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
@@ -108,6 +111,30 @@ class BumpVersionTest(unittest.TestCase):
         proc = call(self.bump, ["--check"])
         self.assertNotEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         self.assertIn("semver", proc.stderr)
+        for bad in ("1.02.3", "١.٢.٣"):
+            (self.root / "VERSION").write_text(bad + "\n")
+            proc = call(self.bump, ["--check"])
+            self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+            self.assertIn("semver", proc.stderr)
+
+    def test_check_fails_when_changelog_heading_differs(self):
+        (self.root / "VERSION").write_text("1.2.3\n")
+        proc = call(self.bump, ["--check"])
+        self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+        self.assertIn("CHANGELOG.md", proc.stderr)
+        self.assertIn("0.1.0", proc.stderr)
+        (self.root / "CHANGELOG.md").unlink()
+        proc = call(self.bump, ["--check"])
+        self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+        (self.root / "CHANGELOG.md").write_text(
+            "# Changelog\n\n## 1.2.3 - 2026-10-04\n\n- entry\n"
+        )
+        self.assertEqual(call(self.bump, ["--check"]).returncode, 0)
+        # Non-version headings above the first release are skipped.
+        (self.root / "CHANGELOG.md").write_text(
+            "# Changelog\n\n## Unreleased\n\n## 1.2.3\n\n- entry\n"
+        )
+        self.assertEqual(call(self.bump, ["--check"]).returncode, 0)
 
     def test_check_passes_on_clean_tree(self):
         self.assertEqual(call(self.bump, ["--check"]).returncode, 0)
@@ -161,6 +188,9 @@ class BumpVersionTest(unittest.TestCase):
             )
         )
         (self.root / "VERSION").write_text("1.2.3\n")
+        (self.root / "CHANGELOG.md").write_text(
+            "# Changelog\n\n## 1.2.3 - 2026-10-04\n"
+        )
         (self.root / "notes.md").write_text("version: 0.0.0\n")
         manifest = self.root / "plugin.json"
         manifest.write_text('{"name": "x", "version": "1.2.3"}\n')
