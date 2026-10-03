@@ -1,261 +1,41 @@
 #!/usr/bin/env python3
 """Repo verification checks.
 
-Usage: python3 scripts/verify [ROOT]
+Usage: python3 scripts/verify [ROOT|all]
 
-ROOT defaults to the repo containing this script. Prints one line per
-check: `PASS <name>`, `FAIL <name>: <reason>`, or `SKIP <name>: <reason>`.
-Exits 1 when any check FAILs. Checks live in the CHECKS registry so later
-steps can add more.
+ROOT defaults to the repo containing this script and must hold VERSION
+and kit.config.json ('all' means the same; anything else exits 2).
+Prints `PASS <name>`, `FAIL <name>: <reason>` or `SKIP <name>: <reason>`
+per check and exits 1 when any FAILs.
+
+The checks live in scripts/_lib/checks_*.py; this file is the CLI.
 """
 
-import os
-import re
-import shutil
-import subprocess
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from _lib import frontmatter
+from _lib.checks_files import (
+    check_file_size,
+    check_no_bin,
+    check_no_local_paths,
+    check_no_root_claude_md,
+)
+from _lib.checks_prose import check_prose_rules
+from _lib.checks_scan import file_list
+from _lib.checks_skills import check_skill_names
+from _lib.checks_tools import (
+    check_build_fresh,
+    check_claude_validate,
+    check_gemini_validate,
+    check_unit_tests,
+    check_vendor_sync,
+    check_version_sync,
+)
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-
-SKIP_DIRS = {
-    ".git", ".claude", ".venv", "venv", "node_modules", "__pycache__",
-    "dist", "holdout", ".idea", ".mypy_cache", ".pytest_cache", ".ruff_cache",
-}
-# Top-level dirs exempt from the shipped-files local-path scan.
-LOCAL_PATH_SKIP = {"docs", "tests"}
-# Internal docs exempt from prose rules. docs/guides IS checked.
-PROSE_SKIP_PARTS = [
-    ("docs", "research"), ("docs", "specs"), ("docs", "plans"), ("docs", "decisions"),
-]
-
-SKILL_NAME = re.compile(r"^[a-z0-9-]{1,64}$")
-BANNED_WORDS = re.compile(
-    r"\b(delve|pivotal|crucial|showcase|leverage|robust|comprehensive|"
-    r"nuanced|underscore|foster|moreover|furthermore)\b",
-    re.IGNORECASE,
-)
-EM_DASH = "\u2014"
-# Written as a char class so the pattern does not match this line.
-# Flags user home paths; dotfiles under home stay allowed.
-LOCAL_PATH = re.compile(r"[/]Users/|~/[A-Za-z0-9_]")
-MAX_SOURCE_LINES = 400
-MAX_SKILL_BODY_LINES = 500
-MAX_DESCRIPTION_CHARS = 1024
-
-
-def _files(root, skip_top=()):
-    """Yield files under root, skipping SKIP_DIRS and the named top-level
-    directories."""
-    for dirpath, dirnames, filenames in os.walk(root):
-        rel = Path(dirpath).relative_to(root)
-        dirnames[:] = [
-            d
-            for d in dirnames
-            if d not in SKIP_DIRS and not (not rel.parts and d in skip_top)
-        ]
-        for name in filenames:
-            if name == ".git":  # worktree marker is a file, not a dir
-                continue
-            yield Path(dirpath) / name
-
-
-def _tail(result, n=5):
-    text = (result.stderr or "") + (result.stdout or "")
-    return " | ".join(text.strip().splitlines()[-n:])
-
-
-def _join(items, n=8):
-    shown = items[:n]
-    if len(items) > n:
-        shown.append(f"+{len(items) - n} more")
-    return "; ".join(shown)
-
-
-# --- checks ------------------------------------------------------------------
-
-def check_unit_tests(root):
-    if not (root / "tests").is_dir():
-        return "SKIP", "no tests/ directory"
-    r = subprocess.run(
-        [sys.executable, "-m", "unittest", "discover", "-s", "tests"],
-        cwd=root, capture_output=True, text=True, timeout=300,
-    )
-    return ("PASS", "") if r.returncode == 0 else ("FAIL", _tail(r))
-
-
-def check_skill_names(root):
-    skills = root / "skills"
-    if not skills.is_dir():
-        return "SKIP", "no skills/ directory"
-    problems = []
-    for folder in sorted(skills.iterdir()):
-        if not folder.is_dir():
-            continue
-        name = folder.name
-        if not SKILL_NAME.match(name) or not name.startswith("betterterms-"):
-            problems.append(f"skills/{name}: folder must be betterterms-[a-z0-9-]")
-        skill_md = folder / "SKILL.md"
-        if not skill_md.is_file():
-            problems.append(f"skills/{name}: missing SKILL.md")
-            continue
-        try:
-            fm, body = frontmatter.parse(skill_md)
-        except Exception as e:
-            problems.append(f"skills/{name}: {e}")
-            continue
-        if fm.get("name") != name:
-            problems.append(f"skills/{name}: name {fm.get('name')!r} != folder")
-        desc = fm.get("description")
-        if not isinstance(desc, str) or not desc.strip():
-            problems.append(f"skills/{name}: missing description")
-        elif len(desc) > MAX_DESCRIPTION_CHARS:
-            problems.append(f"skills/{name}: description {len(desc)} chars > {MAX_DESCRIPTION_CHARS}")
-        body_lines = len(body.splitlines())
-        if body_lines > MAX_SKILL_BODY_LINES:
-            problems.append(f"skills/{name}: body {body_lines} lines > {MAX_SKILL_BODY_LINES}")
-    return ("FAIL", _join(problems)) if problems else ("PASS", "")
-
-
-def check_no_bin(root):
-    if (root / "bin").exists():
-        return "FAIL", "top-level bin/ is not allowed"
-    return "PASS", ""
-
-
-def check_no_root_claude_md(root):
-    bad = [
-        str(p.relative_to(root))
-        for p in _files(root)
-        if p.name in ("CLAUDE.md", "AGENTS.md")
-    ]
-    return ("FAIL", _join(bad)) if bad else ("PASS", "")
-
-
-def check_no_local_paths(root):
-    bad = []
-    for p in _files(root, skip_top=LOCAL_PATH_SKIP):
-        try:
-            text = p.read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError):
-            continue
-        for i, line in enumerate(text.splitlines(), 1):
-            if LOCAL_PATH.search(line):
-                bad.append(f"{p.relative_to(root)}:{i}")
-    return ("FAIL", _join(bad)) if bad else ("PASS", "")
-
-
-def check_prose_rules(root):
-    bad = []
-    for p in _files(root):
-        rel = p.relative_to(root)
-        if p.suffix != ".md":
-            continue
-        if any(rel.parts[: len(skip)] == skip for skip in PROSE_SKIP_PARTS):
-            continue
-        try:
-            text = p.read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError):
-            continue
-        for i, line in enumerate(text.splitlines(), 1):
-            if EM_DASH in line:
-                bad.append(f"{rel}:{i}: em dash")
-            m = BANNED_WORDS.search(line)
-            if m:
-                bad.append(f"{rel}:{i}: banned word {m.group(0)!r}")
-    return ("FAIL", _join(bad)) if bad else ("PASS", "")
-
-
-def check_file_size(root):
-    bad = []
-    for p in _files(root):
-        rel = p.relative_to(root)
-        is_source = p.suffix in (".py", ".js") or (
-            rel.parts and rel.parts[0] == "scripts" and "." not in p.name
-        )
-        if not is_source:
-            continue
-        try:
-            n = len(p.read_text(encoding="utf-8").splitlines())
-        except (OSError, UnicodeDecodeError):
-            continue
-        if n > MAX_SOURCE_LINES:
-            bad.append(f"{rel} ({n} lines > {MAX_SOURCE_LINES})")
-    return ("FAIL", _join(bad)) if bad else ("PASS", "")
-
-
-BTLIB_DIR = "skills/betterterms-guardrails/scripts/btlib"
-BTLIB_YAML_PAIRS = [
-    ("scripts/_lib/miniyaml.py", f"{BTLIB_DIR}/yaml.py"),
-    ("scripts/_lib/miniyaml_scalars.py", f"{BTLIB_DIR}/miniyaml_scalars.py"),
-]
-
-
-def check_btlib_yaml_sync(root):
-    """btlib yaml files must be verbatim copies of scripts/_lib so the
-    skill folder stays self-contained."""
-    if not (root / BTLIB_DIR).is_dir():
-        return "SKIP", "btlib not present"
-    bad = []
-    for src_rel, dst_rel in BTLIB_YAML_PAIRS:
-        src, dst = root / src_rel, root / dst_rel
-        if not dst.is_file():
-            bad.append(f"{dst_rel} missing")
-        elif not src.is_file() or src.read_bytes() != dst.read_bytes():
-            bad.append(f"{dst_rel} differs from {src_rel}")
-    return ("FAIL", _join(bad)) if bad else ("PASS", "")
-
-
-def _run_script(root, name, *args):
-    path = root / "scripts" / name
-    if not path.is_file():
-        return "SKIP", f"no scripts/{name}"
-    r = subprocess.run(
-        [sys.executable, str(path), *args],
-        cwd=root, capture_output=True, text=True, timeout=120,
-    )
-    return ("PASS", "") if r.returncode == 0 else ("FAIL", _tail(r))
-
-
-def check_build_fresh(root):
-    return _run_script(root, "build", "--check")
-
-
-def check_version_sync(root):
-    return _run_script(root, "bump-version", "--check")
-
-
-def check_eval_smoke(root):
-    return _run_script(root, "eval", "--smoke")
-
-
-def check_claude_validate(root):
-    if not (root / ".claude-plugin" / "plugin.json").is_file():
-        return "SKIP", "no .claude-plugin/plugin.json"
-    if shutil.which("claude") is None:
-        return "SKIP", "claude not installed"
-    r = subprocess.run(
-        ["claude", "plugin", "validate", "."],
-        cwd=root, capture_output=True, text=True, timeout=120,
-    )
-    return ("PASS", "") if r.returncode == 0 else ("FAIL", _tail(r))
-
-
-def check_gemini_validate(root):
-    if not (root / "gemini-extension.json").is_file():
-        return "SKIP", "no gemini-extension.json"
-    if shutil.which("gemini") is None:
-        return "SKIP", "gemini not installed"
-    r = subprocess.run(
-        ["gemini", "extensions", "validate", "."],
-        cwd=root, capture_output=True, text=True, timeout=120,
-    )
-    return ("PASS", "") if r.returncode == 0 else ("FAIL", _tail(r))
-
+_ROOT_FILES = ("VERSION", "kit.config.json")
 
 CHECKS = [
     ("unit-tests", check_unit_tests),
@@ -265,10 +45,9 @@ CHECKS = [
     ("no-local-paths", check_no_local_paths),
     ("prose-rules", check_prose_rules),
     ("file-size", check_file_size),
-    ("btlib-yaml-sync", check_btlib_yaml_sync),
+    ("vendor-sync", check_vendor_sync),
     ("build-fresh", check_build_fresh),
     ("version-sync", check_version_sync),
-    ("eval-smoke", check_eval_smoke),
     ("claude-validate", check_claude_validate),
     ("gemini-validate", check_gemini_validate),
 ]
@@ -278,7 +57,13 @@ def main(argv):
     if len(argv) > 1:
         print(__doc__.strip(), file=sys.stderr)
         return 2
-    root = Path(argv[0]).resolve() if argv else REPO_ROOT
+    root = REPO_ROOT if not argv or argv[0] == "all" else Path(argv[0]).resolve()
+    required = root.is_dir() and all((root / f).is_file() for f in _ROOT_FILES)
+    if not required:
+        print(f"error: {root} is not a repo root (need VERSION + kit.config.json)",
+              file=sys.stderr)
+        return 2
+    file_list.cache_clear()
     failures = 0
     for name, fn in CHECKS:
         try:

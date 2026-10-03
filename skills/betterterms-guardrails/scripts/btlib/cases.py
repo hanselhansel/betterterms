@@ -136,6 +136,17 @@ def parse_number(text):
     raise BtError(f"expected a single number, got {s!r}")
 
 
+def as_list(value):
+    """Coerce a YAML value to a list. Lists pass through, None -> [], and
+    a lone scalar or mapping where a list was expected wraps in one. YAML
+    1.1 scalars arrive resolved: ``yes`` is bool True, not the string."""
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return value
+    return [value]
+
+
 def num(value):
     """Coerce a YAML scalar to float; None and unparseable -> None."""
     if value is None or isinstance(value, bool):

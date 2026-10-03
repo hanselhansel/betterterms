@@ -15,12 +15,12 @@ runtime tool in every install layout (repo, Claude plugin, `~/.agents/skills`, v
 gate, and the ledger. Dev tooling in top-level `scripts/` generates all host manifests from
 `kit.config.json` + `VERSION` and checks them.
 
-**Tech Stack:** Python 3.11 stdlib only (runtime and dev scripts; no PyYAML); Markdown skills in
-the open Agent Skills format; promptfoo 0.123 for evals; Node only for the mod (`mod/`).
+**Tech Stack:** Python 3.11 stdlib plus vendored pure-Python PyYAML; no installs; Markdown skills
+in the open Agent Skills format; promptfoo 0.123 for evals; Node only for the mod (`mod/`).
 
 **Spec:** `docs/specs/2026-10-03-betterterms-design.md`,
 `docs/specs/2026-10-03-betterterms-negotiation-procedure.md`. Deviations are recorded in
-`docs/decisions/` (0001 to 0004) and summarized at the end of this plan.
+`docs/decisions/` (0001 to 0005) and summarized at the end of this plan.
 
 ## Global Constraints
 
@@ -69,7 +69,7 @@ the open Agent Skills format; promptfoo 0.123 for evals; Node only for the mod (
 | `bt.py case new --pack <pack> [--mode act\|coach] [--direction pay\|receive]` | 0 ok, 2 usage | `{"case_id": "...", "path": "..."}` |
 | `bt.py case set-floor <case_id>` (value read from stdin, never argv) | 0, 2 | `{"ok": true}` (never echoes the value) |
 | `bt.py case show <case_id>` | 0, 2 | brief + plan, floor field omitted |
-| `bt.py gate <case_id> --draft <draft.yaml> [--approved]` | 0 pass, 1 block, 2 usage/error, 3 needs approval | `{"result": "pass\|block\|needs_approval", "reasons": [...]}` |
+| `bt.py gate <case_id> --draft <draft.yaml> [--approved] [--inbound <inbound.yaml>]` | 0 pass, 1 block, 2 usage/error, 3 needs approval | `{"result": "pass\|block\|needs_approval", "reasons": [...]}` |
 | `bt.py score <case_id> --inbound <inbound.yaml>` | 0, 2 | `{"band": "at_or_above_target\|in_band\|near_floor\|below_floor", "escalate": [...]}` |
 | `bt.py ledger add <case_id> --before N --after N --period month\|year` | 0, 2 | `{"saved_per_year": N}` |
 | `bt.py ledger total` | 0 | `{"cases": N, "saved_per_year": N, "by_pack": {...}}` |
@@ -95,10 +95,10 @@ Score rules: band by `direction`; `near_floor` = within 10% of the floor; `escal
 ### Task 1.1: Repo skeleton, kit config, build and verify skeleton (one lane)
 
 **Files:**
-- Create: `README.md` (stub: one paragraph, install "coming in 0.3.0", link to specs), `LICENSE` (MIT, copyright Hansel Wahjono), `VERSION` (`0.1.0`), `kit.config.json`, `CHANGELOG.md`, `scripts/build`, `scripts/verify`, `scripts/bump-version`, `scripts/_lib/__init__.py`, `scripts/_lib/miniyaml.py`, `scripts/_lib/frontmatter.py`, `tests/test_miniyaml.py`, `tests/test_frontmatter.py`, `tests/test_verify.py`, `docs/decisions/0001-...` to `0004-...` (written by orchestrator, not the lane), `skills/.gitkeep`.
+- Create: `README.md` (stub: one paragraph, install "coming in 0.4.0", link to specs), `LICENSE` (MIT, copyright Hansel Wahjono), `VERSION` (`0.1.0`), `kit.config.json`, `CHANGELOG.md`, `scripts/build`, `scripts/verify`, `scripts/bump-version`, `scripts/_lib/__init__.py`, `scripts/_lib/miniyaml.py`, `scripts/_lib/frontmatter.py`, `scripts/_lib/_vendor/` (vendored PyYAML), `tests/test_miniyaml.py`, `tests/test_frontmatter.py`, `tests/test_verify.py`, `docs/decisions/0001-...` to `0004-...` (written by orchestrator, not the lane), `skills/.gitkeep`.
 
 **Interfaces:**
-- Produces: `miniyaml.load(text: str) -> dict|list|scalar` and `miniyaml.dump(obj) -> str` supporting block mappings, block lists, inline `[a, b]`, quoted and plain scalars, ints, floats, bools, null, `#` comments; raises `miniyaml.Error` with line number otherwise. `frontmatter.parse(path) -> (dict, body_str)`. `scripts/verify` runs named checks and exits non-zero on any failure, printing `PASS <check>` / `FAIL <check>: <reason>` lines. `scripts/build [--check]` regenerates manifests; `--check` exits 1 if any generated file differs. `kit.config.json` keys: `name, description, author {name, url}, repository, license, keywords`.
+- Produces: `miniyaml.load(text: str) -> dict|list|scalar` and `miniyaml.dump(obj) -> str`, a thin wrapper over vendored pure-Python PyYAML 6.0.3 (`scripts/_lib/_vendor/yaml/`, no C extension, `safe_load`/`safe_dump`); raises `miniyaml.Error` with line number on parse failure and on duplicate keys. `frontmatter.parse(path) -> (dict, body_str)`. `scripts/verify` runs named checks and exits non-zero on any failure, printing `PASS <check>` / `FAIL <check>: <reason>` lines. `scripts/build [--check]` regenerates manifests; `--check` exits 1 if any generated file differs. `kit.config.json` keys: `name, description, author {name, url}, repository, license, keywords`.
 
 - [ ] Write `tests/test_miniyaml.py`: round-trip of a sample `plan.yaml` from Shared interfaces; `load("a: [1, 2]") == {"a": [1, 2]}`; tab indentation raises `Error` naming line 1; `"$1,200"` stays a string.
 - [ ] Write `tests/test_frontmatter.py`: parses name/description; missing closing `---` raises.
@@ -114,7 +114,7 @@ Score rules: band by `direction`; `near_floor` = within 10% of the floor; `escal
 
 ### Task 2.1: Runtime tool `bt.py` (lane A)
 
-**Files:** Create `skills/betterterms-guardrails/scripts/bt.py` (CLI entry, argparse), `skills/betterterms-guardrails/scripts/btlib/{__init__,cases,gate,score,ledger,money,yaml}.py` (`yaml.py` is a copy of `miniyaml` kept in sync by `scripts/build`, since the skill folder must be self-contained), `tests/test_gate.py`, `tests/test_score.py`, `tests/test_cases.py`, `tests/test_ledger.py`, `tests/test_money.py`.
+**Files:** Create `skills/betterterms-guardrails/scripts/bt.py` (CLI entry, argparse), `skills/betterterms-guardrails/scripts/btlib/{__init__,cases,gate,score,ledger,money,yaml}.py` plus `btlib/_vendor/yaml/` (the skill folder must be self-contained, so `btlib/yaml.py` is a copy of `scripts/_lib/miniyaml.py` and `btlib/_vendor/yaml/` a copy of `scripts/_lib/_vendor/yaml/`, required byte-identical by the `scripts/verify` `vendor-sync` check), `tests/test_gate.py`, `tests/test_score.py`, `tests/test_cases.py`, `tests/test_ledger.py`, `tests/test_money.py`.
 
 **Interfaces:** Produces the CLI in Shared interfaces. `money.amounts(text) -> list[float]` parses `$1,200`, `1200.00`, `1.2k`, `USD 1200`, `S$1,200`, `twelve hundred`. `gate.check(case_dir, draft: dict, approved: bool) -> (result, reasons)`. `score.classify(case_dir, inbound: dict) -> dict`.
 
@@ -217,7 +217,7 @@ Same file layout as step 6, `mode: coach`, `direction: receive`. Coach skill flo
 **Files:** `scripts/_lib/gen_{gemini,cursor,muse,agent_plugins}.py`; generated `gemini-extension.json`, `GEMINI.md`, `.cursor-plugin/plugin.json`, `.muse-plugin/plugin.json` (`schemaVersion: 1`), root `plugin.json` (Agent Plugins 1.0: `skills/`). Tests in `tests/test_build.py`.
 
 - [ ] `gemini extensions validate .` passes (verify check). Others validated against a JSON shape in tests. Not install-tested (decision per user: Claude Code and Codex are the test hosts).
-- [ ] Orchestrator checks open question 7 (does Claude Code read root `plugin.json`, which wins) by installing with both present; record in decision 0005.
+- [ ] Orchestrator checks open question 7 (does Claude Code read root `plugin.json`, which wins) by installing with both present; record in decision 0006.
 
 ## Step 9: Mod plugin (PR 9, 0.9.0)
 
@@ -245,3 +245,4 @@ Same file layout as step 6, `mode: coach`, `direction: receive`. Coach skill flo
 - 0002: Packs are siblings under `skills/` (not `packs/`); template at `templates/pack/`. One relative path to the runtime works in every layout.
 - 0003: Open decisions resolved: cloud cases are short-lived; response sharing off; `ai-api` covers pricing only; comp data user-supplied plus cited public sources.
 - 0004: Evals move from step 7 to step 3 so pack prompt changes have baselines.
+- 0005: The YAML layer is vendored pure-Python PyYAML 6.0.3 behind a `miniyaml` wrapper, replacing a hand-written subset that kept diverging from real YAML.

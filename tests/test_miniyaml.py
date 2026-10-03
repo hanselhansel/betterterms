@@ -40,38 +40,104 @@ facts:
 
 
 class LoadTest(unittest.TestCase):
-    def test_inline_list(self):
-        self.assertEqual(miniyaml.load("a: [1, 2]"), {"a": [1, 2]})
-
     def test_sample_plan_shape(self):
         plan = miniyaml.load(SAMPLE_PLAN)
         self.assertEqual(plan["target"], 70)
-        self.assertEqual(plan["options"][0], {"label": "annual", "value": 65, "terms": "12-month prepay"})
+        self.assertEqual(
+            plan["options"][0],
+            {"label": "annual", "value": 65, "terms": "12-month prepay"},
+        )
         self.assertEqual(plan["patience"], {"rounds": 3, "days": 14})
         self.assertEqual(plan["facts"][1]["id"], "f2")
 
-    def test_tab_indentation_raises_with_line_number(self):
-        with self.assertRaises(miniyaml.Error) as cm:
-            miniyaml.load("\ta: 1")
-        self.assertIn("line 1", str(cm.exception))
+    def test_scalar_types(self):
+        out = miniyaml.load("i: 3\nf: 1.5\nb: true\nn: null\ns: hello\n")
+        self.assertEqual(out, {"i": 3, "f": 1.5, "b": True, "n": None, "s": "hello"})
+        # Extended by /ship coverage audit (plan's named assertion).
+        # Value: protects=flow sequences load as lists of ints; fails_when=flow
+        # collections or int resolution break in the loader; why_new=flow lists
+        # are only checked via frontmatter strings; seam=none
+        self.assertEqual(miniyaml.load("a: [1, 2]"), {"a": [1, 2]})
 
     def test_dollar_amount_stays_string(self):
         out = miniyaml.load('price: "$1,200"')
         self.assertEqual(out, {"price": "$1,200"})
         self.assertIsInstance(out["price"], str)
 
-    def test_scalar_types(self):
-        out = miniyaml.load("i: 3\nf: 1.5\nb: true\nn: null\ns: hello\n")
-        self.assertEqual(out, {"i": 3, "f": 1.5, "b": True, "n": None, "s": "hello"})
+    def test_yaml_error_becomes_error_with_line(self):
+        with self.assertRaises(miniyaml.Error) as cm:
+            miniyaml.load("\ta: 1\n")
+        self.assertEqual(cm.exception.line, 1)
+        self.assertIn("line 1", str(cm.exception))
+        with self.assertRaises(miniyaml.Error) as cm:
+            miniyaml.load("name: x\ndescription: a: b\n")
+        self.assertEqual(cm.exception.line, 2)
 
-    def test_block_scalar(self):
-        out = miniyaml.load("text: |\n  first line\n  second line\nnext: 1\n")
-        self.assertEqual(out["text"], "first line\nsecond line\n")
-        self.assertEqual(out["next"], 1)
+    def test_error_without_mark_has_no_line(self):
+        with self.assertRaises(miniyaml.Error) as cm:
+            miniyaml.load(42)
+        self.assertIsNone(cm.exception.line)
 
-    def test_missing_colon_raises(self):
+    # Value: protects=a duplicate mapping key raises naming its line instead of
+    # silently overwriting plan data; fails_when=the duplicate-key guard in
+    # _Loader.construct_mapping is removed; seam=none
+    def test_duplicate_key_raises_with_line_number(self):
+        with self.assertRaises(miniyaml.Error) as cm:
+            miniyaml.load("target: 70\ncurrency: USD\ntarget: 85\n")
+        self.assertEqual(cm.exception.line, 3)
+        self.assertIn("duplicate key", str(cm.exception))
+
+    def test_merge_key_raises_with_line_number(self):
+        for text, line in (
+            ("merged:\n  <<: {x: 1, y: 2}\n  z: 3\n", 2),
+            ("m:\n  <<: [{a: 1, b: 1}, {b: 2, c: 2}]\n", 2),
+            ("m:\n  <<: {a: 1}\n  a: 9\n", 2),
+            ("<<: {a: 1}\nx: 2\n", 1),
+        ):
+            with self.subTest(text=text):
+                with self.assertRaises(miniyaml.Error) as cm:
+                    miniyaml.load(text)
+                self.assertEqual(cm.exception.line, line)
+                self.assertIn("merge", str(cm.exception))
+
+    def test_alias_raises_error_but_anchor_alone_is_fine(self):
+        with self.assertRaises(miniyaml.Error) as cm:
+            miniyaml.load("a: &x 1\nb: *x\n")
+        self.assertIn("alias", str(cm.exception))
+        self.assertIsNotNone(cm.exception.line)
+        self.assertEqual(miniyaml.load("a: &x 1\n"), {"a": 1})
+
+    def test_alias_bomb_and_merge_alias_raise_error(self):
+        bomb = "a: &a [x,x,x,x,x,x,x,x]\nb: [*a, *a, *a]\n"
         with self.assertRaises(miniyaml.Error):
-            miniyaml.load("a: 1\njust text\n")
+            miniyaml.load(bomb)
+        with self.assertRaises(miniyaml.Error):
+            miniyaml.load("d: &d {x: 1}\nm:\n  <<: *d\n")
+
+    def test_docstring_is_location_neutral(self):
+        # This file is byte-copied into the guardrails skill's btlib, so
+        # the docstring cannot name repo-rooted paths.
+        self.assertNotIn("scripts/", miniyaml.__doc__)
+        self.assertNotIn("btlib", miniyaml.__doc__)
+        self.assertIn("_vendor", miniyaml.__doc__)
+
+    def test_deep_nesting_raises_error_not_recursion_error(self):
+        with self.assertRaises(miniyaml.Error) as cm:
+            miniyaml.load("[" * 5000)
+        self.assertIn("nesting too deep", str(cm.exception))
+
+    # Generated by /ship coverage audit.
+    # Value: protects=an unhashable (list or map) mapping key raises
+    # miniyaml.Error with a line, never a bare TypeError or YAMLError;
+    # fails_when=the TypeError guard in _Loader.construct_mapping is removed or
+    # re-raises; why_new=only hashable duplicate keys are tested; seam=none
+    def test_unhashable_key_raises_error_not_type_error(self):
+        for text in ("? [a]\n: 1\n", "ok: 1\n? {a: 1}\n: 2\n"):
+            with self.subTest(text=text):
+                with self.assertRaises(miniyaml.Error) as cm:
+                    miniyaml.load(text)
+                self.assertIn("unhashable key", str(cm.exception))
+                self.assertIsNotNone(cm.exception.line)
 
 
 class DumpTest(unittest.TestCase):
@@ -79,15 +145,44 @@ class DumpTest(unittest.TestCase):
         plan = miniyaml.load(SAMPLE_PLAN)
         self.assertEqual(miniyaml.load(miniyaml.dump(plan)), plan)
 
-    def test_round_trip_scalars_and_nested(self):
+    def test_round_trip_nested_types(self):
         obj = {
-            "a": [1, "two", None, True, 2.5],
-            "b": {"c": "x: y", "d": "$1,200", "e": "trailing "},
+            "str": "text",
+            "int": 3,
+            "float": 2.5,
+            "bool": True,
+            "none": None,
+            "list": [1, "two", None, False],
+            "dict": {"nested": {"deep": "x: y"}},
             "empty_list": [],
             "empty_map": {},
-            "multiline": "one\ntwo",
+            "unicode": "café",
         }
         self.assertEqual(miniyaml.load(miniyaml.dump(obj)), obj)
+
+    def test_dump_is_block_style_sorted_off(self):
+        out = miniyaml.dump({"b": 1, "a": [1, 2]})
+        self.assertEqual(out, "b: 1\na:\n- 1\n- 2\n")
+
+    def test_shared_subobject_dumps_inline_and_round_trips(self):
+        shared = {"x": 1}
+        obj = {"a": shared, "b": shared}
+        out = miniyaml.dump(obj)
+        self.assertNotIn("&id", out)
+        self.assertNotIn("*id", out)
+        self.assertEqual(out.count("x: 1"), 2)
+        self.assertEqual(miniyaml.load(out), obj)
+
+    def test_cyclic_data_raises_error_not_recursion_error(self):
+        obj = {}
+        obj["self"] = obj
+        with self.assertRaises(miniyaml.Error) as cm:
+            miniyaml.dump(obj)
+        self.assertIn("nesting too deep", str(cm.exception))
+
+    def test_unsupported_value_raises_error(self):
+        with self.assertRaises(miniyaml.Error):
+            miniyaml.dump({"k": object()})
 
 
 if __name__ == "__main__":
