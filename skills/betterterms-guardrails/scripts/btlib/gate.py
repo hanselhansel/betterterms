@@ -34,7 +34,7 @@ guarantees and fail closed:
 
 The review tier never blocks but never passes silently either: a
 draft whose rendered text (placeholder outputs masked, fact text
-visible) trips a check in ``render.review`` returns
+visible) trips a check in ``btlib.review`` returns
 ``needs_approval`` with plain-word reasons that carry no numbers.
 The text scan is an allowlist (decision 0009 amendment): characters
 off the permitted set, tokens mixing letters and digits, disallowed
@@ -47,13 +47,12 @@ every floor-related block reports the same generic reason so the
 output can never leak the floor's value, direction or distance.
 """
 
-from . import BtError, MAX_TEXT, cases, render
+from . import BtError, FLOOR_TOL, PERIODS, cases, render, review
 
 IRREVERSIBLE = {"accept", "cancel", "pay", "sign", "dispute"}
 OFFERED = {"accept", "pay", "sign"}
 ACTIONS = IRREVERSIBLE | {"send"}
 DRAFT_KEYS = {"action", "offer", "period", "template", "claims"}
-FLOOR_TOL = 0.005
 LIMITS = "outside your limits; escalate to the user"
 
 
@@ -140,7 +139,7 @@ def check(case_dir, draft, approved=False, inbound=None):
         offer = None
 
     raw_period = draft.get("period", "once")
-    if not isinstance(raw_period, str) or raw_period.lower() not in render.PERIODS:
+    if not isinstance(raw_period, str) or raw_period.lower() not in PERIODS:
         findings.append(("block", "period must be once, month or year"))
         period = "once"
     else:
@@ -162,7 +161,7 @@ def check(case_dir, draft, approved=False, inbound=None):
     in_period = plan_period
     if inbound and inbound.get("period") is not None:
         raw_in = inbound.get("period")
-        if not isinstance(raw_in, str) or raw_in.lower() not in render.PERIODS:
+        if not isinstance(raw_in, str) or raw_in.lower() not in PERIODS:
             findings.append(("block", "period must be once, month or year"))
         else:
             in_period = raw_in.lower()
@@ -175,8 +174,9 @@ def check(case_dir, draft, approved=False, inbound=None):
         for reason in find.errors:
             findings.append(("block", reason))
         # The size limit lands on the rendered message (fact expansion
-        # included) before any scanning runs.
-        if len(find.text.encode("utf-8")) > MAX_TEXT:
+        # included) before any scanning runs; render sums piece lengths
+        # and never joins the oversized string.
+        if find.oversized:
             findings.append(("block", "message too large"))
             clean = False
 
@@ -223,7 +223,7 @@ def check(case_dir, draft, approved=False, inbound=None):
         if autonomy == 1:
             findings.append(("approval", "autonomy 1: the user approves every send"))
         if clean:
-            for reason in render.review(
+            for reason in review.review(
                 find, floor, cases.as_list(brief.get("never_disclose"))
             ):
                 findings.append(("approval", reason))

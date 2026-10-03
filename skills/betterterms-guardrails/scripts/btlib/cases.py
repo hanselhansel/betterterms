@@ -2,7 +2,8 @@
 
 Layout: ``$BETTERTERMS_HOME/cases/<case_id>/`` holds ``brief.yaml``,
 ``plan.yaml``, ``.floor`` (mode 0600, read only by gate and score),
-``sources/`` and ``thread.md``. ``BETTERTERMS_HOME`` overrides the
+``sources/`` and ``thread.md``; the savings ledger lives beside them in
+``$BETTERTERMS_HOME/ledger.jsonl``. ``BETTERTERMS_HOME`` overrides the
 default ``Path.home() / ".betterterms"``. ``case_id`` format:
 ``<pack>-<YYYYMMDD>-<4 hex>``.
 """
@@ -14,7 +15,7 @@ import secrets
 from datetime import date
 from pathlib import Path
 
-from . import BtError, yaml
+from . import BtError, MAX_AMOUNT, PERIODS, yaml
 
 PACK_RE = re.compile(r"^[a-z0-9-]{1,64}$")
 CASE_ID_RE = re.compile(r"^[a-z0-9-]+$")
@@ -23,7 +24,6 @@ FLOOR_MSG = "floor must be a single plain number like 1200 or 1200.50"
 _PLAIN_NUMBER = re.compile(r"\d+(?:\.(\d+))?$")
 
 AUTONOMY_DEFAULT = {"act": 2, "coach": 1}
-PERIODS = ("once", "month", "year")
 OPTION_KINDS = ("bonus", "fee", "price")
 
 
@@ -181,7 +181,7 @@ def num(value):
             return None
     else:
         return None
-    return v if math.isfinite(v) and abs(v) <= 1e12 else None
+    return v if math.isfinite(v) and abs(v) <= MAX_AMOUNT else None
 
 
 def num_repr(value):

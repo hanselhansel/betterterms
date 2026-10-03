@@ -64,6 +64,14 @@ class LoadTest(unittest.TestCase):
         self.assertEqual(out, {"price": "$1,200"})
         self.assertIsInstance(out["price"], str)
 
+    def test_overlong_int_loads_as_string(self):
+        # Past Python's int digit limit the constructor degrades the
+        # scalar to a string instead of raising, so a draft offer like
+        # `offer: <5000 digits>` reaches the gate as "not a number".
+        digits = "9" * 5000
+        data = miniyaml.load("offer: " + digits)
+        self.assertEqual(data["offer"], digits)
+
     def test_yaml_error_becomes_error_with_line(self):
         with self.assertRaises(miniyaml.Error) as cm:
             miniyaml.load("\ta: 1\n")

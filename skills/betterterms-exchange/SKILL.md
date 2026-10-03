@@ -24,10 +24,11 @@ The full turn procedure is in `references/turn-procedure.md`. Follow it.
 
 ## Outputs
 
-- `inbound.yaml` in the case folder: `{offer, text, amounts}` for this
-  turn. `offer` is a number or null; `amounts` is the ordered list of
-  every number the counterparty stated, so `{quote:n}` placeholders can
-  reference them.
+- `inbound.yaml` in the case folder: `{offer, period, text, amounts}`
+  for this turn. `offer` is a number or null; `period` is `once`,
+  `month`, or `year`, the period the counterparty's offer is per;
+  `amounts` is the ordered list of every number the counterparty
+  stated, so `{quote:n}` placeholders can reference them.
 - `draft.yaml`: `{action, offer, period, template, claims}`. `action`
   is one of `send`, `accept`, `cancel`, `pay`, `sign`, `dispute`;
   `offer` is a plain number or null (never a string like "$1,250");
@@ -46,7 +47,8 @@ or ask for their offer when it is not. Then gate, send, and log as below.
 
 ## One turn
 
-1. Write `inbound.yaml` with the counterparty's offer and text.
+1. Write `inbound.yaml` with the counterparty's offer, the period it
+   is per (`once`, `month`, or `year`), and the text.
 2. Score it:
 
    `python3 ../betterterms-guardrails/scripts/bt.py score <case_id> --inbound <path>/inbound.yaml`

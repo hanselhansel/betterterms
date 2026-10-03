@@ -28,13 +28,17 @@ import re
 from collections import namedtuple
 from heapq import merge
 
-from . import MAX_TEXT
+from . import MAX_TEXT, wordlists
 
 Amount = namedtuple("Amount", ["start", "end", "value"])
 
 _NUM = r"\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?"
 _SPACE_NUM = r"\d{1,3}(?: \d{3})+"
-_CODES = r"USD|EUR|GBP|JPY|CHF|SGD|AUD|CAD|HKD|NZD|INR|ZAR|SEK|NOK|DKK"
+# The shared ISO-style code list; the review tier matches the same set
+# case-sensitively while these patterns match case-insensitively.
+_CODES = "|".join(
+    sorted(wordlists.CURRENCY_CODES, key=len, reverse=True)
+)
 _PREFIX = rf"(?:[A-Za-z]{{1,3}}\$|[$€£₹¥]|{_CODES})\s*"
 _SUFFIX = rf"(?:{_CODES}|dollars?|bucks|quid)\b"
 _PERIOD = r"(?:mo|month|yr|year|week|wk|day|hr|hour|annum|quarter)s?\b"
@@ -61,14 +65,17 @@ _SCALE_WORD_VALUE = {**_SCALES, "grand": 1e3}
 
 # A currency-marked number may carry a multiplier after it: "$1.2
 # million" is one marked 1,200,000, never a stray 1.2 next to a million.
+# Every lookbehind also excludes ",": without it each position after a
+# comma in a ",123,123,..." run passes the anchor, and _NUM then walks
+# the whole tail, which is quadratic on a comma-digit run.
 _MARKED = re.compile(
-    rf"(?<![\w.]){_PREFIX}(?P<num>{_NUM})(?:\s*(?P<mult>{_MULT_RE}))?\b"
+    rf"(?<![\w.,]){_PREFIX}(?P<num>{_NUM})(?:\s*(?P<mult>{_MULT_RE}))?\b"
     rf"(?:\s*{_SUFFIX})?",
     re.IGNORECASE,
 )
 _SUFFIXED = re.compile(
-    rf"(?<![\w.])(?P<num>{_NUM})(?P<mult>{_MULT_RE})\b(?:\s*{_SUFFIX})?"
-    rf"|(?<![\w.])(?P<num2>{_NUM})\s*{_SUFFIX}",
+    rf"(?<![\w.,])(?P<num>{_NUM})(?P<mult>{_MULT_RE})\b(?:\s*{_SUFFIX})?"
+    rf"|(?<![\w.,])(?P<num2>{_NUM})\s*{_SUFFIX}",
     re.IGNORECASE,
 )
 # A digit plus a scale word is a marked amount: "12 hundred", "1.5

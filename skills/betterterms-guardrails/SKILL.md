@@ -98,19 +98,25 @@ free text is safe: it runs an allowlist, so anything unusual routes
 to the user. A hit returns `needs_approval` with a plain-word reason
 that carries no numbers:
 
-- Any character outside the allowed set: ASCII letters, ASCII space
-  and newline, the punctuation `. , ; : ! ? ' " ( ) - / &`, and the
-  sentinel. Non-ASCII letters, homoglyphs, control, format,
+- Any character outside the allowed set: ASCII letters and digits,
+  ASCII space and newline, the punctuation `. , ; : ! ? ' " ( ) - / &`,
+  and the sentinel. Non-ASCII letters, homoglyphs, control, format,
   combining, private-use and non-ASCII space characters, currency
   signs and every other symbol all route to the user, so a message
-  written in a language other than English always needs approval.
+  written in a language other than English always needs approval. The
+  sentinel is one reserved private-use codepoint; a template or fact
+  that already carries it routes to the user too.
 - Any token mixing letters and digits ("95USD", "12hundred",
   "2ndly").
-- Any digit token that is not 1-99, and not a 1900-2100 year right
-  after a whole-word month name ("October 15, 2026", "Jan 2026").
-  Small integers pass for counts and dates, unless the floor is
-  below 100 and the integer equals its integer part.
-- A run of number words ("twelve fifty").
+- Any digit group that is not a leading-zero-free 1-99, and not a
+  1900-2100 year right after a whole-word month name ("October 15,
+  2026", "Jan 2026"). Digit runs joined only by separators read as one
+  number ("1,050" and "12 50" are four digits), while "90.5" and
+  "3.11" stay decimals. Small integers pass for counts and dates,
+  unless the floor is below 100 and the integer or a matching number
+  word equals its integer part.
+- A run of number words ("twelve fifty", "one, two"): any spacing or
+  punctuation between them still counts as one run.
 - A letter, a digit, or a digit past a `.`/`,` separator glued to a
   rendered amount: "$1,100k" or "$1,100.99" restates a price.
 - The whole-word lists below, matched on the lowercased token stream

@@ -243,6 +243,19 @@ class ScoreTest(BtTestCase):
         self.assertEqual(proc.returncode, 0, out)
         self.assertLess(elapsed, 1.0)
 
+    def test_score_comma_digit_run_under_one_second(self):
+        # 64 KB of ",123" made the suffixed-amount lookbehind scan
+        # quadratically; the inbound amount scan must stay linear.
+        import time
+
+        case_id = self.make_case()
+        text = ",123" * 16000
+        start = time.monotonic()
+        proc, out = self.score(case_id, {"offer": 80, "text": text})
+        elapsed = time.monotonic() - start
+        self.assertEqual(proc.returncode, 0, out)
+        self.assertLess(elapsed, 1.0)
+
     def test_huge_inbound_offer_scores_unknown(self):
         # A magnitude past the number cap parses to no offer: band
         # unknown and no_offer_parsed, never a crash.

@@ -230,6 +230,21 @@ class NumCapTest(PeriodCase):
         self.assertEqual(proc.returncode, 1, out)
         self.assertIn("offer must be a number", out["reasons"])
 
+    def test_overlong_integer_offer_blocks_not_errors(self):
+        # Past Python's digit limit the int constructor raises; the
+        # offer loads as a string and lands as "not a number" (exit 1),
+        # never a YAML parse error (exit 2).
+        case_id = self.make_case()
+        path = self.tmp / "draft.yaml"
+        path.write_text(
+            "action: send\noffer: " + "9" * 5000 + "\ntemplate: hi\n"
+        )
+        proc, out = run_bt_json(
+            self.home, "gate", case_id, "--draft", str(path)
+        )
+        self.assertEqual(proc.returncode, 1, out)
+        self.assertIn("offer must be a number", out["reasons"])
+
     def test_num_caps_at_1e12(self):
         for bad in (10**400, 1e13, -2e12, float("inf"), float("nan"),
                     "1e13", "9" * 400):

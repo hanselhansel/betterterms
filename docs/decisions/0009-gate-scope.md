@@ -85,23 +85,30 @@ still routes to the user and never blocks, but it no longer tries to
 enumerate suspicious forms; it fails closed on anything unusual.
 
 - The scan works on the rendered message with each non-fact
-  placeholder output replaced by a sentinel. The free text passes
-  only when every character is in the allowed set: ASCII letters,
-  ASCII space and newline, the punctuation `. , ; : ! ? ' " ( ) - /
-  &`, and the sentinel. Any other character (non-ASCII letters,
-  homoglyphs, control, format, combining, private-use and non-ASCII
-  space characters, Hangul filler, braille blank, currency signs,
-  symbols) is `needs_approval` "unusual characters". Non-English
-  messages therefore always go to the user.
+  placeholder output replaced by a sentinel, one reserved private-use
+  codepoint. The free text passes only when every character is in the
+  allowed set: ASCII letters and digits, ASCII space and newline, the
+  punctuation `. , ; : ! ? ' " ( ) - / &`, and the sentinel. Any
+  other character (non-ASCII letters, homoglyphs, control, format,
+  combining, private-use and non-ASCII space characters, Hangul
+  filler, braille blank, currency signs, symbols) is `needs_approval`
+  "unusual characters". So is a template or fact that already carries
+  the sentinel itself. Non-English messages therefore always go to
+  the user.
 - Free text tokenizes on non-alphanumeric characters in one linear
-  pass. A token mixing letters and digits routes to the user. A
-  digit-only token passes only when it is 1-99 (and not equal to the
-  floor's integer value when the floor is below 100) or a 1900-2100
-  year right after a whole-word month name.
+  pass. A token mixing letters and digits routes to the user. Digit
+  runs joined only by separators ("1,050", "1.099", "12 50") evaluate
+  as the whole joined number, never as separate small tokens. A
+  joined group passes only when it is 1-99 written without a leading
+  zero (and not equal to the floor's integer value when the floor is
+  below 100, in digits or as one number word) or a 1900-2100 year
+  right after a whole-word month name.
 - Number words, scale words, currency words and commitment words
   stay as whole-word lists matched on the token stream. They live in
   one shared module (`scripts/btlib/wordlists.py`) that the
-  guardrails SKILL.md quotes verbatim, pinned by a unit test.
+  guardrails SKILL.md quotes verbatim, pinned by a unit test. Any
+  spacing or punctuation between number words still counts as one
+  run.
 - A sentinel touching a letter or digit still routes to the user.
 - A rendered non-offer value equal to the floor exactly still
   blocks; equal only to an x12 or /12 conversion is now a review hit
