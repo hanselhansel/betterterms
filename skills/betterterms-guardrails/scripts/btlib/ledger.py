@@ -57,7 +57,7 @@ def add(case_dir, before, after, period):
         raise BtError("case already recorded in ledger")
     brief = cases.load_brief(case_dir)
     pack = str(brief.get("pack") or case_id.rsplit("-", 2)[0])
-    direction = str(brief.get("direction") or "pay").lower()
+    direction = cases.direction_of(brief)
     multiplier = PERIODS_PER_YEAR[period]
     delta = (after - before) if direction == "receive" else (before - after)
     saved = _clean_number(delta * multiplier)

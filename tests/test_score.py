@@ -224,6 +224,36 @@ class ScoreTest(BtTestCase):
         self.assertEqual(proc.returncode, 2, out)
         self.assertIn("error", out)
 
+    def test_text_over_64kb_errors_message_too_long(self):
+        case_id = self.make_case()
+        proc, out = self.score(
+            case_id, {"offer": 80, "text": "x" * (64 * 1024 + 1)}
+        )
+        self.assertEqual(proc.returncode, 2, out)
+        self.assertIn("message too long", out["error"])
+
+    def test_score_at_cap_under_one_second(self):
+        import time
+
+        case_id = self.make_case()
+        text = "we can do " + "a1 " * 21000  # ~63 KB, mixed tokens
+        start = time.monotonic()
+        proc, out = self.score(case_id, {"offer": 80, "text": text})
+        elapsed = time.monotonic() - start
+        self.assertEqual(proc.returncode, 0, out)
+        self.assertLess(elapsed, 1.0)
+
+    def test_huge_inbound_offer_scores_unknown(self):
+        # A magnitude past the number cap parses to no offer: band
+        # unknown and no_offer_parsed, never a crash.
+        case_id = self.make_case(direction="pay", floor=100, target=70)
+        proc, out = self.score(
+            case_id, {"offer": 10**400, "text": "counter"}
+        )
+        self.assertEqual(proc.returncode, 0, out)
+        self.assertEqual(out["band"], "unknown")
+        self.assertIn("no_offer_parsed", out["escalate"])
+
 
 if __name__ == "__main__":
     unittest.main()

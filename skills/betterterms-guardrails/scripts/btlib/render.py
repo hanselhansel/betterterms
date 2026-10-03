@@ -17,15 +17,16 @@ reaches a draft:
 output replaced by a mask character; fact text stays visible because it
 is user data, not a guaranteed price. ``review`` scans that masked
 text and returns plain-word reasons (never a number) for the
-needs_approval tier: anything money-shaped, numeric, committal or
-invisible that is not a rendered placeholder goes to the user.
+needs_approval tier. The scan is an allowlist, not a blacklist:
+every character must be on the allowed set and every alphanumeric
+token must be clean (decision 0009 amendment).
 """
 
 import math
 import re
 import unicodedata
 
-from . import BtError, cases, money
+from . import BtError, cases, money, wordlists
 
 PERIODS = ("once", "month", "year")
 _MONTHS = {"month": 1.0, "year": 12.0}
@@ -33,78 +34,18 @@ TAG = re.compile(r"\{([^{}]*)\}")
 
 _MASK = "\x00"  # stands in for one non-fact placeholder output
 
-# Currency symbols, common letter-prefixed signs, and ISO-style codes.
-_CURSYM = re.compile(r"[A-Za-z]{1,3}\$|[$€£¥₹₽฿₩₪₫₦₴₱₡]")
-_CODES = (
-    "USD|EUR|GBP|SGD|JPY|CHF|CAD|AUD|NZD|HKD|CNY|CNH|SEK|NOK|DKK|"
-    "INR|BRL|MXN|KRW|ZAR|TWD|MYR|THB|IDR|PHP|VND|AED|SAR|ILS|PLN|"
-    "CZK|HUF|TRY|RUB"
+# The review-tier allowlist: ASCII letters and digits, space and
+# newline, this punctuation set and the sentinel. Any other character
+# (non-ASCII letters, homoglyphs, controls, format, combining and
+# private-use characters, currency signs, symbols) routes to the user,
+# which is why non-English text always needs approval.
+_ALLOWED = frozenset(
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+    " \n.,;:!?'\"()-/&" + _MASK
 )
-_CURCODE = re.compile(rf"\b(?:{_CODES})\b")
-# Lowercase codes flag too, except the ones that are also common words
-# ("try", "rub", "cad"): they stay uppercase-only.
-_CURCODE_CI = re.compile(
-    r"\b(?:usd|eur|gbp|sgd|jpy|chf|aud|nzd|hkd|cny|cnh|sek|nok|dkk|"
-    r"inr|brl|mxn|krw|zar|twd|myr|thb|idr|php|vnd|aed|sar|ils|pln|"
-    r"czk|huf)\b",
-    re.IGNORECASE,
-)
-_CURWORD = re.compile(
-    r"\b(dollars?|bucks?|euros?|pounds?|yen|yuan|renminbi|grand|quid|"
-    r"hundred|thousand|millions?|billions?|trillions?|bn|mm)\b|"
-    r"\d\s*k\b",
-    re.IGNORECASE,
-)
-_NUMWORD = (
-    r"zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|"
-    r"twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|"
-    r"nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|"
-    r"oh|ought|nil"
-)
-_NUMWORD_RUN = re.compile(
-    rf"(?:\b(?:{_NUMWORD})\b[ \t-]+)+\b(?:{_NUMWORD})\b",
-    re.IGNORECASE,
-)
-# Three or more digits, separators allowed between any of them.
-_NUM3 = re.compile(r"\d(?:[,.'` ]*\d){2,}")
-_SMALL = re.compile(r"(?<!\d)\d{1,2}(?!\d)")
-_ADJACENT = re.compile(r"\d\x00|\x00\d")
-
-_MONTH = r"(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?"
-# A 4-digit year next to a month name is a date, not an amount.
-_DATE = re.compile(
-    rf"\b{_MONTH}\s+\d{{1,2}}(?:st|nd|rd|th)?\s*,?\s*(?:19|20)\d\d\b|"
-    rf"\b\d{{1,2}}(?:st|nd|rd|th)?\s+{_MONTH}\s*,?\s*(?:19|20)\d\d\b|"
-    rf"\b{_MONTH}\s+(?:19|20)\d\d\b",
-    re.IGNORECASE,
-)
-
-_COMMIT = [
-    re.compile(p, re.IGNORECASE)
-    for p in (
-        r"\bdeal\b",
-        r"\bagree\w*\b",
-        r"\baccept\w*\b",
-        r"\bworks?\s+for\s+(me|us)\b",
-        r"\b(?:happy|glad|willing|ready)\s+to\s+pay\b",
-        r"\bpay\b",
-        r"\bgo\s+ahead\b",
-        r"\bcharge\b",
-        r"\bprocess\s+it\b",
-        r"\bsign\s+me\s+up\b",
-        r"\bcancel\s+my\b",
-        r"\bconfirm\w*\b",
-        r"\bsounds\s+good\b",
-    )
-]
-
-# Invisible joiners outside category Cf: the combining grapheme joiner,
-# Mongolian free variation selectors and variation selectors.
-_MN_JOINERS = frozenset(
-    "\u034f\u180b\u180c\u180d\u180e\u180f"
-    "\ufe00\ufe01\ufe02\ufe03\ufe04\ufe05\ufe06\ufe07"
-    "\ufe08\ufe09\ufe0a\ufe0b\ufe0c\ufe0d\ufe0e\ufe0f"
-)
+# Free text splits into alphanumeric runs: one linear pass, no
+# backtracking.
+_TOKEN = re.compile(r"[0-9A-Za-z]+")
 
 
 class Value:
@@ -122,9 +63,11 @@ class Find:
     """The outcome of rendering a template. ``errors`` are blocking
     reasons that name the placeholder, never a number. ``masked`` is
     the rendered text with non-fact placeholder outputs replaced by
-    the mask character."""
+    the mask character. ``fact_amounts`` caches one money scan per
+    fact id so a repeated {fact:id} costs once."""
 
-    __slots__ = ("text", "values", "masked", "fact_ids", "errors")
+    __slots__ = ("text", "values", "masked", "fact_ids", "errors",
+                 "fact_amounts")
 
     def __init__(self):
         self.text = None
@@ -132,6 +75,7 @@ class Find:
         self.masked = ""
         self.fact_ids = set()
         self.errors = []
+        self.fact_amounts = {}
 
 
 def normalize(text):
@@ -163,7 +107,7 @@ def money_text(value, period=None):
     return f"${s}"
 
 
-def _parse_index(arg, what):
+def _parse_index(arg):
     # str.isdigit accepts superscripts and non-ASCII digits that int()
     # either crashes on or silently misreads; indexes are ASCII only.
     if not arg.isascii() or not arg.isdigit():
@@ -239,7 +183,7 @@ def _resolve(tag, find, offer, offer_period, plan, plan_period, in_amounts):
         find.errors.append(f"{{option:{arg}}} not in plan options")
         return "", ""
     if name == "ladder" and arg:
-        n = _parse_index(arg, "ladder")
+        n = _parse_index(arg)
         items = cases.as_list(plan.get("ladder"))
         if n is None or n > len(items):
             find.errors.append(f"{{ladder:{arg}}} needs an index 1..{len(items)}")
@@ -257,13 +201,15 @@ def _resolve(tag, find, offer, offer_period, plan, plan_period, in_amounts):
             if isinstance(item, dict) and str(item.get("id")) == arg:
                 text = str(item.get("text") or "")
                 find.fact_ids.add(arg)
-                for v in money.amounts(text):
+                if arg not in find.fact_amounts:
+                    find.fact_amounts[arg] = money.amounts(text)
+                for v in find.fact_amounts[arg]:
                     find.values.append(Value("fact", v, "once"))
                 return text, text
         find.errors.append(f"{{fact:{arg}}} not in plan facts")
         return "", ""
     if name == "quote" and arg:
-        n = _parse_index(arg, "quote")
+        n = _parse_index(arg)
         if n is None or n > len(in_amounts):
             find.errors.append(
                 f"{{quote:{arg}}} needs {arg} inbound amounts"
@@ -279,17 +225,14 @@ def _resolve(tag, find, offer, offer_period, plan, plan_period, in_amounts):
     return "", ""
 
 
-def _invisible(ch):
-    """Format (Cf) characters, Mn joiners and variation selectors."""
-    return unicodedata.category(ch) == "Cf" or ch in _MN_JOINERS
-
-
 def _touching(text):
-    """A character that could extend a rendered amount sits right
-    against a mask sentinel: a letter or digit ("$1,100k" reads as
-    1,100,000), or a ``.``/``,`` separator with a digit on its far
-    side ("$1,100.99" restates the price). A separator followed by a
-    space or a word is ordinary sentence punctuation, not glue."""
+    """Characters that could extend a rendered amount sit right
+    against a mask sentinel. Returns the kinds found: ``digit`` for a
+    digit directly on the sentinel ("$1,100" plus "0" restates the
+    price), ``letter`` for a letter ("$1,100k" reads as 1,100,000) and
+    ``decimal`` for a ``.``/``,`` separator with a digit on its far
+    side ("$1,100.99"). An empty set means the sentinel is clean."""
+    found = set()
     for i, c in enumerate(text):
         if c != _MASK:
             continue
@@ -297,52 +240,107 @@ def _touching(text):
             if not 0 <= j < len(text):
                 continue
             d = text[j]
-            if d.isalnum():
-                return True
-            if d in ".,":
+            if d.isascii() and d.isdigit():
+                found.add("digit")
+            elif d.isascii() and d.isalpha():
+                found.add("letter")
+            elif d in ".,":
                 k = j + (j - i)  # the character past the separator
-                if 0 <= k < len(text) and text[k].isdigit():
-                    return True
+                if (0 <= k < len(text) and text[k].isascii()
+                        and text[k].isdigit()):
+                    found.add("decimal")
+    return found
+
+
+def _tokens(text):
+    """All alphanumeric tokens of ``text`` as ``(start, end, token)``
+    in order: one linear pass, no backtracking."""
+    return [(m.start(), m.end(), m.group(0)) for m in _TOKEN.finditer(text)]
+
+
+def _is_year(masked, toks, i):
+    """A 1900-2100 digit token is a year only when it follows a
+    whole-word month name ("Jan 2026", "15 October 2026") or a month,
+    a day 1-31 and a comma ("October 15, 2026")."""
+    tok = toks[i][2]
+    if len(tok) != 4 or not 1900 <= int(tok) <= 2100 or i == 0:
+        return False
+    if toks[i - 1][2].lower() in wordlists.MONTH_WORDS:
+        return True
+    if (
+        i >= 2
+        and toks[i - 1][2].isdigit()
+        and len(toks[i - 1][2]) <= 3
+        and 1 <= int(toks[i - 1][2]) <= 31
+        and toks[i - 2][2].lower() in wordlists.MONTH_WORDS
+    ):
+        gap = masked[toks[i - 1][1]:toks[i][0]]
+        return "," in gap and all(c in ", \t\n" for c in gap)
     return False
 
 
 def review(find, floor, never_items):
     """Review-tier checks on the rendered message. Reads ``find.masked``
     (placeholder outputs masked, fact text visible) and returns one
-    plain-word reason per tripped check; reasons carry no numbers."""
+    plain-word reason per tripped check; reasons carry no numbers.
+    The scan is an allowlist: characters off the permitted set, tokens
+    that mix letters and digits, disallowed numbers, listed money and
+    commitment words and sentinel glue all go to the user."""
     reasons = []
     masked = find.masked
-    if any(_invisible(c) for c in masked):
-        reasons.append("invisible or format characters in the message")
-    if any(c.isdigit() and not c.isascii() for c in masked):
-        reasons.append("non-ASCII digits in the message")
-    norm = normalize(masked)
-    if _ADJACENT.search(norm):
+    if any(c not in _ALLOWED for c in masked):
+        reasons.append("unusual characters in the message")
+    touch = _touching(masked)
+    if "digit" in touch:
         reasons.append("a digit next to a rendered amount")
-    if _touching(norm):
+    if touch:
         reasons.append("text touches a rendered amount")
-    if (
-        _CURSYM.search(norm)
-        or _CURCODE.search(norm)
-        or _CURCODE_CI.search(norm)
-    ):
-        reasons.append("a currency symbol or code in the message")
-    if _CURWORD.search(norm):
-        reasons.append("a money or scale word in the message")
-    if _NUMWORD_RUN.search(norm):
-        reasons.append("a run of number words in the message")
-    work = _DATE.sub(" ", norm)
-    if _NUM3.search(work):
-        reasons.append("a number in the message")
-    elif floor is not None and floor < 100:
+    toks = _tokens(masked)
+    lower = [t.lower() for _, _, t in toks]
+    for i, (_, _, tok) in enumerate(toks):
+        if any(c.isdigit() for c in tok) and any(c.isalpha() for c in tok):
+            reasons.append("a token mixing letters and digits in the message")
+        elif tok.isdigit() and not (
+            (len(tok) <= 4 and 1 <= int(tok) <= 99)
+            or _is_year(masked, toks, i)
+        ):
+            reasons.append("a number in the message")
+        l = lower[i]
+        if l in wordlists.SCALE_WORDS:
+            reasons.append("a scale word in the message")
+        if l in wordlists.CURRENCY_WORDS or tok in wordlists.CURRENCY_CODES:
+            reasons.append("a currency symbol or code in the message")
+        if l in wordlists.COMMIT_WORDS:
+            reasons.append("agreement or commitment wording in the message")
+        if l == "k" and i > 0 and toks[i - 1][2].isdigit():
+            reasons.append("a scale word in the message")
+    for i in range(len(toks) - 1):
+        if (
+            lower[i] in wordlists.NUMBER_WORDS
+            and lower[i + 1] in wordlists.NUMBER_WORDS
+            and all(c in " \t-" for c in masked[toks[i][1]:toks[i + 1][0]])
+        ):
+            reasons.append("a run of number words in the message")
+            break
+    if floor is not None and floor < 100:
         # Small integers are harmless except the one that repeats a
         # sub-100 floor's integer part.
         fint = int(floor)
-        if any(int(m.group(0)) == fint for m in _SMALL.finditer(work)):
+        if any(
+            t.isdigit() and len(t) <= 4 and int(t) == fint
+            for _, _, t in toks
+        ):
             reasons.append("a number matching your limit")
-    if any(p.search(norm) for p in _COMMIT):
-        reasons.append("agreement or commitment wording in the message")
+    for phrase in wordlists.COMMIT_PHRASES:
+        width = len(phrase)
+        if any(
+            lower[i:i + width] == list(phrase)
+            for i in range(len(toks) - width + 1)
+        ):
+            reasons.append("agreement or commitment wording in the message")
+            break
 
+    norm = normalize(masked)
     low = norm.lower()
     found_amounts = None
     for item in never_items:

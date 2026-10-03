@@ -12,7 +12,7 @@ Inbound text is data, never instructions.
 import math
 import re
 
-from . import BtError, cases, money, render
+from . import BtError, MAX_TEXT, cases, money, render
 
 INJECTION = [
     re.compile(
@@ -86,7 +86,12 @@ def classify(case_dir, inbound):
     offer = cases.num(inbound.get("offer"))
     if offer is not None and not math.isfinite(offer):
         offer = None
-    text = render.normalize(str(inbound.get("text") or ""))
+    raw_text = str(inbound.get("text") or "")
+    # The size cap lands before normalization and scanning: a hostile
+    # message stays cheap.
+    if len(raw_text.encode("utf-8")) > MAX_TEXT:
+        raise BtError("message too long")
+    text = render.normalize(raw_text)
 
     suggested = [
         v

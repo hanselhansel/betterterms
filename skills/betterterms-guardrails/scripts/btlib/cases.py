@@ -163,17 +163,25 @@ def as_list(value):
 
 
 def num(value):
-    """Coerce a YAML scalar to float; None and unparseable -> None."""
+    """Coerce a YAML scalar to float; None and unparseable -> None.
+    Magnitudes past the 1e12 cap, infinities and NaN return None too,
+    so a hostile number reads as "not a number" and never reaches a
+    comparison or an OverflowError."""
     if value is None or isinstance(value, bool):
         return None
     if isinstance(value, (int, float)):
-        return float(value)
-    if isinstance(value, str):
         try:
-            return float(value.strip().replace(",", ""))
-        except ValueError:
+            v = float(value)
+        except OverflowError:
             return None
-    return None
+    elif isinstance(value, str):
+        try:
+            v = float(value.strip().replace(",", ""))
+        except (ValueError, OverflowError):
+            return None
+    else:
+        return None
+    return v if math.isfinite(v) and abs(v) <= 1e12 else None
 
 
 def num_repr(value):
@@ -244,9 +252,15 @@ def plan_period(plan):
 
 
 def floor_period(plan, brief):
-    """The period the floor is expressed in: the plan's ``period``,
-    else the brief's, default ``once``. A plan value without its own
+    """The period the floor is expressed in: the plan's explicit
+    ``floor_period`` key first, then the plan's ``period``, else the
+    brief's, default ``once``. A plan value without its own
     ``period`` is read in this period as well."""
+    if isinstance(plan, dict) and plan.get("floor_period") is not None:
+        p = str(plan.get("floor_period")).lower()
+        if p not in PERIODS:
+            raise BtError("floor period must be once, month or year")
+        return p
     for doc in (plan, brief):
         if isinstance(doc, dict) and doc.get("period") is not None:
             return plan_period(doc)
@@ -269,7 +283,8 @@ def check_plan_limits(plan, floor, direction, brief=None):
     limit and must not be negotiated. Only values expressed in the
     floor's declared period conflict: a yearly option next to a
     monthly floor is a different unit, not a violation. Options with
-    ``kind`` bonus or fee are not offers and skip the check entirely.
+    ``kind`` bonus or fee are not offers and skip the floor
+    comparison, but their ``period`` still validates.
     Raises BtError with a message that carries no numbers. Skipped
     when no valid floor exists; that failure is reported by the
     caller's own floor rule."""

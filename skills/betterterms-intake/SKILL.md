@@ -21,7 +21,8 @@ drafted: misreading them is the biggest source of lost value.
 - `brief.yaml` in the case folder with: `pack`, `mode`, `direction`,
   `goals`, `priorities` (a ranked list), `ranking_check` (`passed`,
   `samples`), `autonomy` (1-4), `never_disclose` (a list of strings),
-  `deadline`.
+  `deadline`, and `period` (the floor's period: `once`, `month`, or
+  `year`).
 - The floor, written once through the runtime and never into any file you
   touch.
 
@@ -61,6 +62,10 @@ drafted: misreading them is the biggest source of lost value.
 
      Then tell the user you saw the value once. Never use `printf` with
      double quotes or put the value on the command line.
+
+   While you are on the limit, ask which period it is per: `once`,
+   `month`, or `year`. Write the answer to `brief.yaml` as `period`;
+   the plan copies it to `plan.yaml` as `floor_period`.
 4. Ask the autonomy question (question bank item 8). Default: level 2 for
    act mode, level 1 for coach mode.
 5. Run the ranking check (question bank item 10). Offer three sample

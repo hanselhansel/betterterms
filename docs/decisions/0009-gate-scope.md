@@ -76,3 +76,42 @@ with a plain-word reason. The floor still cannot leak through reasons
 Tests pin every pass-3 probe as either a hard block when it is
 structural or needs_approval when it is textual, and never a silent
 pass.
+
+## Amendment (2026-10-03): the review tier is an allowlist
+
+The blacklist in section C kept missing variants (the same defect
+class twice), so the review tier is rebuilt the other way around. It
+still routes to the user and never blocks, but it no longer tries to
+enumerate suspicious forms; it fails closed on anything unusual.
+
+- The scan works on the rendered message with each non-fact
+  placeholder output replaced by a sentinel. The free text passes
+  only when every character is in the allowed set: ASCII letters,
+  ASCII space and newline, the punctuation `. , ; : ! ? ' " ( ) - /
+  &`, and the sentinel. Any other character (non-ASCII letters,
+  homoglyphs, control, format, combining, private-use and non-ASCII
+  space characters, Hangul filler, braille blank, currency signs,
+  symbols) is `needs_approval` "unusual characters". Non-English
+  messages therefore always go to the user.
+- Free text tokenizes on non-alphanumeric characters in one linear
+  pass. A token mixing letters and digits routes to the user. A
+  digit-only token passes only when it is 1-99 (and not equal to the
+  floor's integer value when the floor is below 100) or a 1900-2100
+  year right after a whole-word month name.
+- Number words, scale words, currency words and commitment words
+  stay as whole-word lists matched on the token stream. They live in
+  one shared module (`scripts/btlib/wordlists.py`) that the
+  guardrails SKILL.md quotes verbatim, pinned by a unit test.
+- A sentinel touching a letter or digit still routes to the user.
+- A rendered non-offer value equal to the floor exactly still
+  blocks; equal only to an x12 or /12 conversion is now a review hit
+  "amount matches a converted limit" instead of a block, so an
+  explicit user yes can send it.
+- Related fixes in the same pass: `accept` converts the inbound
+  offer to the floor's declared period before comparing; the floor's
+  period is declared as `floor_period` on the plan (the bare
+  `period` keys still work); `cases.num` caps magnitudes at 1e12 so
+  a huge offer blocks as "offer must be a number" instead of
+  raising; `ledger add` validates `direction` through
+  `cases.direction_of`; `score` and `money` inputs cap at 64 KB and
+  fact amounts parse once per fact.

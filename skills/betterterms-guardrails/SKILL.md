@@ -75,39 +75,62 @@ Hard blocks, in order:
 5. Unknown or unresolvable placeholder: block, naming it. Placeholder
    indexes are ASCII digits only.
 6. `offer` worse than the floor compared in the floor's declared
-   period (plan `period`, else brief `period`, default `once`; month
-   x12 = year): block. `accept`, `sign`, and `pay` need a numeric
-   offer inside the band, and `accept` needs an in-band inbound offer
-   equal to the draft offer.
-7. Any rendered placeholder value equal to the floor or its x12 or /12
-   conversions: block, except the in-band offer itself (an offer
-   exactly at the floor is allowed). A price value (target, ladder,
-   price option, quote not on `send`) worse than the floor blocks too.
-   Bonus and fee options skip the worse-than check but may not equal
-   the floor.
+   period (plan `floor_period`, else plan `period`, else brief
+   `period`, default `once`; month x12 = year): block. `accept`,
+   `sign`, and `pay` need a numeric offer inside the band, and
+   `accept` needs an in-band inbound offer equal to the draft offer,
+   both read in the floor's period.
+7. Any rendered placeholder value equal to the floor: block, except
+   the in-band offer itself (an offer exactly at the floor is
+   allowed). A value equal only to the floor's x12 or /12 conversion
+   routes to the user instead: "amount matches a converted limit".
+   A price value (target, ladder, price option, quote not on `send`)
+   worse than the floor blocks too. Bonus and fee options skip the
+   worse-than check but may not equal the floor.
 8. Rendered message over 64 KB, measured after fact expansion: block.
 9. A claim id missing from `plan.yaml` facts: block. `{fact:<id>}`
    placeholders claim the id automatically.
 
 The review tier scans the rendered message with every non-fact
-placeholder output masked out (fact text stays visible). A hit returns
-`needs_approval` with a plain-word reason that carries no numbers:
+placeholder output replaced by a mask sentinel (fact text stays
+visible and is scanned by the same rules). It does not try to prove
+free text is safe: it runs an allowlist, so anything unusual routes
+to the user. A hit returns `needs_approval` with a plain-word reason
+that carries no numbers:
 
-- Money-shaped content: currency symbols or codes in any case, money
-  or scale words, a digit run of 3 or more, or a digit touching a
-  rendered amount.
+- Any character outside the allowed set: ASCII letters, ASCII space
+  and newline, the punctuation `. , ; : ! ? ' " ( ) - / &`, and the
+  sentinel. Non-ASCII letters, homoglyphs, control, format,
+  combining, private-use and non-ASCII space characters, currency
+  signs and every other symbol all route to the user, so a message
+  written in a language other than English always needs approval.
+- Any token mixing letters and digits ("95USD", "12hundred",
+  "2ndly").
+- Any digit token that is not 1-99, and not a 1900-2100 year right
+  after a whole-word month name ("October 15, 2026", "Jan 2026").
+  Small integers pass for counts and dates, unless the floor is
+  below 100 and the integer equals its integer part.
 - A run of number words ("twelve fifty").
-- Agreement or commitment wording: deal, agree, accept, works for me,
-  happy to pay, go ahead, charge, process it, sign me up, cancel my,
-  confirm.
-- Invisible or format characters (Unicode category Cf, Mn joiners,
-  soft hyphen, bidi marks) and non-ASCII digits.
+- A letter, a digit, or a digit past a `.`/`,` separator glued to a
+  rendered amount: "$1,100k" or "$1,100.99" restates a price.
+- The whole-word lists below, matched on the lowercased token stream
+  (currency codes match the raw token case-sensitively; a lone "k"
+  counts only right after a digit token).
 - Any `never_disclose` term, matched on normalized text with format
   characters stripped; numeric items match as whole numbers only.
+- A rendered non-offer value equal to the floor only after an x12 or
+  /12 conversion.
 
-Small integers 1 to 99 pass for counts and dates, unless the floor is
-below 100 and the integer equals its integer part. A 4-digit year next
-to a month name is a date, not an amount: "October 15, 2026" passes.
+The word lists live in `scripts/btlib/wordlists.py`, the single
+module the runtime and this file share:
+
+number words: eight, eighteen, eighty, eleven, fifteen, fifty, five, forty, four, fourteen, nil, nine, nineteen, ninety, oh, one, ought, seven, seventeen, seventy, six, sixteen, sixty, ten, thirteen, thirty, three, twelve, twenty, two, zero
+scale words: billion, billions, bn, hundred, hundreds, million, millions, mm, thousand, thousands, trillion, trillions
+currency codes: AED, AUD, BRL, CAD, CHF, CNH, CNY, CZK, DKK, EUR, GBP, HKD, HUF, IDR, ILS, INR, JPY, KRW, MXN, MYR, NOK, NZD, PHP, PLN, RUB, SAR, SEK, SGD, THB, TRY, TWD, USD, VND, ZAR
+currency words: aed, aud, brl, buck, bucks, chf, cnh, cny, czk, dkk, dollar, dollars, eur, euro, euros, gbp, grand, hkd, huf, idr, ils, inr, jpy, krw, mxn, myr, nok, nzd, php, pln, pound, pounds, quid, renminbi, sar, sek, sgd, thb, twd, usd, vnd, yen, yuan, zar
+commitment words: accept, acceptance, accepted, accepting, accepts, agree, agreeable, agreed, agreeing, agreement, agreements, charge, confirm, confirmation, confirmed, confirming, confirms, deal, pay
+commitment phrases: cancel my, glad to pay, go ahead, happy to pay, process it, ready to pay, sign me up, sounds good, willing to pay, work for me, work for us, works for me, works for us
+month words: apr, april, aug, august, dec, december, feb, february, jan, january, jul, july, jun, june, mar, march, may, nov, november, oct, october, sep, september
 
 Every floor-related block reports the single generic reason "outside
 your limits; escalate to the user". Gate output never carries the floor

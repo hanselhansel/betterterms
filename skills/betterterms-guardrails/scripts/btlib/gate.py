@@ -18,12 +18,15 @@ guarantees and fail closed:
 7. offer worse than the floor, compared in the floor's declared
    period -> block; ``accept``, ``sign`` and ``pay`` also require a
    numeric offer inside the band, and ``accept`` requires an inbound
-   offer inside the band equal to the draft offer
-8. any rendered placeholder value equal to the floor or its x12/x1/12
-   conversions -> block, except the in-band offer itself; a price
-   value (target, ladder, price option, quote not on ``send``) worse
-   than the floor blocks too. Bonus and fee options are not offers,
-   so only the equal-to-floor rule reaches them
+   offer inside the band equal to the draft offer, both read in the
+   floor's period
+8. any rendered placeholder value equal to the floor -> block,
+   except the in-band offer itself; a value equal only to the
+   floor's x12 or /12 conversion is a review hit (``amount matches
+   a converted limit``, no numbers). A price value (target, ladder,
+   price option, quote not on ``send``) worse than the floor blocks
+   too. Bonus and fee options are not offers, so only the
+   equal-to-floor rule reaches them
 9. rendered message over 64 KB, checked after fact expansion and
    before any text scanning -> block
 10. any claim id (draft or auto-claimed by ``{fact:id}``) not in
@@ -33,18 +36,18 @@ The review tier never blocks but never passes silently either: a
 draft whose rendered text (placeholder outputs masked, fact text
 visible) trips a check in ``render.review`` returns
 ``needs_approval`` with plain-word reasons that carry no numbers.
-Anything money-shaped, numeric, committal or invisible in the literal
-text, and every ``never_disclose`` term, routes to the user.
-Irreversible actions, coach mode and autonomy 1 also need approval.
+The text scan is an allowlist (decision 0009 amendment): characters
+off the permitted set, tokens mixing letters and digits, disallowed
+numbers, listed money and commitment words, sentinel glue and every
+``never_disclose`` term all route to the user. Irreversible
+actions, coach mode and autonomy 1 also need approval.
 
 ``block`` dominates ``needs_approval``, which dominates ``pass``, and
 every floor-related block reports the same generic reason so the
 output can never leak the floor's value, direction or distance.
 """
 
-import math
-
-from . import BtError, cases, render
+from . import BtError, MAX_TEXT, cases, render
 
 IRREVERSIBLE = {"accept", "cancel", "pay", "sign", "dispute"}
 OFFERED = {"accept", "pay", "sign"}
@@ -52,7 +55,6 @@ ACTIONS = IRREVERSIBLE | {"send"}
 DRAFT_KEYS = {"action", "offer", "period", "template", "claims"}
 FLOOR_TOL = 0.005
 LIMITS = "outside your limits; escalate to the user"
-MAX_TEXT = 64 * 1024
 
 
 def _worse(value, floor, direction):
@@ -65,22 +67,40 @@ def _same(a, values):
 
 def _check_values(find, action, floor, direction, plan_period, findings):
     """Floor rules on the amounts the placeholders placed: every value
-    except the offer itself must not equal the floor or its period
-    conversions, and a price value (target, ladder, price option,
-    quote not on ``send``) must not be worse than the floor. Bonus
-    and fee options are not offers, so only the equality rule reaches
-    them."""
-    equiv = (floor, floor * 12, floor / 12)
+    except the offer itself must not equal the floor (in its own or
+    the floor's period), and a price value (target, ladder, price
+    option, quote not on ``send``) must not be worse than the floor.
+    Equality with only a period conversion is a review hit, not a
+    block; it is checked in ``_converted_match`` under the review
+    tier. Bonus and fee options are not offers, so only the
+    equality rule reaches them."""
     for v in find.values:
         if v.value is None:
             continue
         nv = render.convert(v.value, v.period, plan_period)
-        if v.kind != "offer" and (_same(nv, equiv) or _same(v.value, equiv)):
+        if v.kind != "offer" and (_same(nv, (floor,)) or _same(v.value, (floor,))):
             findings.append(("block", LIMITS))
         elif v.kind in ("target", "ladder", "option:price", "quote") and not (
             v.kind == "quote" and action == "send"
         ) and _worse(nv, floor, direction):
             findings.append(("block", LIMITS))
+
+
+def _converted_match(find, floor, plan_period):
+    """True when a rendered non-offer value equals the floor's x12 or
+    /12 conversion in its own or the floor's period, without equalling
+    the floor itself: "5/year" against a 60/month floor is a numeric
+    coincidence the user must see, not proof of a leak."""
+    for v in find.values:
+        if v.kind == "offer" or v.value is None:
+            continue
+        nv = render.convert(v.value, v.period, plan_period)
+        for val in (nv, v.value):
+            if _same(val, (floor * 12, floor / 12)) and not _same(
+                val, (floor,)
+            ):
+                return True
+    return False
 
 
 def check(case_dir, draft, approved=False, inbound=None):
@@ -114,7 +134,7 @@ def check(case_dir, draft, approved=False, inbound=None):
     if raw_offer is not None and (
         isinstance(raw_offer, bool)
         or not isinstance(raw_offer, (int, float))
-        or not math.isfinite(offer)
+        or offer is None
     ):
         findings.append(("block", "offer must be a number"))
         offer = None
@@ -136,8 +156,16 @@ def check(case_dir, draft, approved=False, inbound=None):
 
     in_amounts = cases.as_list(inbound.get("amounts")) if inbound else []
     in_offer = cases.num(inbound.get("offer")) if inbound else None
-    if in_offer is not None and not math.isfinite(in_offer):
-        in_offer = None
+    # An inbound offer is read in its own period when the inbound
+    # declares one, else in the floor's period; either way it is
+    # converted to the floor's period before any comparison.
+    in_period = plan_period
+    if inbound and inbound.get("period") is not None:
+        raw_in = inbound.get("period")
+        if not isinstance(raw_in, str) or raw_in.lower() not in render.PERIODS:
+            findings.append(("block", "period must be once, month or year"))
+        else:
+            in_period = raw_in.lower()
 
     find = render.render(
         template, offer, period, plan, plan_period, in_amounts
@@ -158,10 +186,14 @@ def check(case_dir, draft, approved=False, inbound=None):
         if action == "accept":
             if in_offer is None:
                 findings.append(("block", "accept requires the counterparty's offer"))
-            elif offer is not None and abs(offer - in_offer) > FLOOR_TOL:
-                findings.append(("block", "accept must equal the counterparty's offer"))
-            if floor is not None and in_offer is not None and _worse(in_offer, floor, direction):
-                findings.append(("block", LIMITS))
+            else:
+                in_floor = render.convert(in_offer, in_period, plan_period)
+                if offer is not None and abs(
+                    render.convert(offer, period, plan_period) - in_floor
+                ) > FLOOR_TOL:
+                    findings.append(("block", "accept must equal the counterparty's offer"))
+                if floor is not None and _worse(in_floor, floor, direction):
+                    findings.append(("block", LIMITS))
 
     if floor is not None:
         if offer is not None and _worse(
@@ -195,6 +227,10 @@ def check(case_dir, draft, approved=False, inbound=None):
                 find, floor, cases.as_list(brief.get("never_disclose"))
             ):
                 findings.append(("approval", reason))
+            if floor is not None and _converted_match(
+                find, floor, plan_period
+            ):
+                findings.append(("approval", "amount matches a converted limit"))
 
     reasons = []
     seen = set()

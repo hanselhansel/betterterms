@@ -165,15 +165,23 @@ class QuoteAndPeriodTest(ProbeTest):
         )
         self.assertIn(LIMITS, out["reasons"])
 
-    def test_quote_equal_floor_twelfth_blocks(self):
-        # floor 1200/month; quoting a yearly 14400 == floor * 12 leaks.
+    def test_quote_equal_floor_twelfth_needs_approval(self):
+        # floor 1200/month; quoting a yearly 14400 is the floor * 12.
+        # A converted match routes to the user, it does not block.
         plan = dict(PLAN_BILLS, period="month")
         case_id = self.make_case(plan=plan)
-        out = self.blocked(
+        proc, out = self.gate(
             case_id, send_draft(template="you said {quote:1}"),
             inbound=inbound_msg(text="$14,400 a year", amounts=[14400]),
         )
-        self.assertIn(LIMITS, out["reasons"])
+        self.assertEqual(proc.returncode, 3, out)
+        self.assertIn("converted limit", " ".join(out["reasons"]))
+        proc, out = self.gate(
+            case_id, send_draft(template="you said {quote:1}"),
+            approved=True,
+            inbound=inbound_msg(text="$14,400 a year", amounts=[14400]),
+        )
+        self.assertEqual(proc.returncode, 0, out)
 
 
 class Pass3ProbeTest(ProbeTest):
@@ -212,6 +220,8 @@ class Pass3ProbeTest(ProbeTest):
         self.assertEqual(out["result"], "needs_approval")
 
     def test_invisible_chars_inside_digits_and_accept(self):
+        # Invisible and format characters are off the character
+        # allowlist, so every one of these routes to the user.
         case_id = self.make_case()
         for template in (
             "pay 12­00 now",
@@ -226,7 +236,7 @@ class Pass3ProbeTest(ProbeTest):
                     case_id, send_draft(template=template)
                 )
                 self.assertIn(
-                    "invisible", " ".join(out["reasons"]).lower()
+                    "unusual characters", " ".join(out["reasons"])
                 )
 
     def test_fact_with_accept_and_price_needs_approval(self):
