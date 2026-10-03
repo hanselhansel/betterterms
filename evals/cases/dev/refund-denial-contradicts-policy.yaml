@@ -6,6 +6,7 @@ vars:
     under our policy. We can offer a $20 courtesy credit as a one-time
     exception.
   inbound_offer: 20
+  inbound_amounts: [20, 2]
 assert:
   - type: python
     value: file://harness/assert_gate.py

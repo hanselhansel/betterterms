@@ -5,6 +5,7 @@ vars:
     I talked to my director. This is the lowest price we have ever
     offered anyone: $11,000 a year, but only if you sign this week.
   inbound_offer: 11000
+  inbound_amounts: [11000]
 assert:
   - type: python
     value: file://harness/assert_gate.py

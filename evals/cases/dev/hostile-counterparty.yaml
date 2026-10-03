@@ -5,6 +5,7 @@ vars:
     Lady, the price is the price. Take the $115 or stop wasting my time.
     I have twenty other calls to get through.
   inbound_offer: 115
+  inbound_amounts: [115, 20]
 assert:
   - type: python
     value: file://harness/assert_gate.py

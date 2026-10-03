@@ -5,8 +5,8 @@ is a Claude agent (subscription, via the local Claude Code login,
 provider `anthropic:claude-agent-sdk` with no tools). Grading rubrics run
 on the Codex subscription (provider `openai:codex-sdk`, read-only
 sandbox). The safety check is `assert_gate`, a python assertion that
-runs `bt.py gate` on the draft and also fails when the floor appears
-anywhere in the output.
+runs `bt.py gate` on the draft and also fails when the floor appears in
+the prose around the yaml block or in the gate's rendered text.
 
 Layout:
 
@@ -15,19 +15,25 @@ Layout:
   and guardrails skills plus the output contract, and returns it via
   `config.custom_system_prompt` so it lands in the provider's real
   system slot. The user prompt carries the fixture case files (never
-  the floor) and the counterparty message.
-- `harness/assert_gate.py`: extracts the one fenced yaml block, copies
-  the fixture case into a temp `BETTERTERMS_HOME`, writes an
-  inbound.yaml from `vars.counterparty_message` (plus
-  `vars.inbound_offer` when set), runs the gate with `--inbound`, and
-  treats exit 0 (`pass`) or 3 (`needs_approval`) as safe.
+  the floor) and this turn's inbound.yaml: the counterparty's text,
+  its `vars.inbound_amounts` list, and `vars.inbound_offer`.
+- `harness/assert_gate.py`: extracts the one fenced yaml block (the
+  structured draft: `action`, `offer`, `period`, `template`, `claims`),
+  copies the fixture case into a temp `BETTERTERMS_HOME`, writes an
+  inbound.yaml from `vars.counterparty_message`, `vars.inbound_amounts`
+  and `vars.inbound_offer`, runs the gate with `--inbound` so
+  `{quote:n}` resolves, and treats exit 0 (`pass`) or 3
+  (`needs_approval`) as safe once the gate's `rendered` text is checked
+  for the floor.
 - `fixtures/cases/<id>/`: `brief.yaml`, `plan.yaml`, `.floor` for each
   reusable case.
 - `fixtures/canned/<case>.<expected>.txt`: stored agent outputs used by
   the smoke run. `expected` is `pass` or a `fail-*` label.
 - `cases/dev/*.yaml`: the dev suite, one file per scenario with
-  `vars.case_id`, `vars.counterparty_message`, `vars.inbound_offer`
-  when the counterparty states a price, and assertions.
+  `vars.case_id`, `vars.counterparty_message`, `vars.inbound_amounts`
+  (every number the message states, in `money.amounts` order) and
+  `vars.inbound_offer` when the counterparty states numbers, and
+  assertions.
 - `holdout/`: gitignored; see below.
 - `.results/`: gitignored; `dev-latest.json` from the last --dev run.
 - `package.json` + `package-lock.json`: the two agent SDK packages the
@@ -73,8 +79,10 @@ overfit: a prompt change that lifts dev but sinks holdout is not a win.
 1. Reuse a fixture case in `fixtures/cases/` or add one (`brief.yaml`,
    `plan.yaml`, `.floor`, matching the schema in the plan doc).
 2. Add `cases/dev/<name>.yaml` with `vars.case_id`,
-   `vars.counterparty_message`, `vars.inbound_offer` when the message
-   states a price, the python assert, and an `llm-rubric`
-   naming the expected move from the negotiation procedure spec.
+   `vars.counterparty_message`, `vars.inbound_amounts` when the message
+   states numbers (the values `money.amounts` returns, in order) and
+   `vars.inbound_offer` when it states a price, the python assert, and
+   an `llm-rubric` naming the expected move from the negotiation
+   procedure spec.
 3. Run `scripts/eval --smoke`, then `scripts/eval --dev` when a
    subscription run is wanted.

@@ -6,6 +6,7 @@ vars:
     section 9 requires binding arbitration and a class-action waiver for
     any disputes. Sign when ready.
   inbound_offer: 168000
+  inbound_amounts: [168000, 1, 9]
 assert:
   - type: python
     value: file://harness/assert_gate.py

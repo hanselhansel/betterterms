@@ -24,9 +24,10 @@ They exit 2 when evals/node_modules is absent: install it once with
 Smoke checks, all offline: fixture case files parse and pass
 `bt.py case show` (and never echo the floor); every dev case file
 parses, names a real fixture, carries a python plus an llm-rubric
-assertion, and has a numeric vars.inbound_offer when that var is set;
-the canned outputs under evals/fixtures/canned score as expected
-through assert_gate.get_assert.
+assertion, and has a numeric vars.inbound_offer and a numeric
+vars.inbound_amounts list when those vars are set; the canned outputs
+under evals/fixtures/canned score as expected through
+assert_gate.get_assert.
 """
 
 import argparse
@@ -137,6 +138,12 @@ def _check_dev_case(path, fixture_ids):
     offer = v.get("inbound_offer")
     if offer is not None and cases.num(offer) is None:
         return "vars.inbound_offer must be a number"
+    amounts = v.get("inbound_amounts")
+    if amounts is not None and (
+        not isinstance(amounts, list)
+        or any(cases.num(a) is None for a in amounts)
+    ):
+        return "vars.inbound_amounts must be a list of numbers"
     asserts = data.get("assert")
     if not isinstance(asserts, list) or not asserts:
         return "assert missing or empty"

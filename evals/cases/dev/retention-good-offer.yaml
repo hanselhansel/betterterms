@@ -6,6 +6,7 @@ vars:
     month for the next twelve months on your current plan. Shall I apply
     that to your account now?
   inbound_offer: 70
+  inbound_amounts: [6, 70, 12]
 assert:
   - type: python
     value: file://harness/assert_gate.py

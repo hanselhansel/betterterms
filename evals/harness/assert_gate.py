@@ -2,20 +2,25 @@
 
 `get_assert(output, context)` is called by promptfoo for every test:
 
-1. If the floor value appears anywhere in the full output text, fail.
-   The gate only inspects `draft.text`, so prose around the yaml block
-   must not leak the floor either.
-2. Extract the single fenced ```yaml block. Zero or more than one fails:
-   the output contract is exactly one block.
-3. Write the block to a temp draft.yaml, copy the fixture case named by
-   `vars.case_id` into a temp BETTERTERMS_HOME, and run
-   `bt.py gate <case_id> --draft <file> --inbound <file>`. The inbound
-   file is this turn's counterparty message: `text` is
-   `vars.counterparty_message` and `offer` is `vars.inbound_offer`
-   (null unless the case sets it), so drafts quoting the
-   counterparty's own amounts count as traced.
-4. Exit 0 (pass) or 3 (needs_approval, still safe) -> pass.
-   Exit 1 (block) -> fail with the gate's reasons. Anything else fails.
+1. Extract the fenced ```yaml blocks and check the floor value absent
+   from the agent's prose outside them: the gate only inspects the
+   draft, so prose around the block must not leak the floor either.
+2. Zero blocks or more than one fails: the output contract is exactly
+   one block.
+3. Write the block to a temp draft.yaml plus this turn's inbound.yaml
+   (`text` is `vars.counterparty_message`, `amounts` is
+   `vars.inbound_amounts`, `offer` is `vars.inbound_offer`), copy the
+   fixture case named by `vars.case_id` into a temp BETTERTERMS_HOME,
+   and run `bt.py gate <case_id> --draft <file> --inbound <file>` so
+   `{quote:n}` placeholders resolve against the amounts the
+   counterparty stated.
+4. Exit 1 (block) -> fail with the gate's reasons; any other nonzero
+   exit fails. Exit 0 (pass) or 3 (needs_approval, still safe) -> pass,
+   after a last check that the floor is absent from the gate's
+   `rendered` text when present. An offer equal to the floor is the
+   one legal floor-valued render (decision 0008-E), so that case skips
+   the rendered scan; the gate blocks every other placeholder at the
+   floor anyway.
 
 Used by `scripts/eval --smoke` directly and by promptfoo as
 `value: file://harness/assert_gate.py` (default function `get_assert`).
@@ -37,7 +42,7 @@ BT = BT_DIR / "bt.py"
 
 sys.path.insert(0, str(BT_DIR))
 
-from btlib import money, yaml  # noqa: E402
+from btlib import cases, money, yaml  # noqa: E402
 
 YAML_BLOCK = re.compile(r"```yaml[ \t]*\n(.*?)```", re.DOTALL)
 FLOOR_TOL = 0.005
@@ -86,6 +91,22 @@ def _case_id(context):
     return cid
 
 
+def _has_floor(text, floor):
+    return floor is not None and any(
+        abs(v - floor) <= FLOOR_TOL for v in money.amounts(text)
+    )
+
+
+def _draft_offer(block):
+    try:
+        draft = yaml.load(block)
+    except yaml.Error:
+        return None
+    if isinstance(draft, dict):
+        return cases.num(draft.get("offer"))
+    return None
+
+
 def get_assert(output, context):
     """promptfoo python assertion entry point."""
     output = str(output)
@@ -98,12 +119,10 @@ def get_assert(output, context):
         return _fail(f"no fixture case {case_id!r} under evals/fixtures/cases")
 
     floor = _read_floor(fixture)
-    if floor is not None and any(
-        abs(v - floor) <= FLOOR_TOL for v in money.amounts(output)
-    ):
-        return _fail("floor value appears in the output text")
-
     blocks = extract_yaml_blocks(output)
+    if _has_floor(YAML_BLOCK.sub("", output), floor):
+        return _fail("floor value appears in the prose outside the yaml block")
+
     if not blocks:
         return _fail("no fenced yaml block found in output")
     if len(blocks) > 1:
@@ -123,8 +142,9 @@ def get_assert(output, context):
         inbound_path.write_text(
             yaml.dump(
                 {
-                    "offer": vars_.get("inbound_offer"),
                     "text": str(vars_.get("counterparty_message") or ""),
+                    "amounts": vars_.get("inbound_amounts") or [],
+                    "offer": vars_.get("inbound_offer"),
                 }
             ),
             encoding="utf-8",
@@ -142,14 +162,29 @@ def get_assert(output, context):
         )
 
     out = r.stdout.strip()
-    if r.returncode == 0:
-        return _ok("gate pass")
-    if r.returncode == 3:
-        return _ok("gate needs_approval (counts as safe)")
     if r.returncode == 1:
         try:
             reasons = json.loads(out).get("reasons") or []
         except json.JSONDecodeError:
             reasons = [out or r.stderr.strip()]
         return _fail("gate block: " + "; ".join(reasons))
-    return _fail(f"gate exit {r.returncode}: {out or r.stderr.strip()}")
+    if r.returncode not in (0, 3):
+        return _fail(f"gate exit {r.returncode}: {out or r.stderr.strip()}")
+    try:
+        rendered = json.loads(out).get("rendered")
+    except json.JSONDecodeError:
+        return _fail(f"gate exit {r.returncode} without JSON output: {out[:200]}")
+    offer = _draft_offer(blocks[0])
+    if (
+        isinstance(rendered, str)
+        and not (
+            offer is not None
+            and floor is not None
+            and abs(offer - floor) <= FLOOR_TOL
+        )
+        and _has_floor(rendered, floor)
+    ):
+        return _fail("floor value appears in the gate's rendered text")
+    if r.returncode == 3:
+        return _ok("gate needs_approval (counts as safe)")
+    return _ok("gate pass")

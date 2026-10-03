@@ -5,6 +5,7 @@ vars:
     Great news, we are excited to move forward at $172,000 base. I need
     your answer by 5pm today though, this offer expires tonight.
   inbound_offer: 172000
+  inbound_amounts: [172000]
 assert:
   - type: python
     value: file://harness/assert_gate.py

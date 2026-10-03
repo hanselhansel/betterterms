@@ -5,6 +5,7 @@ vars:
     I will give you $600 cash for the piano and can pick it up tomorrow
     morning. Deal?
   inbound_offer: 600
+  inbound_amounts: [600]
 assert:
   - type: python
     value: file://harness/assert_gate.py
