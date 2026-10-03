@@ -7,4 +7,5 @@ node_modules/
 dist/
 .promptfoo/
 evals/holdout
+evals/.results/
 .gstack/

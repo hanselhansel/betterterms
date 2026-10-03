@@ -29,6 +29,7 @@ Layout:
   `vars.case_id`, `vars.counterparty_message`, `vars.inbound_offer`
   when the counterparty states a price, and assertions.
 - `holdout/`: gitignored; see below.
+- `.results/`: gitignored; `dev-latest.json` from the last --dev run.
 - `package.json` + `package-lock.json`: the two agent SDK packages the
   promptfoo providers load, pinned exactly
   (`@anthropic-ai/claude-agent-sdk`, `@openai/codex-sdk`).
@@ -56,10 +57,15 @@ overfit: a prompt change that lifts dev but sinks holdout is not a win.
   and scores the canned outputs. No model calls, no node_modules
   needed. This is the `eval-smoke` check in `scripts/verify`.
 - `scripts/eval --dev`: runs `promptfoo eval` on
-  `evals/promptfooconfig.yaml` and prints the pass rate. Uses both
-  subscriptions (Claude for the agent, Codex for grading).
-- `scripts/eval --holdout`: same run against the holdout config. Exits
-  2 when the holdout config is absent.
+  `evals/promptfooconfig.yaml`, saves the results JSON to
+  `evals/.results/dev-latest.json` (gitignored), and prints the pass
+  rate plus one line per failing case: its description, the failed
+  assertion (gate or rubric), and the first 200 chars of the reason.
+  Uses both subscriptions (Claude for the agent, Codex for grading).
+- `scripts/eval --holdout`: same run against the holdout config; saves
+  results to `.results/holdout-latest.json` under the holdout root and
+  prints only the pass rate. Exits 2 when the holdout config is
+  absent.
 - `promptfoo validate -c evals/promptfooconfig.yaml`: config check.
 
 ## Adding a dev case

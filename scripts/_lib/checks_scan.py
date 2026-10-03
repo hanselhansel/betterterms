@@ -14,14 +14,19 @@ from pathlib import Path
 
 # SKIP_DIRS_TOP applies only to direct children of the root; SKIP_PATHS
 # holds exact prefixes: .claude is scanned but .claude/worktrees is not.
-# Rules match the full relative path, so an evals/holdout entry is
-# skipped whether it is a directory, a plain file or a link.
+# Rules match the full relative path, so an evals/holdout or
+# evals/.results entry is skipped whether it is a directory, a plain
+# file or a link.
 SKIP_DIRS_ANYWHERE = {".git", "__pycache__", "node_modules"}
 SKIP_DIRS_TOP = {
     ".venv", "venv", "dist", "holdout", ".idea",
     ".mypy_cache", ".pytest_cache", ".ruff_cache", ".promptfoo",
 }
-SKIP_PATHS = {(".claude", "worktrees"), ("evals", "holdout")}
+SKIP_PATHS = {
+    (".claude", "worktrees"),
+    ("evals", "holdout"),
+    ("evals", ".results"),
+}
 
 # Internal docs quote prose and local paths freely, so prose-rules and
 # no-local-paths skip them; docs/guides and shipped files ARE checked.

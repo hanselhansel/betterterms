@@ -183,8 +183,10 @@ class AgentPrompt(unittest.TestCase):
 def _copy_repo(tmp):
     """Copy the pieces scripts/eval needs into a throwaway repo root.
     node_modules is excluded so tests control whether it exists; holdout
-    may be a symlink out of the tree."""
-    ignore = shutil.ignore_patterns("__pycache__", "node_modules", "holdout")
+    may be a symlink out of the tree and .results is run output."""
+    ignore = shutil.ignore_patterns(
+        "__pycache__", "node_modules", "holdout", ".results"
+    )
     shutil.copytree(REPO / "evals", tmp / "evals", ignore=ignore)
     shutil.copytree(REPO / "skills", tmp / "skills", ignore=ignore)
     (tmp / "scripts").mkdir()
