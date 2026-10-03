@@ -163,24 +163,25 @@ class GateTest(BtTestCase):
         self.assertEqual(out["result"], "block")
         self.assertIn("f9", " ".join(out["reasons"]))
 
-    def test_free_text_money_blocks(self):
-        # Free text may never carry a price, traced or not: amounts go
-        # through placeholders now.
+    def test_free_text_money_needs_approval(self):
+        # Money-shaped literal text is review tier: the gate cannot
+        # prove intent, so the user sees it, but it never passes
+        # silently. Amounts still go through placeholders.
         case_id, _ = self.make_case(floor=1200)
         for template in ("I can pay $89", "call it USD 100",
                          "the fee is 500"):
             with self.subTest(template=template):
                 proc, out = self.gate(case_id, send_draft(template=template))
-                self.assertEqual(proc.returncode, 1, out)
-                self.assertEqual(out["result"], "block")
+                self.assertEqual(proc.returncode, 3, out)
+                self.assertEqual(out["result"], "needs_approval")
 
-    def test_fact_placeholder_renders_verbatim_and_traces(self):
+    def test_fact_placeholder_renders_verbatim_and_claims(self):
         case_id, _ = self.make_case(floor=1200)
         proc, out = self.gate(
             case_id,
             send_draft(template="remember: {fact:f1}, so sharpen the pencil"),
         )
-        self.assertEqual(proc.returncode, 0, out)
+        self.assertEqual(proc.returncode, 3, out)
         self.assertEqual(
             out["rendered"],
             "remember: competitor charges $89 per month, "
@@ -228,23 +229,23 @@ class GateTest(BtTestCase):
         self.assertEqual(out["result"], "block")
         self.assertIn(LIMITS, out["reasons"])
 
-    def test_never_disclose_blocks(self):
+    def test_never_disclose_needs_approval(self):
         case_id, _ = self.make_case(floor=1200)
         proc, out = self.gate(
             case_id, send_draft(template="my account is ACCT-7788")
         )
-        self.assertEqual(proc.returncode, 1)
-        self.assertEqual(out["result"], "block")
+        self.assertEqual(proc.returncode, 3)
+        self.assertEqual(out["result"], "needs_approval")
 
-    def test_offer_restated_in_free_text_blocks(self):
+    def test_offer_restated_in_free_text_needs_approval(self):
         # Bypass probe: the offer written bare in free text instead of
-        # through {offer}. The integer repeats a structured amount.
+        # through {offer}. Commitment wording routes it to the user.
         case_id, _ = self.make_case(floor=1200)
         proc, out = self.gate(
             case_id, send_draft(offer=90, template="I will pay 90")
         )
-        self.assertEqual(proc.returncode, 1, out)
-        self.assertEqual(out["result"], "block")
+        self.assertEqual(proc.returncode, 3, out)
+        self.assertEqual(out["result"], "needs_approval")
 
     def test_unknown_case_errors(self):
         path = write_draft(self.tmp, send_draft(offer=1, template="x"))

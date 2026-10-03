@@ -13,13 +13,17 @@ billions (``twelve hundred``, ``one thousand, two hundred``,
 ``find(text)`` returns :class:`Amount` records with a ``marked`` flag.
 Marked means the amount looked like money (currency prefix or suffix, a
 multiplier or scale word, a hedged or per-period form, or a spelled
-phrase that ends on a scale word). The gate's untraced-number rule and
-the every-amount floor rule check marked amounts only; the floor-leak
-scan compares every amount found.
+phrase that ends on a scale word). The scorer's suggested-amounts
+listing, the gate's fact-value check and the never-disclose whole
+number match all read these results.
 
-Every pattern is linear-time: no nested quantifiers, fixed-lookbehind
-anchors. Overlap suppression merges each pass's spans once, so the whole
-scan stays linear on hostile input.
+Parsed values saturate at ``_CAP``: a hostile digit run or spelled
+phrase returns the cap instead of raising OverflowError or yielding
+infinity. Every pattern is linear-time: no nested quantifiers,
+fixed-lookbehind anchors. Overlap suppression merges each pass's spans
+once, and spelled matches check a precomputed predecessor index for a
+leading currency sign, so the whole scan stays linear on hostile
+input.
 """
 
 import bisect
@@ -93,11 +97,19 @@ _WORD = "|".join(sorted(set(_UNITS) | set(_TENS) | set(_SCALES) | {"a", "an", "a
 # spaces do.
 _SPELLED = re.compile(rf"\b(?:{_WORD})(?:[\s,-]+(?:{_WORD}))*", re.IGNORECASE)
 _AFTER_CURRENCY_WORD = re.compile(rf"\s*{_SUFFIX}", re.IGNORECASE)
-_BEFORE_CURRENCY_SIGN = re.compile(r"[$€£₹¥]\s*$")
+
+# Parsed values clamp here: no result is ever inf or an OverflowError.
+_CAP = 1e18
+_CAP_INT = 10**18
+_CURRENCY_SIGNS = frozenset("$€£₹¥")
+
+
+def _clamp(value):
+    return value if value <= _CAP else _CAP
 
 
 def _to_num(text):
-    return float(text.replace(",", "").replace(" ", ""))
+    return _clamp(float(text.replace(",", "").replace(" ", "")))
 
 
 def _mult_of(group):
@@ -114,7 +126,9 @@ def _covered(taken, start, end):
 
 
 def _spelled_value(words):
-    """Parse a list of lowercase number words. Returns an int."""
+    """Parse a list of lowercase number words. Returns an int bounded
+    by ``_CAP_INT`` so ``float()`` can never overflow: "hundred" x 155
+    saturates instead of building a 300-digit int."""
     total = current = 0
     for w in words:
         if w in ("a", "an"):
@@ -126,11 +140,11 @@ def _spelled_value(words):
         elif w in _TENS:
             current += _TENS[w]
         elif w == "hundred":
-            current = (current or 1) * 100
+            current = min((current or 1) * 100, _CAP_INT)
         else:
-            total += (current or 1) * _SCALES[w]
+            total = min(total + (current or 1) * _SCALES[w], _CAP_INT)
             current = 0
-    return total + current
+    return min(total + current, _CAP_INT)
 
 
 def _spelled_words(text):
@@ -148,6 +162,15 @@ def find(text):
     """Return all amounts in ``text`` as Amount(start, end, value, marked)."""
     found = []
     taken = []
+    # Index of the last non-space char before each position, so the
+    # spelled pass can check for a leading currency sign in O(1)
+    # instead of rescanning the whole prefix per match.
+    prev_nonspace = [-1] * len(text)
+    last = -1
+    for i, ch in enumerate(text):
+        prev_nonspace[i] = last
+        if not ch.isspace():
+            last = i
 
     def scan(regex, parse):
         added = []
@@ -166,22 +189,23 @@ def find(text):
     def scaled(m):
         g = m.groupdict()
         num = g.get("num") or g.get("num2")
-        return (_to_num(num) * _mult_of(g.get("mult")), True)
+        return (_clamp(_to_num(num) * _mult_of(g.get("mult"))), True)
 
     def spelled(m):
         words = _spelled_words(m.group(0))
         if words is None:
             return None
+        p = prev_nonspace[m.start()]
         marked = (
-            bool(_AFTER_CURRENCY_WORD.match(text[m.end():]))
-            or bool(_BEFORE_CURRENCY_SIGN.search(text[: m.start()]))
+            bool(_AFTER_CURRENCY_WORD.match(text, m.end()))
+            or (p >= 0 and text[p] in _CURRENCY_SIGNS)
             or (words[-1] in _SCALES and words[0] not in ("a", "an"))
         )
         return (float(_spelled_value(words)), marked)
 
     scan(_MARKED, scaled)
     scan(_SUFFIXED, scaled)
-    scan(_SCALE_WORD, lambda m: (_to_num(m.group("num")) * _SCALE_WORD_VALUE[m.group("scale").lower()], True))
+    scan(_SCALE_WORD, lambda m: (_clamp(_to_num(m.group("num")) * _SCALE_WORD_VALUE[m.group("scale").lower()]), True))
     scan(_ISH, lambda m: (_to_num(m.group("num")), True))
     scan(_APPROX, lambda m: (_to_num(m.group("num")), True))
     scan(_PER, lambda m: (_to_num(m.group("num")), True))

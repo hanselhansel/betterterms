@@ -72,9 +72,11 @@ or ask for their offer when it is not. Then gate, send, and log as below.
 
    - Exit 0, `pass`: send the `rendered` text verbatim per the autonomy
      level.
-   - Exit 3, `needs_approval`: ask the user for an explicit yes, then
-     re-run with `--approved`. `--approved` is honest only after that
-     yes, and the yes gets quoted in `thread.md`.
+   - Exit 3, `needs_approval`: the action is irreversible, or coach
+     mode, autonomy 1, or the review scan flagged the rendered text.
+     Show the user the `rendered` text and reasons, ask for an explicit
+     yes, then re-run with `--approved`. `--approved` is honest only
+     after that yes, and the yes gets quoted in `thread.md`.
    - Exit 1, `block`: when the reason is "outside your limits; escalate
      to the user", escalate to the user and do not redraft toward a
      guessed limit. On any other block, redraft once without the blocked

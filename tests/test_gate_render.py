@@ -1,5 +1,5 @@
-"""Structured-amounts gate: placeholder rendering and the free-text
-money ban, including the review's unicode bypass probes."""
+"""Structured-amounts gate: placeholder rendering and the review tier
+for money-shaped literal text, including unicode bypass probes."""
 
 import time
 import unittest
@@ -71,11 +71,13 @@ class PlaceholderRenderTest(RenderTest):
 
     def test_fact_placeholder_auto_claims(self):
         # {fact:f1} adds f1 to claims, so the draft need not list it.
+        # The fact text carries a price, so the review tier flags it.
         case_id = self.make_case()
         proc, out = self.gate(
             case_id, send_draft(template="see {fact:f1}"),
         )
-        self.assertEqual(proc.returncode, 0, out)
+        self.assertEqual(proc.returncode, 3, out)
+        self.assertEqual(out["result"], "needs_approval")
         self.assertEqual(
             out["rendered"], "see competitor charges $89 per month"
         )
@@ -97,6 +99,19 @@ class PlaceholderRenderTest(RenderTest):
             with self.subTest(template=template):
                 out = self.blocked(case_id, send_draft(template=template))
                 self.assertIn(fragment, " ".join(out["reasons"]))
+
+    def test_nonascii_placeholder_index_blocks_not_crashes(self):
+        # Superscript and Arabic-Indic digits pass str.isdigit but are
+        # not valid indexes; they must block, never crash or exit 2.
+        case_id = self.make_case()
+        for template in (
+            "hi {ladder:¹}",
+            "hi {ladder:٢}",
+            "hi {quote:¹}",
+        ):
+            with self.subTest(template=template):
+                out = self.blocked(case_id, send_draft(template=template))
+                self.assertIn("{", " ".join(out["reasons"]))
 
     def test_offer_placeholder_with_null_offer_blocks(self):
         case_id = self.make_case()
@@ -140,29 +155,37 @@ class PlaceholderRenderTest(RenderTest):
         )
 
 
-class FreeTextScanTest(RenderTest):
-    """Every amount-shaped thing in free text blocks; only placeholders
-    may carry money."""
+class ReviewTierTest(RenderTest):
+    """Money-shaped text outside placeholders no longer blocks: it
+    routes the draft to the user as needs_approval with plain-word
+    reasons. Only placeholder output carries amounts silently."""
 
-    def test_currency_symbols_and_codes_block(self):
+    def review(self, case_id, draft, **kw):
+        proc, out = self.gate(case_id, draft, **kw)
+        self.assertEqual(proc.returncode, 3, out)
+        self.assertEqual(out["result"], "needs_approval")
+        self.assertIsNotNone(out["rendered"])
+        return out
+
+    def test_currency_symbols_and_codes_need_approval(self):
         case_id = self.make_case()
         for template in (
-            "pay $100 now",
             "it costs €100",
             "about £100",
             "around ¥1000",
             "S$100 flat",
             "call it USD 100",
             "1200 EUR flat",
+            "call it 12 usd",
         ):
             with self.subTest(template=template):
-                out = self.blocked(case_id, send_draft(template=template))
+                out = self.review(case_id, send_draft(template=template))
                 self.assertIn(
-                    "free text contains a currency symbol or code",
-                    out["reasons"],
+                    "currency symbol or code",
+                    " ".join(out["reasons"]),
                 )
 
-    def test_currency_and_scale_words_block(self):
+    def test_currency_and_scale_words_need_approval(self):
         case_id = self.make_case()
         for template in (
             "100 dollars flat",
@@ -173,17 +196,15 @@ class FreeTextScanTest(RenderTest):
             "ten yen",
             "about 1.2k",
             "about 1.2 k",
-            "twelve hundred",
             "1.5 thousand",
-            "two million",
             "a bn market",
             "it cost 5 mm",
         ):
             with self.subTest(template=template):
-                out = self.blocked(case_id, send_draft(template=template))
-                self.assertEqual(out["result"], "block")
+                out = self.review(case_id, send_draft(template=template))
+                self.assertEqual(out["result"], "needs_approval")
 
-    def test_digit_runs_block(self):
+    def test_digit_runs_need_approval(self):
         case_id = self.make_case()
         for template in (
             "order 1200 today",
@@ -191,15 +212,12 @@ class FreeTextScanTest(RenderTest):
             "call 555 now",
         ):
             with self.subTest(template=template):
-                out = self.blocked(case_id, send_draft(template=template))
-                self.assertIn(
-                    "free text contains a number", out["reasons"]
-                )
+                out = self.review(case_id, send_draft(template=template))
+                self.assertIn("a number", " ".join(out["reasons"]))
 
-    def test_grouped_digit_runs_block(self):
+    def test_grouped_digit_runs_need_approval(self):
         case_id = self.make_case()
         for template in (
-            "pay 1,200 please",
             "it reads 1.200",
             "the cap is 1 200",
             "code 1'200",
@@ -207,38 +225,80 @@ class FreeTextScanTest(RenderTest):
             "build 3.11 here",
         ):
             with self.subTest(template=template):
-                out = self.blocked(case_id, send_draft(template=template))
-                self.assertEqual(out["result"], "block")
+                out = self.review(case_id, send_draft(template=template))
+                self.assertEqual(out["result"], "needs_approval")
 
-    def test_zero_width_and_unicode_digit_probes(self):
+    def test_zero_width_and_unicode_digit_probes_need_approval(self):
         case_id = self.make_case()
         probes = [
-            "cap is 12\u200b00",
-            "cap is 12\u200c00",
-            "cap is 12\ufeff00",
-            "pay ¹²⁰⁰ now",
+            "cap is 12​00",
+            "cap is 12‌00",
+            "cap is 12﻿00",
+            "cap is 12­00",
+            "cap is 12⁣00",
+            "cap is 12‎00",
+            "see ¹²⁰⁰ now",
             "see ١٢٣ today",
             "see １２００ today",
         ]
         for template in probes:
             with self.subTest(template=template):
-                out = self.blocked(case_id, send_draft(template=template))
-                self.assertEqual(out["result"], "block")
+                out = self.review(case_id, send_draft(template=template))
+                self.assertEqual(out["result"], "needs_approval")
 
-    def test_three_consecutive_number_words_block(self):
+    def test_number_word_runs_need_approval(self):
         case_id = self.make_case()
-        out = self.blocked(
-            case_id, send_draft(template="one two zero zero is the code")
+        for template in (
+            "one two zero zero is the code",
+            "twelve fifty sounds right",
+            "twenty one days is fine",
+            "twelve hundred",
+            "two million",
+        ):
+            with self.subTest(template=template):
+                out = self.review(case_id, send_draft(template=template))
+                self.assertEqual(out["result"], "needs_approval")
+
+    def test_agreement_and_commitment_words_need_approval(self):
+        case_id = self.make_case()
+        for template in (
+            "deal, we are set",
+            "I agree to that",
+            "I accept your terms",
+            "that works for me",
+            "happy to pay it",
+            "I will pay 90",
+            "go ahead with it",
+            "please charge the card",
+            "please process it today",
+            "sign me up for it",
+            "please cancel my account",
+            "please confirm this",
+        ):
+            with self.subTest(template=template):
+                out = self.review(case_id, send_draft(template=template))
+                self.assertIn(
+                    "commitment", " ".join(out["reasons"])
+                )
+
+    def test_review_reasons_carry_no_numbers(self):
+        case_id = self.make_case(
+            floor=89.99, plan=plan_for("pay", 89.99, target=80)
         )
-        self.assertEqual(out["result"], "block")
+        out = self.review(
+            case_id, send_draft(offer=80, template="pay USD 1200 now")
+        )
+        for reason in out["reasons"]:
+            self.assertNotRegex(reason, r"\d")
 
     def test_allowed_small_forms_pass(self):
         case_id = self.make_case()
         for template in (
             "I have two options for you",
-            "twenty one days is fine",
             "renewal in 12 months",
             "see you October 3",
+            "see you October 15, 2026",
+            "due 15 October 2026",
             "only 3 left in stock",
             "section 90 covers this",
             "we met in 96",
@@ -250,37 +310,51 @@ class FreeTextScanTest(RenderTest):
                 self.assertEqual(proc.returncode, 0, out)
                 self.assertEqual(out["result"], "pass")
 
-    def test_small_int_equal_to_floor_blocks(self):
+    def test_floor_8999_seven_days_is_not_a_review_item(self):
+        # Owner decision: a sub-100 floor must not turn "7 days" into a
+        # review item. Small integers pass unless they equal the
+        # floor's integer part.
+        case_id = self.make_case(
+            floor=89.99, plan=plan_for("pay", 89.99, target=80)
+        )
+        proc, out = self.gate(
+            case_id, send_draft(offer=80, template="reply within 7 days")
+        )
+        self.assertEqual(proc.returncode, 0, out)
+        out = self.review(
+            case_id, send_draft(offer=80, template="room 89 works")
+        )
+        self.assertEqual(out["result"], "needs_approval")
+
+    def test_small_int_equal_to_sub100_floor_needs_approval(self):
         case_id = self.make_case(floor=50, plan=plan_for("pay", 50, target=40))
-        out = self.blocked(
+        out = self.review(
             case_id, send_draft(offer=45, template="meet in room 50")
         )
-        self.assertEqual(out["result"], "block")
+        self.assertEqual(out["result"], "needs_approval")
 
-    def test_small_int_equal_to_floor_twelfths_blocks(self):
-        # floor 96 -> 96 / 12 = 8: the standalone 8 leaks the floor's
-        # twelfth just as surely as 96 itself would.
+    def test_small_int_below_sub100_floor_passes(self):
+        # floor 96: the standalone 8 no longer trips anything; only the
+        # floor's integer value itself is protected below 100.
         case_id = self.make_case(floor=96, plan=plan_for("pay", 96, target=80))
-        out = self.blocked(
+        proc, out = self.gate(
             case_id, send_draft(offer=90, template="only 8 seats left")
         )
-        self.assertEqual(out["result"], "block")
+        self.assertEqual(proc.returncode, 0, out)
 
-    def test_cents_floor_versus_phone_digits(self):
+    def test_phone_digits_and_facts_need_approval(self):
         case_id = self.make_case(
             floor=85.50, plan=plan_for("pay", 85.50, target=80)
         )
-        # The floor's integer part in free text still discloses it.
-        out = self.blocked(
+        out = self.review(
             case_id, send_draft(offer=80, template="code 85 is mine")
         )
-        self.assertEqual(out["result"], "block")
-        # A phone-style digit run blocks as a number, not as the floor.
-        out = self.blocked(
+        self.assertEqual(out["result"], "needs_approval")
+        out = self.review(
             case_id, send_draft(offer=80, template="call 800-555-0199")
         )
-        self.assertIn("free text contains a number", out["reasons"])
-        # The same digits inside a fact render verbatim and pass.
+        self.assertIn("a number", " ".join(out["reasons"]))
+        # The same digits inside a fact are fact text: still reviewed.
         plan = dict(
             plan_for("pay", 85.50, target=80),
             facts=[{"id": "f7", "text": "support line 800-555-0199",
@@ -291,7 +365,7 @@ class FreeTextScanTest(RenderTest):
             case_id,
             send_draft(offer=80, template="ring {fact:f7} tomorrow"),
         )
-        self.assertEqual(proc.returncode, 0, out)
+        self.assertEqual(proc.returncode, 3, out)
         self.assertIn("800-555-0199", out["rendered"])
 
     def test_64kb_template_under_one_second(self):
@@ -302,6 +376,21 @@ class FreeTextScanTest(RenderTest):
         elapsed = time.monotonic() - start
         self.assertEqual(proc.returncode, 0, out)
         self.assertLess(elapsed, 1.0)
+
+    def test_rendered_over_64kb_blocks_before_scanning(self):
+        # The cap applies to the rendered message, including fact
+        # expansion, not the template.
+        big = "word " * 14000  # ~70 KB once rendered
+        plan = dict(
+            plan_for("pay", 1200),
+            facts=[{"id": "fbig", "text": big, "source": "x"}],
+        )
+        case_id = self.make_case(plan=plan)
+        proc, out = self.gate(
+            case_id, send_draft(template="note {fact:fbig}"),
+        )
+        self.assertEqual(proc.returncode, 1, out)
+        self.assertIn("too large", " ".join(out["reasons"]))
 
 
 if __name__ == "__main__":

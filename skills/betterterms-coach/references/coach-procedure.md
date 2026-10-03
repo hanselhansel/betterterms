@@ -14,4 +14,7 @@
 4. Rehearse: the agent plays the counterparty with realistic pushback,
    then scores the user's delivery against the script.
 5. Debrief: capture what was offered, update the plan, draft the
-   follow-up email.
+   follow-up email. The email goes through `bt.py gate` like any
+   outbound message (see betterterms-guardrails): hard rule breaks
+   block, and anything the review scan flags comes back for the user's
+   explicit yes before it sends.

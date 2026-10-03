@@ -157,11 +157,29 @@ class AmountsTest(unittest.TestCase):
             "1," * 65536,           # 128 KB of "1,1,1,..."
             "1,000," * 16384,       # grouped digits, ~112 KB
             "one thousand " * 9000, # spelled run, ~117 KB
+            "$ " + " " * 60000 + "one hundred " * 2000,
+            "one hundred " * 2000 + " " * 60000 + "dollars",
         ):
             with self.subTest(size=len(text)):
                 start = time.monotonic()
                 money.find(text)
                 self.assertLess(time.monotonic() - start, 1.0)
+
+    def test_overflow_never_raises_or_yields_infinity(self):
+        # "hundred" repeated compounds to 100**n; a 309-digit run
+        # saturates float parsing. Neither may raise or return inf.
+        import math
+        for text in (
+            "hundred " * 200,
+            "hundred " * 200 + "dollars",
+            "9" * 309,
+            "$" + "9" * 309 + " billion",
+            "nine " + "hundred " * 400 + "thousand",
+        ):
+            with self.subTest(text=text[:30]):
+                values = money.amounts(text)
+                self.assertTrue(values, text[:30])
+                self.assertTrue(all(math.isfinite(v) for v in values))
 
 
 if __name__ == "__main__":

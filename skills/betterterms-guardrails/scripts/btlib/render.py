@@ -1,10 +1,10 @@
-"""Draft template rendering and the literal free-text scan.
+"""Draft template rendering and the review-tier text scan.
 
 ``render(template, offer, offer_period, plan, plan_period, in_amounts)``
 substitutes placeholders and returns a :class:`Find` with the rendered
-message, the structured amounts it rendered, the literal segments and
-any blocking errors. Placeholders are the only way money reaches a
-draft:
+message, the structured amounts it rendered, a masked form of the
+message and any blocking errors. Placeholders are the only way money
+reaches a draft:
 
     {offer}        draft offer, formatted with its period ("$85/month")
     {target}       plan target, with the plan period
@@ -13,12 +13,12 @@ draft:
     {fact:id}      plan fact text verbatim; the id joins the claims
     {quote:n}      n-th amount in the inbound ``amounts`` list
 
-``scan_free_text`` checks a literal segment for anything money-shaped:
-currency symbols or codes, currency and scale words, digit runs of 3+,
-separator-joined digits, runs of number words and non-ASCII digits.
-Standalone 1..99 integers pass unless they equal a floor-derived or
-rendered-amount integer part. ``agreement_word`` finds phrases that
-read like accepting a deal.
+``Find.masked`` is the rendered text with every non-fact placeholder
+output replaced by a mask character; fact text stays visible because it
+is user data, not a guaranteed price. ``review`` scans that masked
+text and returns plain-word reasons (never a number) for the
+needs_approval tier: anything money-shaped, numeric, committal or
+invisible that is not a rendered placeholder goes to the user.
 """
 
 import math
@@ -31,14 +31,23 @@ PERIODS = ("once", "month", "year")
 _MONTHS = {"month": 1.0, "year": 12.0}
 TAG = re.compile(r"\{([^{}]*)\}")
 
-_ZW = re.compile(r"[\u200b-\u200d\ufeff\u2060]")
+_MASK = "\x00"  # stands in for one non-fact placeholder output
 
 # Currency symbols, common letter-prefixed signs, and ISO-style codes.
 _CURSYM = re.compile(r"[A-Za-z]{1,3}\$|[$€£¥₹₽฿₩₪₫₦₴₱₡]")
-_CURCODE = re.compile(
-    r"\b(USD|EUR|GBP|SGD|JPY|CHF|CAD|AUD|NZD|HKD|CNY|CNH|SEK|NOK|DKK|"
-    r"INR|BRL|MXN|KRW|ZAR|TWD|MYR|THB|IDR|PHP|VND|AED|SAR|ILS|PLN|"
-    r"CZK|HUF|TRY|RUB)\b"
+_CODES = (
+    "USD|EUR|GBP|SGD|JPY|CHF|CAD|AUD|NZD|HKD|CNY|CNH|SEK|NOK|DKK|"
+    "INR|BRL|MXN|KRW|ZAR|TWD|MYR|THB|IDR|PHP|VND|AED|SAR|ILS|PLN|"
+    "CZK|HUF|TRY|RUB"
+)
+_CURCODE = re.compile(rf"\b(?:{_CODES})\b")
+# Lowercase codes flag too, except the ones that are also common words
+# ("try", "rub", "cad"): they stay uppercase-only.
+_CURCODE_CI = re.compile(
+    r"\b(?:usd|eur|gbp|sgd|jpy|chf|aud|nzd|hkd|cny|cnh|sek|nok|dkk|"
+    r"inr|brl|mxn|krw|zar|twd|myr|thb|idr|php|vnd|aed|sar|ils|pln|"
+    r"czk|huf)\b",
+    re.IGNORECASE,
 )
 _CURWORD = re.compile(
     r"\b(dollars?|bucks?|euros?|pounds?|yen|yuan|renminbi|grand|quid|"
@@ -53,27 +62,49 @@ _NUMWORD = (
     r"oh|ought|nil"
 )
 _NUMWORD_RUN = re.compile(
-    rf"(?:\b(?:{_NUMWORD})\b[ \t-]+){{2,}}\b(?:{_NUMWORD})\b",
+    rf"(?:\b(?:{_NUMWORD})\b[ \t-]+)+\b(?:{_NUMWORD})\b",
     re.IGNORECASE,
 )
-_JOINED = re.compile(r"\d(?:[,.'` ]\d)+")
-_LONG = re.compile(r"\d{3,}")
+# Three or more digits, separators allowed between any of them.
+_NUM3 = re.compile(r"\d(?:[,.'` ]*\d){2,}")
 _SMALL = re.compile(r"(?<!\d)\d{1,2}(?!\d)")
+_ADJACENT = re.compile(r"\d\x00|\x00\d")
 
-_AGREEMENT = [
+_MONTH = r"(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?"
+# A 4-digit year next to a month name is a date, not an amount.
+_DATE = re.compile(
+    rf"\b{_MONTH}\s+\d{{1,2}}(?:st|nd|rd|th)?\s*,?\s*(?:19|20)\d\d\b|"
+    rf"\b\d{{1,2}}(?:st|nd|rd|th)?\s+{_MONTH}\s*,?\s*(?:19|20)\d\d\b|"
+    rf"\b{_MONTH}\s+(?:19|20)\d\d\b",
+    re.IGNORECASE,
+)
+
+_COMMIT = [
     re.compile(p, re.IGNORECASE)
     for p in (
         r"\bdeal\b",
-        r"\bagreed\b",
-        r"\bi\s+accept\b",
-        r"\baccept\s+your\b",
-        r"\bworks?\s+for\s+me\b",
-        r"\bsounds\s+good[,.]?\s*let'?s\b",
-        r"\bgo\s+ahead\s+and\s+charge\b",
+        r"\bagree\w*\b",
+        r"\baccept\w*\b",
+        r"\bworks?\s+for\s+(me|us)\b",
+        r"\b(?:happy|glad|willing|ready)\s+to\s+pay\b",
+        r"\bpay\b",
+        r"\bgo\s+ahead\b",
+        r"\bcharge\b",
+        r"\bprocess\s+it\b",
         r"\bsign\s+me\s+up\b",
         r"\bcancel\s+my\b",
+        r"\bconfirm\w*\b",
+        r"\bsounds\s+good\b",
     )
 ]
+
+# Invisible joiners outside category Cf: the combining grapheme joiner,
+# Mongolian free variation selectors and variation selectors.
+_MN_JOINERS = frozenset(
+    "\u034f\u180b\u180c\u180d\u180e\u180f"
+    "\ufe00\ufe01\ufe02\ufe03\ufe04\ufe05\ufe06\ufe07"
+    "\ufe08\ufe09\ufe0a\ufe0b\ufe0c\ufe0d\ufe0e\ufe0f"
+)
 
 
 class Value:
@@ -89,21 +120,28 @@ class Value:
 
 class Find:
     """The outcome of rendering a template. ``errors`` are blocking
-    reasons that name the placeholder, never a number."""
+    reasons that name the placeholder, never a number. ``masked`` is
+    the rendered text with non-fact placeholder outputs replaced by
+    the mask character."""
 
-    __slots__ = ("text", "values", "literal", "fact_ids", "errors")
+    __slots__ = ("text", "values", "masked", "fact_ids", "errors")
 
     def __init__(self):
         self.text = None
         self.values = []
-        self.literal = ""
+        self.masked = ""
         self.fact_ids = set()
         self.errors = []
 
 
 def normalize(text):
-    """NFKC plus zero-width removal: the form every check reads."""
-    return _ZW.sub("", unicodedata.normalize("NFKC", text))
+    """NFKC plus removal of format (Cf) characters: the form every
+    word-level check reads."""
+    return "".join(
+        c
+        for c in unicodedata.normalize("NFKC", text)
+        if unicodedata.category(c) != "Cf"
+    )
 
 
 def convert(value, from_period, to_period):
@@ -124,7 +162,9 @@ def money_text(value, period=None):
 
 
 def _parse_index(arg, what):
-    if not arg.isdigit():
+    # str.isdigit accepts superscripts and non-ASCII digits that int()
+    # either crashes on or silently misreads; indexes are ASCII only.
+    if not arg.isascii() or not arg.isdigit():
         return None
     n = int(arg)
     return n if n >= 1 else None
@@ -134,63 +174,69 @@ def render(template, offer, offer_period, plan, plan_period, in_amounts):
     """Render ``template``. ``in_amounts`` is the raw inbound ``amounts``
     list; entries are coerced with :func:`cases.num` at lookup time."""
     find = Find()
-    out, literals = [], []
+    out, masked = [], []
     pos = 0
     for m in TAG.finditer(template):
-        literals.append(template[pos:m.start()])
-        out.append(template[pos:m.start()])
-        out.append(_resolve(m.group(1), find, offer, offer_period,
-                            plan, plan_period, in_amounts))
+        literal = template[pos:m.start()]
+        out.append(literal)
+        masked.append(literal)
+        text, mask = _resolve(m.group(1), find, offer, offer_period,
+                              plan, plan_period, in_amounts)
+        out.append(text)
+        masked.append(mask)
         pos = m.end()
-    literals.append(template[pos:])
     out.append(template[pos:])
+    masked.append(template[pos:])
     find.text = "".join(out)
-    find.literal = "\n".join(literals)
+    find.masked = "".join(masked)
     return find
 
 
 def _resolve(tag, find, offer, offer_period, plan, plan_period, in_amounts):
+    """Resolve one placeholder to ``(text, masked)``: fact text passes
+    through into the masked form, every other rendered value becomes
+    the mask character, and an error resolves to nothing."""
     name, _, arg = tag.partition(":")
     if name == "offer" and not arg:
         if offer is None:
             find.errors.append("{offer} needs a draft offer")
-            return ""
+            return "", ""
         find.values.append(Value("offer", offer, offer_period))
-        return money_text(offer, offer_period)
+        return money_text(offer, offer_period), _MASK
     if name == "target" and not arg:
         v = cases.num(plan.get("target"))
         if v is None or not math.isfinite(v):
             find.errors.append("{target} has no plan value")
-            return ""
+            return "", ""
         find.values.append(Value("target", v, plan_period))
-        return money_text(v, plan_period)
+        return money_text(v, plan_period), _MASK
     if name == "option" and arg:
         for item in cases.as_list(plan.get("options")):
             if isinstance(item, dict) and str(item.get("label")) == arg:
                 v = cases.num(item.get("value"))
                 if v is None or not math.isfinite(v):
                     find.errors.append(f"{{option:{arg}}} has no value")
-                    return ""
+                    return "", ""
                 kind = str(item.get("kind") or "price").lower()
                 period = str(item.get("period") or plan_period).lower()
                 find.values.append(Value(f"option:{kind}", v, period))
-                return money_text(v, period)
+                return money_text(v, period), _MASK
         find.errors.append(f"{{option:{arg}}} not in plan options")
-        return ""
+        return "", ""
     if name == "ladder" and arg:
         n = _parse_index(arg, "ladder")
         items = cases.as_list(plan.get("ladder"))
         if n is None or n > len(items):
             find.errors.append(f"{{ladder:{arg}}} needs an index 1..{len(items)}")
-            return ""
+            return "", ""
         item = items[n - 1]
         v = cases.num(item.get("value")) if isinstance(item, dict) else None
         if v is None or not math.isfinite(v):
             find.errors.append(f"{{ladder:{arg}}} has no value")
-            return ""
+            return "", ""
         period = str(item.get("period") or plan_period).lower()
         find.values.append(Value("ladder", v, period))
-        return money_text(v, period)
+        return money_text(v, period), _MASK
     if name == "fact" and arg:
         for item in cases.as_list(plan.get("facts")):
             if isinstance(item, dict) and str(item.get("id")) == arg:
@@ -198,58 +244,81 @@ def _resolve(tag, find, offer, offer_period, plan, plan_period, in_amounts):
                 find.fact_ids.add(arg)
                 for v in money.amounts(text):
                     find.values.append(Value("fact", v, "once"))
-                return text
+                return text, text
         find.errors.append(f"{{fact:{arg}}} not in plan facts")
-        return ""
+        return "", ""
     if name == "quote" and arg:
         n = _parse_index(arg, "quote")
         if n is None or n > len(in_amounts):
             find.errors.append(
                 f"{{quote:{arg}}} needs {arg} inbound amounts"
             )
-            return ""
+            return "", ""
         v = cases.num(in_amounts[n - 1])
         if v is None or not math.isfinite(v):
             find.errors.append(f"inbound amount {n} is not a number")
-            return ""
+            return "", ""
         find.values.append(Value("quote", v, "once"))
-        return money_text(v)
+        return money_text(v), _MASK
     find.errors.append(f"unknown placeholder {{{tag}}}")
-    return ""
+    return "", ""
 
 
-def scan_free_text(text, floor_ints, amount_ints):
-    """Check a literal template segment for money-shaped content.
-
-    ``floor_ints`` are the floor's integer part and its x12 and /12
-    values; ``amount_ints`` are the integer parts of the amounts the
-    placeholders rendered. Returns ``(reason, floor_related)`` or
-    ``None``. The caller reports ``LIMITS`` when ``floor_related`` so the
-    reason never carries a floor-derived detail."""
-    s = normalize(text)
-    if _CURSYM.search(s) or _CURCODE.search(s):
-        return "free text contains a currency symbol or code", False
-    if _CURWORD.search(s):
-        return "free text contains a currency or scale word", False
-    if _NUMWORD_RUN.search(s):
-        return "free text contains a run of number words", False
-    if any(c.isdigit() and not c.isascii() for c in s):
-        return "free text contains a non-ASCII digit", False
-    if _JOINED.search(s) or _LONG.search(s):
-        return "free text contains a number", False
-    for m in _SMALL.finditer(s):
-        n = int(m.group(0))
-        if n in floor_ints:
-            return "limits", True
-        if n in amount_ints:
-            return "free text repeats a structured amount", False
-    return None
+def _invisible(ch):
+    """Format (Cf) characters, Mn joiners and variation selectors."""
+    return unicodedata.category(ch) == "Cf" or ch in _MN_JOINERS
 
 
-def agreement_word(text):
-    """The first agreement phrase in ``text``, or None."""
-    for pat in _AGREEMENT:
-        m = pat.search(normalize(text))
-        if m:
-            return m.group(0)
-    return None
+def review(find, floor, never_items):
+    """Review-tier checks on the rendered message. Reads ``find.masked``
+    (placeholder outputs masked, fact text visible) and returns one
+    plain-word reason per tripped check; reasons carry no numbers."""
+    reasons = []
+    masked = find.masked
+    if any(_invisible(c) for c in masked):
+        reasons.append("invisible or format characters in the message")
+    if any(c.isdigit() and not c.isascii() for c in masked):
+        reasons.append("non-ASCII digits in the message")
+    norm = normalize(masked)
+    if _ADJACENT.search(norm):
+        reasons.append("a digit next to a rendered amount")
+    if (
+        _CURSYM.search(norm)
+        or _CURCODE.search(norm)
+        or _CURCODE_CI.search(norm)
+    ):
+        reasons.append("a currency symbol or code in the message")
+    if _CURWORD.search(norm):
+        reasons.append("a money or scale word in the message")
+    if _NUMWORD_RUN.search(norm):
+        reasons.append("a run of number words in the message")
+    work = _DATE.sub(" ", norm)
+    if _NUM3.search(work):
+        reasons.append("a number in the message")
+    elif floor is not None and floor < 100:
+        # Small integers are harmless except the one that repeats a
+        # sub-100 floor's integer part.
+        fint = int(floor)
+        if any(int(m.group(0)) == fint for m in _SMALL.finditer(work)):
+            reasons.append("a number matching your limit")
+    if any(p.search(norm) for p in _COMMIT):
+        reasons.append("agreement or commitment wording in the message")
+
+    low = norm.lower()
+    found_amounts = None
+    for item in never_items:
+        s = normalize(str(item)).strip().lower()
+        if not s:
+            continue
+        vals = [] if any(c.isalpha() for c in s) else money.amounts(s)
+        if vals:
+            # Numeric items match as whole numbers only.
+            if found_amounts is None:
+                found_amounts = money.amounts(norm)
+            hit = any(abs(v - a) <= 0.005 for v in vals for a in found_amounts)
+        else:
+            hit = s in low
+        if hit:
+            reasons.append("a term from your never-disclose list")
+            break
+    return reasons
