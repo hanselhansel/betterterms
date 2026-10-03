@@ -3,8 +3,12 @@
 
 Each generator in GENERATORS is a callable ``gen(root) -> {relpath:
 content}`` producing repo-relative files (`.claude-plugin/plugin.json`,
-`plugin.json`, `gemini-extension.json`, `commands/*.md`, ...). Step 1
-ships no generators, so build is a no-op and `--check` passes.
+`plugin.json`, `gemini-extension.json`, `commands/*.md`, ...). When
+GENERATORS is empty, build is a no-op and --check passes.
+
+Whenever generators produce output, build also writes `.generated-files`
+at the root listing the sorted generated relpaths; `--check` fails on
+paths a previous manifest lists that are no longer generated (orphans).
 
 Usage: build [--check]
   (no args)   write every generated file
@@ -18,6 +22,8 @@ ROOT = Path(__file__).resolve().parent.parent
 
 GENERATORS = []
 
+MANIFEST = ".generated-files"
+
 
 def expected(root):
     """Return {relpath: content} for every registered generator."""
@@ -30,21 +36,35 @@ def expected(root):
     return out
 
 
+def outputs(root):
+    """Generated files plus, when any exist, the `.generated-files`
+    manifest recording their sorted relpaths."""
+    files = expected(root)
+    if files:
+        files[MANIFEST] = "".join(f"{rel}\n" for rel in sorted(files))
+    return files
+
+
 def main(argv):
     if argv and argv != ["--check"]:
         print(__doc__.strip(), file=sys.stderr)
         return 2
-    files = expected(ROOT)
+    files = outputs(ROOT)
     if "--check" in argv:
+        manifest = ROOT / MANIFEST
+        previous = manifest.read_text().splitlines() if manifest.is_file() else []
         stale = [
             rel
             for rel, content in sorted(files.items())
             if not (ROOT / rel).is_file() or (ROOT / rel).read_text() != content
         ]
-        if stale:
+        orphans = [rel for rel in previous if rel not in files]
+        if stale or orphans:
             print("generated files out of date:", file=sys.stderr)
             for rel in stale:
                 print(f"  {rel}", file=sys.stderr)
+            for rel in orphans:
+                print(f"  {rel} (no longer generated)", file=sys.stderr)
             print("run scripts/build", file=sys.stderr)
             return 1
         print("build check passed" if files else "build check passed (no generators registered)")
@@ -55,6 +75,9 @@ def main(argv):
         path.write_text(content)
         print(f"wrote {rel}")
     if not files:
+        manifest = ROOT / MANIFEST
+        if manifest.is_file():
+            manifest.unlink()
         print("no generators registered; nothing to build")
     return 0
 

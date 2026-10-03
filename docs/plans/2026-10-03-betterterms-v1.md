@@ -114,7 +114,7 @@ Score rules: band by `direction`; `near_floor` = within 10% of the floor; `escal
 
 ### Task 2.1: Runtime tool `bt.py` (lane A)
 
-**Files:** Create `skills/betterterms-guardrails/scripts/bt.py` (CLI entry, argparse), `skills/betterterms-guardrails/scripts/btlib/{__init__,cases,gate,score,ledger,money,yaml}.py` (`yaml.py` is a copy of `miniyaml` kept in sync by `scripts/build`, since the skill folder must be self-contained), `tests/test_gate.py`, `tests/test_score.py`, `tests/test_cases.py`, `tests/test_ledger.py`, `tests/test_money.py`.
+**Files:** Create `skills/betterterms-guardrails/scripts/bt.py` (CLI entry, argparse), `skills/betterterms-guardrails/scripts/btlib/{__init__,cases,gate,score,ledger,money,yaml,yaml_scalars}.py` (`btlib/yaml.py` and `btlib/yaml_scalars.py` are copies of `scripts/_lib/miniyaml.py` and `miniyaml_scalars.py` kept in sync by `scripts/build`, since the skill folder must be self-contained), `tests/test_gate.py`, `tests/test_score.py`, `tests/test_cases.py`, `tests/test_ledger.py`, `tests/test_money.py`.
 
 **Interfaces:** Produces the CLI in Shared interfaces. `money.amounts(text) -> list[float]` parses `$1,200`, `1200.00`, `1.2k`, `USD 1200`, `S$1,200`, `twelve hundred`. `gate.check(case_dir, draft: dict, approved: bool) -> (result, reasons)`. `score.classify(case_dir, inbound: dict) -> dict`.
 

@@ -6,10 +6,14 @@ plain string), quoted-string and flow ``[a, b]`` / ``{k: v}`` parsers, the
 renderers.
 """
 
+import json
+import math
 import re
 
 _INT_RE = re.compile(r"^[+-]?[0-9]+$")
 _FLOAT_RE = re.compile(r"^[+-]?([0-9]+\.[0-9]*|\.[0-9]+)([eE][+-]?[0-9]+)?$|^[+-]?[0-9]+[eE][+-]?[0-9]+$")
+_HEX_RE = re.compile(r"^[0-9a-fA-F]+$")
+_DATE_RE = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$")
 
 
 class Error(Exception):
@@ -46,6 +50,8 @@ def _scalar(s, ln):
         if s[pos:].strip():
             raise Error("trailing characters after scalar", ln)
         return val
+    if s[0] in "&*!%@`":
+        raise Error(f"unsupported indicator {s[0]!r} (anchors, aliases and tags are not supported)", ln)
     return _plain(s)
 
 
@@ -86,12 +92,13 @@ def _quoted(s, pos, ln):
                 e = s[pos]
                 if e in _ESCAPES:
                     out.append(_ESCAPES[e])
-                elif e == "x":
-                    out.append(chr(int(s[pos + 1:pos + 3], 16)))
-                    pos += 2
-                elif e == "u":
-                    out.append(chr(int(s[pos + 1:pos + 5], 16)))
-                    pos += 4
+                elif e in "xu":
+                    n = 2 if e == "x" else 4
+                    digits = s[pos + 1:pos + 1 + n]
+                    if len(digits) != n or not _HEX_RE.match(digits):
+                        raise Error("bad escape", ln)
+                    out.append(chr(int(digits, 16)))
+                    pos += n
                 else:
                     raise Error(f"unknown escape \\{e}", ln)
             else:
@@ -150,6 +157,8 @@ def _flow(s, pos, ln):
             raise Error(f"unterminated flow collection, expected '{closer}'", ln)
         if s[pos] == ",":
             pos = _skip_ws(s, pos + 1)
+            if pos < len(s) and s[pos] == closer:
+                return out, pos + 1
             continue
         if s[pos] == closer:
             return out, pos + 1
@@ -264,45 +273,41 @@ def _scalar_repr(v):
     if isinstance(v, int):
         return str(v)
     if isinstance(v, float):
+        if not math.isfinite(v):
+            raise Error(f"cannot dump non-finite float {v!r}")
         return repr(v)
     if isinstance(v, dict):
         return "{}"
     if isinstance(v, list):
         return "[]"
     if isinstance(v, str):
-        return v if _plain_safe(v) else '"' + _escape(v) + '"'
+        return v if _plain_safe(v) else json.dumps(v, ensure_ascii=False)
     raise Error(f"cannot dump value of type {type(v).__name__}")
+
+
+_AMBIGUOUS_PLAIN = {"yes", "no", "on", "off", "y", "n"}
 
 
 def _plain_safe(s):
     """A string may dump unquoted when it cannot parse back as anything
-    else and carries no indicator characters, comments or edges."""
+    else and carries no indicator characters, comments or edges. YAML 1.1
+    booleans (yes/no/on/off/y/n), dates, and hex/octal-looking values must
+    also be quoted so stricter parsers read them back as strings."""
     if not s or s != s.strip():
         return False
     if s[0] in "-?:,[]{}#&*!|>'\"%@`":
         return False
-    if "\n" in s or "\t" in s or "\r" in s:
+    if any(c in s for c in "[]{}\"';"):
+        return False
+    if any(ord(c) < 0x20 or ord(c) == 0x7F for c in s):
         return False
     if ": " in s or s.endswith(":") or " #" in s:
+        return False
+    low = s.lower()
+    if low in _AMBIGUOUS_PLAIN or low.startswith(("0x", "0o")):
+        return False
+    if _DATE_RE.match(s):
         return False
     if _plain(s) is not s:
         return False
     return True
-
-
-def _escape(s):
-    out = []
-    for c in s:
-        if c in ('"', "\\"):
-            out.append("\\" + c)
-        elif c == "\n":
-            out.append("\\n")
-        elif c == "\t":
-            out.append("\\t")
-        elif c == "\r":
-            out.append("\\r")
-        elif ord(c) < 0x20 or ord(c) == 0x7F:
-            out.append(f"\\x{ord(c):02x}")
-        else:
-            out.append(c)
-    return "".join(out)

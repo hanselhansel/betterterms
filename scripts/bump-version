@@ -37,6 +37,9 @@ def check():
         print("VERSION file missing", file=sys.stderr)
         return 2
     version = version_file.read_text().strip()
+    if not SEMVER.match(version):
+        print(f"VERSION {version!r} is not X.Y.Z semver", file=sys.stderr)
+        return 2
     problems = []
     for rel in _manifest_paths(_build_module()):
         path = ROOT / rel
@@ -62,12 +65,19 @@ def bump(new):
     if not SEMVER.match(new):
         print(f"bad version {new!r}; expected X.Y.Z", file=sys.stderr)
         return 2
-    (ROOT / "VERSION").write_text(new + "\n")
+    version_file = ROOT / "VERSION"
+    old = version_file.read_text() if version_file.is_file() else None
+    version_file.write_text(new + "\n")
     result = subprocess.run(
         [sys.executable, str(ROOT / "scripts" / "build")], cwd=ROOT
     )
     if result.returncode != 0:
-        return result.returncode
+        if old is None:
+            version_file.unlink(missing_ok=True)
+        else:
+            version_file.write_text(old)
+        print("build failed; restored previous VERSION", file=sys.stderr)
+        return result.returncode or 1
     print(f"VERSION set to {new}")
     return 0
 

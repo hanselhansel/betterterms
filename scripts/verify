@@ -3,10 +3,11 @@
 
 Usage: python3 scripts/verify [ROOT]
 
-ROOT defaults to the repo containing this script. Prints one line per
-check: `PASS <name>`, `FAIL <name>: <reason>`, or `SKIP <name>: <reason>`.
-Exits 1 when any check FAILs. Checks live in the CHECKS registry so later
-steps can add more.
+ROOT defaults to the repo containing this script and must be a directory
+holding VERSION and kit.config.json; anything else exits 2. Prints one
+line per check: `PASS <name>`, `FAIL <name>: <reason>`, or
+`SKIP <name>: <reason>`. Exits 1 when any check FAILs. Checks live in
+the CHECKS registry so later steps can add more.
 """
 
 import os
@@ -22,41 +23,100 @@ from _lib import frontmatter
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
-SKIP_DIRS = {
-    ".git", ".claude", ".venv", "venv", "node_modules", "__pycache__",
-    "dist", "holdout", ".idea", ".mypy_cache", ".pytest_cache", ".ruff_cache",
+# Skipped directory names. SKIP_DIRS_ANYWHERE applies at every level;
+# SKIP_DIRS_TOP applies only to direct children of the root, so a nested
+# .venv or dist under a package is still scanned.
+SKIP_DIRS_ANYWHERE = {".git", "__pycache__", "node_modules"}
+SKIP_DIRS_TOP = {
+    ".claude", ".venv", "venv", "dist", "holdout", ".idea",
+    ".mypy_cache", ".pytest_cache", ".ruff_cache", ".promptfoo",
 }
-# Top-level dirs exempt from the shipped-files local-path scan.
-LOCAL_PATH_SKIP = {"docs", "tests"}
-# Internal docs exempt from prose rules. docs/guides IS checked.
-PROSE_SKIP_PARTS = [
-    ("docs", "research"), ("docs", "specs"), ("docs", "plans"), ("docs", "decisions"),
-]
+
+# Internal documentation directories (repo-relative path prefixes) hold
+# research, specs, plans and decisions that quote prose freely and may
+# embed local paths, so both prose-rules and no-local-paths skip them.
+# docs/guides and everything else shipped IS checked. tests/ is also
+# exempt from no-local-paths (fixtures may legitimately embed paths).
+INTERNAL_DOCS = {
+    ("docs", "research"), ("docs", "specs"),
+    ("docs", "plans"), ("docs", "decisions"),
+}
 
 SKILL_NAME = re.compile(r"^[a-z0-9-]{1,64}$")
+ALLOWED_FM_KEYS = {
+    "name", "description", "license", "compatibility",
+    "metadata", "allowed-tools",
+}
 BANNED_WORDS = re.compile(
-    r"\b(delve|pivotal|crucial|showcase|leverage|robust|comprehensive|"
-    r"nuanced|underscore|foster|moreover|furthermore)\b",
+    r"\b(delv\w*|pivotal|crucial|showcas\w*|leverag\w*|robust|comprehensive|"
+    r"nuanced|underscor\w*|foster\w*|moreover|furthermore)\b",
     re.IGNORECASE,
 )
 EM_DASH = "\u2014"
-# Written as a char class so the pattern does not match this line.
+# Written as char classes / ranges so the pattern does not match this line.
 # Flags user home paths; dotfiles under home stay allowed.
-LOCAL_PATH = re.compile(r"[/]Users/|~/[A-Za-z0-9_]")
+LOCAL_PATH = re.compile(
+    r"[/]Users/|/home/[\w.-]+/|~/[A-Za-z0-9_]|[A-Za-z]:\\Users\\",
+    re.IGNORECASE,
+)
 MAX_SOURCE_LINES = 400
 MAX_SKILL_BODY_LINES = 500
 MAX_DESCRIPTION_CHARS = 1024
+UNIT_TEST_TIMEOUT = 300
+SUBPROCESS_TIMEOUT = 120
 
 
-def _files(root, skip_top=()):
-    """Yield files under root, skipping SKIP_DIRS and the named top-level
-    directories."""
+def _is_internal_doc(rel):
+    return any(rel.parts[: len(skip)] == skip for skip in INTERNAL_DOCS)
+
+
+def _skipped(parts):
+    """Whether a path's directory parts hit a skip rule."""
+    return bool(parts) and (
+        parts[0] in SKIP_DIRS_TOP
+        or any(part in SKIP_DIRS_ANYWHERE for part in parts)
+    )
+
+
+def _git_relpaths(root):
+    """Tracked plus non-ignored untracked files when root is a git repo;
+    None when not, so callers fall back to os.walk."""
+    if not (root / ".git").exists():
+        return None
+    try:
+        r = subprocess.run(
+            ["git", "ls-files", "--cached", "--others",
+             "--exclude-standard", "-z"],
+            cwd=root, capture_output=True, text=True,
+            timeout=SUBPROCESS_TIMEOUT,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if r.returncode != 0:
+        return None
+    return r.stdout.split("\0")
+
+
+def _files(root):
+    """Yield files under root, honoring SKIP_DIRS_TOP at the top level and
+    SKIP_DIRS_ANYWHERE everywhere. When root is a git repo only tracked or
+    non-ignored untracked files are walked."""
+    rels = _git_relpaths(root)
+    if rels is not None:
+        for rel in rels:
+            if not rel:
+                continue
+            p = root / rel
+            if p.is_file() and not _skipped(Path(rel).parts):
+                yield p
+        return
     for dirpath, dirnames, filenames in os.walk(root):
         rel = Path(dirpath).relative_to(root)
+        top = not rel.parts
         dirnames[:] = [
             d
             for d in dirnames
-            if d not in SKIP_DIRS and not (not rel.parts and d in skip_top)
+            if d not in SKIP_DIRS_ANYWHERE and not (top and d in SKIP_DIRS_TOP)
         ]
         for name in filenames:
             if name == ".git":  # worktree marker is a file, not a dir
@@ -83,7 +143,7 @@ def check_unit_tests(root):
         return "SKIP", "no tests/ directory"
     r = subprocess.run(
         [sys.executable, "-m", "unittest", "discover", "-s", "tests"],
-        cwd=root, capture_output=True, text=True, timeout=300,
+        cwd=root, capture_output=True, text=True, timeout=UNIT_TEST_TIMEOUT,
     )
     return ("PASS", "") if r.returncode == 0 else ("FAIL", _tail(r))
 
@@ -108,6 +168,11 @@ def check_skill_names(root):
         except Exception as e:
             problems.append(f"skills/{name}: {e}")
             continue
+        extra = sorted(str(k) for k in fm if k not in ALLOWED_FM_KEYS)
+        if extra:
+            problems.append(
+                f"skills/{name}: unexpected frontmatter keys: {', '.join(extra)}"
+            )
         if fm.get("name") != name:
             problems.append(f"skills/{name}: name {fm.get('name')!r} != folder")
         desc = fm.get("description")
@@ -131,21 +196,24 @@ def check_no_root_claude_md(root):
     bad = [
         str(p.relative_to(root))
         for p in _files(root)
-        if p.name in ("CLAUDE.md", "AGENTS.md")
+        if p.name.lower() in ("claude.md", "agents.md")
     ]
     return ("FAIL", _join(bad)) if bad else ("PASS", "")
 
 
 def check_no_local_paths(root):
     bad = []
-    for p in _files(root, skip_top=LOCAL_PATH_SKIP):
+    for p in _files(root):
+        rel = p.relative_to(root)
+        if rel.parts[0] == "tests" or _is_internal_doc(rel):
+            continue
         try:
             text = p.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError):
             continue
         for i, line in enumerate(text.splitlines(), 1):
             if LOCAL_PATH.search(line):
-                bad.append(f"{p.relative_to(root)}:{i}")
+                bad.append(f"{rel}:{i}")
     return ("FAIL", _join(bad)) if bad else ("PASS", "")
 
 
@@ -153,9 +221,7 @@ def check_prose_rules(root):
     bad = []
     for p in _files(root):
         rel = p.relative_to(root)
-        if p.suffix != ".md":
-            continue
-        if any(rel.parts[: len(skip)] == skip for skip in PROSE_SKIP_PARTS):
+        if p.suffix != ".md" or _is_internal_doc(rel):
             continue
         try:
             text = p.read_text(encoding="utf-8")
@@ -194,7 +260,7 @@ def _run_script(root, name, *args):
         return "SKIP", f"no scripts/{name}"
     r = subprocess.run(
         [sys.executable, str(path), *args],
-        cwd=root, capture_output=True, text=True, timeout=120,
+        cwd=root, capture_output=True, text=True, timeout=SUBPROCESS_TIMEOUT,
     )
     return ("PASS", "") if r.returncode == 0 else ("FAIL", _tail(r))
 
@@ -214,7 +280,7 @@ def check_claude_validate(root):
         return "SKIP", "claude not installed"
     r = subprocess.run(
         ["claude", "plugin", "validate", "."],
-        cwd=root, capture_output=True, text=True, timeout=120,
+        cwd=root, capture_output=True, text=True, timeout=SUBPROCESS_TIMEOUT,
     )
     return ("PASS", "") if r.returncode == 0 else ("FAIL", _tail(r))
 
@@ -226,7 +292,7 @@ def check_gemini_validate(root):
         return "SKIP", "gemini not installed"
     r = subprocess.run(
         ["gemini", "extensions", "validate", "."],
-        cwd=root, capture_output=True, text=True, timeout=120,
+        cwd=root, capture_output=True, text=True, timeout=SUBPROCESS_TIMEOUT,
     )
     return ("PASS", "") if r.returncode == 0 else ("FAIL", _tail(r))
 
@@ -251,6 +317,17 @@ def main(argv):
         print(__doc__.strip(), file=sys.stderr)
         return 2
     root = Path(argv[0]).resolve() if argv else REPO_ROOT
+    if (
+        not root.is_dir()
+        or not (root / "VERSION").is_file()
+        or not (root / "kit.config.json").is_file()
+    ):
+        print(
+            f"error: {root} is not a repo root; "
+            "need a directory containing VERSION and kit.config.json",
+            file=sys.stderr,
+        )
+        return 2
     failures = 0
     for name, fn in CHECKS:
         try:

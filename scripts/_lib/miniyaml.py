@@ -15,7 +15,6 @@ from .miniyaml_scalars import (
     Error,
     _key,
     _key_repr,
-    _plain,
     _scalar,
     _scalar_repr,
     _split_key,
@@ -31,7 +30,8 @@ def load(text):
     """Parse a YAML subset document. Returns dict, list, scalar or None."""
     if not isinstance(text, str):
         raise Error("load() expects a str")
-    return _Parser(text.splitlines()).parse()
+    raw = [line.removesuffix("\r") for line in text.split("\n")]
+    return _Parser(raw).parse()
 
 
 def _tokenize(raw):
@@ -197,16 +197,25 @@ class _Parser:
         last_ln = seg[-1][0] if seg else key_ln
         if not seg:
             return "", last_ln
-        mind = min(ind for _, ind in seg)
+        mind = min(ind for _, ind in seg if ind is not None)
         body = [self.raw[n - 1][mind:] if ind is not None else "" for n, ind in seg]
         if folded:
+            # Lines at the block indent fold to spaces; blank lines split
+            # paragraphs and more-indented lines keep their line breaks.
             paras = [[]]
-            for line in body:
-                if line == "":
+            for line, (_, ind) in zip(body, seg):
+                if ind is None:
                     paras.append([])
                 else:
-                    paras[-1].append(line)
-            text = "\n".join(" ".join(p) for p in paras)
+                    paras[-1].append((line, ind))
+            chunks = []
+            for para in paras:
+                buf = []
+                for k, (line, ind) in enumerate(para):
+                    sep = "" if k == 0 else (" " if para[k - 1][1] == mind and ind == mind else "\n")
+                    buf.append(sep + line)
+                chunks.append("".join(buf))
+            text = "\n".join(chunks)
         else:
             text = "\n".join(body)
         if style.endswith("+"):
