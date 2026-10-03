@@ -1,0 +1,34 @@
+name: cancellations
+command: cancel
+mode: act
+direction: pay
+triggers:
+  - "cancel my subscription"
+  - "cancel my membership"
+  - "cancel this service"
+  - "stop these charges"
+  - "they keep charging me"
+  - "quit my gym"
+  - "end my contract"
+  - "cancel a free trial"
+intake:
+  - "Do you want to leave for sure, or would you stay at a lower price?"
+  - "What is the smallest offer that would keep you?"
+  - "How did you sign up: online, by phone, or in person?"
+  - "What is your state or country?"
+  - "Do you have credits, balances, or prepaid time to use first?"
+discovery:
+  - source: email
+    find: "receipts, sign-up confirmations, renewal and price-change notices, cancellation confirmations"
+    window_days: 400
+  - source: files
+    find: "card or bank statements and account pages the user provides"
+    window_days: 400
+research:
+  - kind: policy
+  - kind: pricing
+  - kind: precedent
+  - kind: rights
+  - kind: market
+savings:
+  formula: "(before - after) * periods_per_year"
