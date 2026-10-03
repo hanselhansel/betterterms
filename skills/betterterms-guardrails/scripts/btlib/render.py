@@ -1,4 +1,4 @@
-"""Draft template rendering and the review-tier text scan.
+"""Draft template rendering.
 
 ``render(template, offer, offer_period, plan, plan_period, in_amounts)``
 substitutes placeholders and returns a :class:`Find` with the rendered
@@ -15,37 +15,24 @@ reaches a draft:
 
 ``Find.masked`` is the rendered text with every non-fact placeholder
 output replaced by a mask character; fact text stays visible because it
-is user data, not a guaranteed price. ``review`` scans that masked
-text and returns plain-word reasons (never a number) for the
-needs_approval tier. The scan is an allowlist, not a blacklist:
-every character must be on the allowed set and every alphanumeric
-token must be clean (decision 0009 amendment).
+is user data, not a guaranteed price. ``btlib.review`` scans that
+masked text for the needs_approval tier.
 """
 
 import math
 import re
 import unicodedata
 
-from . import BtError, cases, money, wordlists
+from . import BtError, MAX_TEXT, cases
 
-PERIODS = ("once", "month", "year")
 _MONTHS = {"month": 1.0, "year": 12.0}
 TAG = re.compile(r"\{([^{}]*)\}")
 
-_MASK = "\x00"  # stands in for one non-fact placeholder output
-
-# The review-tier allowlist: ASCII letters and digits, space and
-# newline, this punctuation set and the sentinel. Any other character
-# (non-ASCII letters, homoglyphs, controls, format, combining and
-# private-use characters, currency signs, symbols) routes to the user,
-# which is why non-English text always needs approval.
-_ALLOWED = frozenset(
-    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-    " \n.,;:!?'\"()-/&" + _MASK
-)
-# Free text splits into alphanumeric runs: one linear pass, no
-# backtracking.
-_TOKEN = re.compile(r"[0-9A-Za-z]+")
+# One private-use character stands in for each non-fact placeholder
+# output. It sits outside the user's allowed set, so a sentinel the
+# template or a fact itself carries is flagged instead of passing for
+# rendered money.
+_MASK = "\ue000"
 
 
 class Value:
@@ -63,11 +50,16 @@ class Find:
     """The outcome of rendering a template. ``errors`` are blocking
     reasons that name the placeholder, never a number. ``masked`` is
     the rendered text with non-fact placeholder outputs replaced by
-    the mask character. ``fact_amounts`` caches one money scan per
-    fact id so a repeated {fact:id} costs once."""
+    the mask character. ``fact_texts`` holds ``(text, has_amount)``
+    for each rendered fact, so the review tier can flag a fact that
+    states a number its ``amount`` field does not carry. ``sentinel``
+    marks a mask character found in the template or a fact body;
+    ``oversized`` marks a render that crossed ``MAX_TEXT``: resolution
+    stops, ``text`` stays None and the oversized string is never
+    materialized."""
 
     __slots__ = ("text", "values", "masked", "fact_ids", "errors",
-                 "fact_amounts")
+                 "fact_texts", "sentinel", "oversized")
 
     def __init__(self):
         self.text = None
@@ -75,7 +67,9 @@ class Find:
         self.masked = ""
         self.fact_ids = set()
         self.errors = []
-        self.fact_amounts = {}
+        self.fact_texts = []
+        self.sentinel = False
+        self.oversized = False
 
 
 def normalize(text):
@@ -118,26 +112,42 @@ def _parse_index(arg):
 
 def render(template, offer, offer_period, plan, plan_period, in_amounts):
     """Render ``template``. ``in_amounts`` is the raw inbound ``amounts``
-    list; entries are coerced with :func:`cases.num` at lookup time."""
+    list; entries are coerced with :func:`cases.num` at lookup time.
+    The rendered byte size is summed from each piece as it resolves,
+    so a fact expansion that crosses ``MAX_TEXT`` flags
+    ``find.oversized``, stops resolving (a later placeholder is never
+    touched) and leaves ``find.text`` unset instead of joining the
+    oversized string."""
     find = Find()
+    find.sentinel = _MASK in template
     out, masked = [], []
+    size = 0
     pos = 0
     for m in TAG.finditer(template):
         literal = template[pos:m.start()]
         _bad_brace(literal, find)
         out.append(literal)
         masked.append(literal)
+        size += len(literal.encode("utf-8"))
         text, mask = _resolve(m.group(1), find, offer, offer_period,
                               plan, plan_period, in_amounts)
         out.append(text)
         masked.append(mask)
+        size += len(text.encode("utf-8"))
         pos = m.end()
+        if size > MAX_TEXT:
+            find.oversized = True
+            return find
     tail = template[pos:]
     _bad_brace(tail, find)
     out.append(tail)
     masked.append(tail)
-    find.text = "".join(out)
-    find.masked = "".join(masked)
+    size += len(tail.encode("utf-8"))
+    if size > MAX_TEXT:
+        find.oversized = True
+    else:
+        find.text = "".join(out)
+        find.masked = "".join(masked)
     return find
 
 
@@ -200,11 +210,18 @@ def _resolve(tag, find, offer, offer_period, plan, plan_period, in_amounts):
         for item in cases.as_list(plan.get("facts")):
             if isinstance(item, dict) and str(item.get("id")) == arg:
                 text = str(item.get("text") or "")
+                if _MASK in text:
+                    find.sentinel = True
                 find.fact_ids.add(arg)
-                if arg not in find.fact_amounts:
-                    find.fact_amounts[arg] = money.amounts(text)
-                for v in find.fact_amounts[arg]:
-                    find.values.append(Value("fact", v, "once"))
+                # Hard blocks read the structured amount only; the
+                # fact text renders verbatim for the user and the
+                # review tier, never for a money parse.
+                v = cases.num(item.get("amount"))
+                has_amount = v is not None and math.isfinite(v)
+                if has_amount:
+                    period = str(item.get("period") or "once").lower()
+                    find.values.append(Value("fact", v, period))
+                find.fact_texts.append((text, has_amount))
                 return text, text
         find.errors.append(f"{{fact:{arg}}} not in plan facts")
         return "", ""
@@ -223,139 +240,3 @@ def _resolve(tag, find, offer, offer_period, plan, plan_period, in_amounts):
         return money_text(v), _MASK
     find.errors.append(f"unknown placeholder {{{tag}}}")
     return "", ""
-
-
-def _touching(text):
-    """Characters that could extend a rendered amount sit right
-    against a mask sentinel. Returns the kinds found: ``digit`` for a
-    digit directly on the sentinel ("$1,100" plus "0" restates the
-    price), ``letter`` for a letter ("$1,100k" reads as 1,100,000) and
-    ``decimal`` for a ``.``/``,`` separator with a digit on its far
-    side ("$1,100.99"). An empty set means the sentinel is clean."""
-    found = set()
-    for i, c in enumerate(text):
-        if c != _MASK:
-            continue
-        for j in (i - 1, i + 1):
-            if not 0 <= j < len(text):
-                continue
-            d = text[j]
-            if d.isascii() and d.isdigit():
-                found.add("digit")
-            elif d.isascii() and d.isalpha():
-                found.add("letter")
-            elif d in ".,":
-                k = j + (j - i)  # the character past the separator
-                if (0 <= k < len(text) and text[k].isascii()
-                        and text[k].isdigit()):
-                    found.add("decimal")
-    return found
-
-
-def _tokens(text):
-    """All alphanumeric tokens of ``text`` as ``(start, end, token)``
-    in order: one linear pass, no backtracking."""
-    return [(m.start(), m.end(), m.group(0)) for m in _TOKEN.finditer(text)]
-
-
-def _is_year(masked, toks, i):
-    """A 1900-2100 digit token is a year only when it follows a
-    whole-word month name ("Jan 2026", "15 October 2026") or a month,
-    a day 1-31 and a comma ("October 15, 2026")."""
-    tok = toks[i][2]
-    if len(tok) != 4 or not 1900 <= int(tok) <= 2100 or i == 0:
-        return False
-    if toks[i - 1][2].lower() in wordlists.MONTH_WORDS:
-        return True
-    if (
-        i >= 2
-        and toks[i - 1][2].isdigit()
-        and len(toks[i - 1][2]) <= 3
-        and 1 <= int(toks[i - 1][2]) <= 31
-        and toks[i - 2][2].lower() in wordlists.MONTH_WORDS
-    ):
-        gap = masked[toks[i - 1][1]:toks[i][0]]
-        return "," in gap and all(c in ", \t\n" for c in gap)
-    return False
-
-
-def review(find, floor, never_items):
-    """Review-tier checks on the rendered message. Reads ``find.masked``
-    (placeholder outputs masked, fact text visible) and returns one
-    plain-word reason per tripped check; reasons carry no numbers.
-    The scan is an allowlist: characters off the permitted set, tokens
-    that mix letters and digits, disallowed numbers, listed money and
-    commitment words and sentinel glue all go to the user."""
-    reasons = []
-    masked = find.masked
-    if any(c not in _ALLOWED for c in masked):
-        reasons.append("unusual characters in the message")
-    touch = _touching(masked)
-    if "digit" in touch:
-        reasons.append("a digit next to a rendered amount")
-    if touch:
-        reasons.append("text touches a rendered amount")
-    toks = _tokens(masked)
-    lower = [t.lower() for _, _, t in toks]
-    for i, (_, _, tok) in enumerate(toks):
-        if any(c.isdigit() for c in tok) and any(c.isalpha() for c in tok):
-            reasons.append("a token mixing letters and digits in the message")
-        elif tok.isdigit() and not (
-            (len(tok) <= 4 and 1 <= int(tok) <= 99)
-            or _is_year(masked, toks, i)
-        ):
-            reasons.append("a number in the message")
-        l = lower[i]
-        if l in wordlists.SCALE_WORDS:
-            reasons.append("a scale word in the message")
-        if l in wordlists.CURRENCY_WORDS or tok in wordlists.CURRENCY_CODES:
-            reasons.append("a currency symbol or code in the message")
-        if l in wordlists.COMMIT_WORDS:
-            reasons.append("agreement or commitment wording in the message")
-        if l == "k" and i > 0 and toks[i - 1][2].isdigit():
-            reasons.append("a scale word in the message")
-    for i in range(len(toks) - 1):
-        if (
-            lower[i] in wordlists.NUMBER_WORDS
-            and lower[i + 1] in wordlists.NUMBER_WORDS
-            and all(c in " \t-" for c in masked[toks[i][1]:toks[i + 1][0]])
-        ):
-            reasons.append("a run of number words in the message")
-            break
-    if floor is not None and floor < 100:
-        # Small integers are harmless except the one that repeats a
-        # sub-100 floor's integer part.
-        fint = int(floor)
-        if any(
-            t.isdigit() and len(t) <= 4 and int(t) == fint
-            for _, _, t in toks
-        ):
-            reasons.append("a number matching your limit")
-    for phrase in wordlists.COMMIT_PHRASES:
-        width = len(phrase)
-        if any(
-            lower[i:i + width] == list(phrase)
-            for i in range(len(toks) - width + 1)
-        ):
-            reasons.append("agreement or commitment wording in the message")
-            break
-
-    norm = normalize(masked)
-    low = norm.lower()
-    found_amounts = None
-    for item in never_items:
-        s = normalize(str(item)).strip().lower()
-        if not s:
-            continue
-        vals = [] if any(c.isalpha() for c in s) else money.amounts(s)
-        if vals:
-            # Numeric items match as whole numbers only.
-            if found_amounts is None:
-                found_amounts = money.amounts(norm)
-            hit = any(abs(v - a) <= 0.005 for v in vals for a in found_amounts)
-        else:
-            hit = s in low
-        if hit:
-            reasons.append("a term from your never-disclose list")
-            break
-    return reasons

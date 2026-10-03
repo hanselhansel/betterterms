@@ -89,9 +89,9 @@ class AmountsTest(unittest.TestCase):
         self.assertEqual(money.amounts("1.5 thousand"), [1500.0])
         self.assertEqual(money.amounts("12 hundred"), [1200.0])
 
-    # Every form below is one parsed amount: the gate's fact-value and
-    # never-disclose checks both key off the numeric value, so leak
-    # forms must arrive as amounts, not noise.
+    # Every form below is one parsed amount: the scorer's
+    # suggested-amounts list keys off the numeric value, so amount
+    # forms must arrive as numbers, not noise.
 
     def test_spelled_amount_with_comma(self):
         self.assertEqual(money.amounts("one thousand, two hundred"), [1200.0])

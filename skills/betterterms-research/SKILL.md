@@ -29,7 +29,9 @@ to something the user said.
    first-hand reports from the last 12 months, the user's rights in their
    jurisdiction, and market or competitor prices.
 3. Write one source record per finding. Copy the exact quote and the date
-   you read it.
+   you read it. When a finding states money, record `amount` as a
+   number and `period` (`once`, `month`, or `year`) on the record so
+   the plan can carry them into a fact's `amount` and `period`.
 4. Re-check anything older than 90 days before relying on it.
 
 ## Rules

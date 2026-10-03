@@ -42,6 +42,7 @@ def _reraise(e, fallback_mark=None):
 
 
 _MERGE_TAG = "tag:yaml.org,2002:merge"
+_INT_TAG = "tag:yaml.org,2002:int"
 
 
 class _Loader(yaml.SafeLoader):
@@ -62,6 +63,8 @@ class _Loader(yaml.SafeLoader):
         # out-of-range timestamp, KeyError from a bad !!bool value, ...);
         # re-raise them as Error with the node's line so callers get one
         # failure type. Errors already carrying a problem_mark keep it.
+        # An int scalar past Python's digit limit stays a string: the
+        # value is "not a number" downstream, never a parse error.
         try:
             return super().construct_object(node, deep=deep)
         except (Error, RecursionError):
@@ -69,6 +72,8 @@ class _Loader(yaml.SafeLoader):
         except yaml.YAMLError as e:
             _reraise(e, getattr(node, "start_mark", None))
         except Exception as e:
+            if node.tag == _INT_TAG:
+                return node.value
             detail = str(e) or "failed"
             raise Error(
                 f"{type(e).__name__}: {detail}",

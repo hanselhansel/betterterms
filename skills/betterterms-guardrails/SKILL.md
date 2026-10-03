@@ -84,9 +84,11 @@ Hard blocks, in order:
    the in-band offer itself (an offer exactly at the floor is
    allowed). A value equal only to the floor's x12 or /12 conversion
    routes to the user instead: "amount matches a converted limit".
-   A price value (target, ladder, price option, quote not on `send`)
-   worse than the floor blocks too. Bonus and fee options skip the
-   worse-than check but may not equal the floor.
+   A price value (target, ladder, price option, quote or fact amount
+   not on `send`) worse than the floor blocks too. A fact's value is
+   its structured `amount` (period-converted from its declared
+   `period`); the gate never parses fact text. Bonus and fee options
+   skip the worse-than check but may not equal the floor.
 8. Rendered message over 64 KB, measured after fact expansion: block.
 9. A claim id missing from `plan.yaml` facts: block. `{fact:<id>}`
    placeholders claim the id automatically.
@@ -98,24 +100,32 @@ free text is safe: it runs an allowlist, so anything unusual routes
 to the user. A hit returns `needs_approval` with a plain-word reason
 that carries no numbers:
 
-- Any character outside the allowed set: ASCII letters, ASCII space
-  and newline, the punctuation `. , ; : ! ? ' " ( ) - / &`, and the
-  sentinel. Non-ASCII letters, homoglyphs, control, format,
+- Any character outside the allowed set: ASCII letters and digits,
+  ASCII space and newline, the punctuation `. , ; : ! ? ' " ( ) - / &`,
+  and the sentinel. Non-ASCII letters, homoglyphs, control, format,
   combining, private-use and non-ASCII space characters, currency
   signs and every other symbol all route to the user, so a message
-  written in a language other than English always needs approval.
+  written in a language other than English always needs approval. The
+  sentinel is one reserved private-use codepoint; a template or fact
+  that already carries it routes to the user too.
 - Any token mixing letters and digits ("95USD", "12hundred",
   "2ndly").
-- Any digit token that is not 1-99, and not a 1900-2100 year right
-  after a whole-word month name ("October 15, 2026", "Jan 2026").
-  Small integers pass for counts and dates, unless the floor is
-  below 100 and the integer equals its integer part.
-- A run of number words ("twelve fifty").
+- Any number-shaped token: a spelled number word ("twelve hundred",
+  "two", "one, two"), a decimal or separator-joined digit form
+  ("90.5", "12.50", "1,050", "12 50"), or a digit token that is not
+  isolated (within two tokens of another digit token, a number word,
+  or a currency or scale word or abbreviation like "5 mil" or "12
+  fifty"). Only isolated 1-2 digit integers (1-99, no leading zero)
+  and whole-word month-name dates ("October 15, 2026", "15 October
+  2026", "Jan 2026") pass, unless the floor is below 100 and the
+  integer or a matching number word equals its integer part.
 - A letter, a digit, or a digit past a `.`/`,` separator glued to a
   rendered amount: "$1,100k" or "$1,100.99" restates a price.
+- A fact whose text states a number (digits, number words, currency
+  or scale words) while its `amount` is null: money in a fact goes
+  to the user unless the plan carries it structurally.
 - The whole-word lists below, matched on the lowercased token stream
-  (currency codes match the raw token case-sensitively; a lone "k"
-  counts only right after a digit token).
+  (currency codes match the raw token case-sensitively).
 - Any `never_disclose` term, matched on normalized text with format
   characters stripped; numeric items match as whole numbers only.
 - A rendered non-offer value equal to the floor only after an x12 or
@@ -125,7 +135,7 @@ The word lists live in `scripts/btlib/wordlists.py`, the single
 module the runtime and this file share:
 
 number words: eight, eighteen, eighty, eleven, fifteen, fifty, five, forty, four, fourteen, nil, nine, nineteen, ninety, oh, one, ought, seven, seventeen, seventy, six, sixteen, sixty, ten, thirteen, thirty, three, twelve, twenty, two, zero
-scale words: billion, billions, bn, hundred, hundreds, million, millions, mm, thousand, thousands, trillion, trillions
+scale words: billion, billions, bn, hundred, hundreds, k, m, mil, million, millions, mm, thou, thousand, thousands, trillion, trillions
 currency codes: AED, AUD, BRL, CAD, CHF, CNH, CNY, CZK, DKK, EUR, GBP, HKD, HUF, IDR, ILS, INR, JPY, KRW, MXN, MYR, NOK, NZD, PHP, PLN, RUB, SAR, SEK, SGD, THB, TRY, TWD, USD, VND, ZAR
 currency words: aed, aud, brl, buck, bucks, chf, cnh, cny, czk, dkk, dollar, dollars, eur, euro, euros, gbp, grand, hkd, huf, idr, ils, inr, jpy, krw, mxn, myr, nok, nzd, php, pln, pound, pounds, quid, renminbi, sar, sek, sgd, thb, twd, usd, vnd, yen, yuan, zar
 commitment words: accept, acceptance, accepted, accepting, accepts, agree, agreeable, agreed, agreeing, agreement, agreements, charge, confirm, confirmation, confirmed, confirming, confirms, deal, pay

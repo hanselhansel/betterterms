@@ -1,5 +1,5 @@
 """Inbound message scoring. ``classify(case_dir, inbound)`` returns
-``{"band": ..., "escalate": [...]}``.
+``{"band": ..., "escalate": [...], "suggested_amounts": [...]}``.
 
 Bands by direction: ``at_or_above_target`` when the offer meets or beats
 the plan target, ``below_floor`` when it is worse than the floor,
