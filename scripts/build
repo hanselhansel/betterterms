@@ -1,0 +1,63 @@
+#!/usr/bin/env python3
+"""Regenerate host manifests from kit.config.json + VERSION.
+
+Each generator in GENERATORS is a callable ``gen(root) -> {relpath:
+content}`` producing repo-relative files (`.claude-plugin/plugin.json`,
+`plugin.json`, `gemini-extension.json`, `commands/*.md`, ...). Step 1
+ships no generators, so build is a no-op and `--check` passes.
+
+Usage: build [--check]
+  (no args)   write every generated file
+  --check     exit 1 if any generated file is missing or differs
+"""
+
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+
+GENERATORS = []
+
+
+def expected(root):
+    """Return {relpath: content} for every registered generator."""
+    out = {}
+    for gen in GENERATORS:
+        for rel, content in gen(root).items():
+            if rel in out:
+                raise ValueError(f"two generators produce {rel}")
+            out[rel] = content
+    return out
+
+
+def main(argv):
+    if argv and argv != ["--check"]:
+        print(__doc__.strip(), file=sys.stderr)
+        return 2
+    files = expected(ROOT)
+    if "--check" in argv:
+        stale = [
+            rel
+            for rel, content in sorted(files.items())
+            if not (ROOT / rel).is_file() or (ROOT / rel).read_text() != content
+        ]
+        if stale:
+            print("generated files out of date:", file=sys.stderr)
+            for rel in stale:
+                print(f"  {rel}", file=sys.stderr)
+            print("run scripts/build", file=sys.stderr)
+            return 1
+        print("build check passed" if files else "build check passed (no generators registered)")
+        return 0
+    for rel, content in sorted(files.items()):
+        path = ROOT / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content)
+        print(f"wrote {rel}")
+    if not files:
+        print("no generators registered; nothing to build")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
