@@ -13,7 +13,8 @@ guarantees and fail closed:
 4. unknown draft keys or a legacy ``text`` key -> block
 5. ``offer`` present but not a plain number, or ``period`` outside
    once|month|year, or template not a string -> block
-6. unknown or unresolvable placeholder -> block, naming the placeholder
+6. unknown, malformed or unresolvable placeholder -> block, naming
+   the placeholder
 7. offer worse than the floor, compared in the floor's declared
    period -> block; ``accept``, ``sign`` and ``pay`` also require a
    numeric offer inside the band, and ``accept`` requires an inbound
