@@ -15,6 +15,7 @@ Exit codes: 0 ok/pass, 1 block, 2 usage or error, 3 needs approval.
 """
 
 import argparse
+import getpass
 import json
 import sys
 from pathlib import Path
@@ -44,7 +45,11 @@ def cmd_case_new(args):
 
 def cmd_case_set_floor(args):
     d = cases.require_case(args.case_id)
-    cases.set_floor(d, sys.stdin.read())
+    if sys.stdin.isatty():
+        raw = getpass.getpass("Walk-away number (hidden): ")
+    else:
+        raw = sys.stdin.read()
+    cases.set_floor(d, raw)
     return 0, {"ok": True}
 
 

@@ -104,6 +104,43 @@ class LedgerTest(BtTestCase):
                 self.assertIn("error", out)
         ledger.write_text(good)
 
+    def test_ledger_rejects_non_finite_and_negative(self):
+        case_id, _ = new_case(self.home)
+        rows = [
+            ("nan", "60"),
+            ("inf", "60"),
+            ("80", "inf"),
+            ("-5", "60"),
+            ("80", "-1"),
+            ("-inf", "60"),
+        ]
+        for before, after in rows:
+            with self.subTest(before=before, after=after):
+                proc, out = run_bt_json(
+                    self.home,
+                    "ledger", "add", case_id,
+                    f"--before={before}", f"--after={after}",
+                    "--period", "month",
+                )
+                self.assertEqual(proc.returncode, 2, out)
+                self.assertIn("error", out)
+        self.assertFalse((self.home / "ledger.jsonl").exists())
+
+    def test_ledger_rejects_duplicate_case(self):
+        case_id, _ = new_case(self.home)
+        args = (
+            "ledger", "add", case_id,
+            "--before", "80", "--after", "60", "--period", "month",
+        )
+        proc, _ = run_bt_json(self.home, *args)
+        self.assertEqual(proc.returncode, 0)
+        proc, out = run_bt_json(self.home, *args)
+        self.assertEqual(proc.returncode, 2, out)
+        self.assertIn("error", out)
+        # Only the first entry landed.
+        lines = (self.home / "ledger.jsonl").read_text().splitlines()
+        self.assertEqual(len(lines), 1)
+
 
 if __name__ == "__main__":
     unittest.main()

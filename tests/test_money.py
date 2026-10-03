@@ -1,3 +1,4 @@
+import time
 import unittest
 from pathlib import Path
 import sys
@@ -89,6 +90,78 @@ class AmountsTest(unittest.TestCase):
     def test_digit_scale_words(self):
         self.assertEqual(money.amounts("1.5 thousand"), [1500.0])
         self.assertEqual(money.amounts("12 hundred"), [1200.0])
+
+    # Every form below is a marked amount: the untraced-number and
+    # beyond-floor gate rules both key off the marked flag, so leak
+    # forms must arrive marked, not bare.
+
+    def test_spelled_amount_with_comma(self):
+        self.assertEqual(money.amounts("one thousand, two hundred"), [1200.0])
+        self.assertIn(1200.0, money.amounts("one thousand, two hundred dollars"))
+        self.assertIn(1200.0, money.amounts("one thousand and two hundred"))
+
+    def test_space_grouped_thousands_marked(self):
+        pairs = [(a.value, a.marked) for a in money.find("about 1 200 today")]
+        self.assertIn((1200.0, True), pairs)
+        self.assertIn(1234567.0, money.amounts("1 234 567"))
+
+    def test_grand_suffix(self):
+        self.assertEqual(money.amounts("1.2 grand"), [1200.0])
+        self.assertEqual(money.amounts("2 grand"), [2000.0])
+        pairs = [(a.value, a.marked) for a in money.find("1.2 grand")]
+        self.assertEqual(pairs, [(1200.0, True)])
+        # "grand" alone is not money: spelled words never pick it up.
+        self.assertEqual(money.amounts("a grand gesture"), [])
+
+    def test_approximately_marked(self):
+        for text in ("~1200", "~ 1200", "≈1200"):
+            with self.subTest(text=text):
+                pairs = [(a.value, a.marked) for a in money.find(text)]
+                self.assertIn((1200.0, True), pairs)
+
+    def test_ish_suffix_marked(self):
+        for text in ("1200ish", "1,200-ish", "1200 ish"):
+            with self.subTest(text=text):
+                pairs = [(a.value, a.marked) for a in money.find(text)]
+                self.assertIn((1200.0, True), pairs)
+
+    def test_per_period_marked(self):
+        rows = [
+            ("1200/mo", 1200.0),
+            ("1200/month", 1200.0),
+            ("1200 / month", 1200.0),
+            ("1200 a month", 1200.0),
+            ("1200 per month", 1200.0),
+            ("1200 every month", 1200.0),
+            ("50/yr", 50.0),
+            ("3 a day", 3.0),
+        ]
+        for text, want in rows:
+            with self.subTest(text=text):
+                pairs = [(a.value, a.marked) for a in money.find(text)]
+                self.assertIn((want, True), pairs)
+
+    def test_digit_scale_is_marked(self):
+        pairs = [(a.value, a.marked) for a in money.find("12 hundred")]
+        self.assertEqual(pairs, [(1200.0, True)])
+
+    def test_spelled_scale_is_marked(self):
+        pairs = [(a.value, a.marked) for a in money.find("twelve hundred")]
+        self.assertEqual(pairs, [(1200.0, True)])
+        # A lone unit word stays unmarked: "two" is not a money claim.
+        self.assertIn((2.0, False),
+                      [(a.value, a.marked) for a in money.find("two options")])
+
+    def test_find_linear_time_on_hostile_input(self):
+        for text in (
+            "1," * 65536,           # 128 KB of "1,1,1,..."
+            "1,000," * 16384,       # grouped digits, ~112 KB
+            "one thousand " * 9000, # spelled run, ~117 KB
+        ):
+            with self.subTest(size=len(text)):
+                start = time.monotonic()
+                money.find(text)
+                self.assertLess(time.monotonic() - start, 1.0)
 
 
 if __name__ == "__main__":

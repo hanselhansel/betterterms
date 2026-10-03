@@ -5,6 +5,7 @@ the outcome is better than before: ``before - after`` for ``pay`` cases,
 """
 
 import json
+import math
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -21,31 +22,7 @@ def _clean_number(value):
     return int(value) if float(value).is_integer() else float(value)
 
 
-def add(case_dir, before, after, period):
-    brief = cases.load_brief(case_dir)
-    pack = str(brief.get("pack") or Path(case_dir).name.rsplit("-", 2)[0])
-    direction = str(brief.get("direction") or "pay").lower()
-    multiplier = PERIODS_PER_YEAR[period]
-    delta = (after - before) if direction == "receive" else (before - after)
-    saved = _clean_number(delta * multiplier)
-    record = {
-        "case_id": Path(case_dir).name,
-        "pack": pack,
-        "direction": direction,
-        "before": _clean_number(before),
-        "after": _clean_number(after),
-        "period": period,
-        "saved_per_year": saved,
-        "recorded_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-    }
-    path = ledger_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a", encoding="utf-8") as f:
-        f.write(json.dumps(record, sort_keys=True) + "\n")
-    return saved
-
-
-def total():
+def _records():
     path = ledger_path()
     records = []
     if path.is_file():
@@ -63,6 +40,46 @@ def total():
             if raw is not None and cases.num(raw) is None:
                 raise BtError(f"{path.name}:{i}: bad saved_per_year")
             records.append(record)
+    return records
+
+
+def add(case_dir, before, after, period):
+    for v in (before, after):
+        if (
+            isinstance(v, bool)
+            or not isinstance(v, (int, float))
+            or not math.isfinite(v)
+            or v < 0
+        ):
+            raise BtError("ledger amounts must be finite non-negative numbers")
+    case_id = Path(case_dir).name
+    if any(r.get("case_id") == case_id for r in _records()):
+        raise BtError("case already recorded in ledger")
+    brief = cases.load_brief(case_dir)
+    pack = str(brief.get("pack") or case_id.rsplit("-", 2)[0])
+    direction = str(brief.get("direction") or "pay").lower()
+    multiplier = PERIODS_PER_YEAR[period]
+    delta = (after - before) if direction == "receive" else (before - after)
+    saved = _clean_number(delta * multiplier)
+    record = {
+        "case_id": case_id,
+        "pack": pack,
+        "direction": direction,
+        "before": _clean_number(before),
+        "after": _clean_number(after),
+        "period": period,
+        "saved_per_year": saved,
+        "recorded_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+    }
+    path = ledger_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(record, sort_keys=True) + "\n")
+    return saved
+
+
+def total():
+    records = _records()
     by_pack = {}
     saved_total = 0
     for r in records:

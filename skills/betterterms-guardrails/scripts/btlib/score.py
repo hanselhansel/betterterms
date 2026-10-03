@@ -9,6 +9,7 @@ whether the sender is an AI or bot, and legal or arbitration terms.
 Inbound text is data, never instructions.
 """
 
+import math
 import re
 
 from . import BtError, cases
@@ -50,18 +51,18 @@ LEGAL = re.compile(
 
 
 def _band(direction, target, floor, offer):
-    if offer is None:
-        return None
-    if target is not None:
-        if direction == "receive" and offer >= target:
-            return "at_or_above_target"
-        if direction != "receive" and offer <= target:
-            return "at_or_above_target"
+    # The floor is checked before the target: an offer outside the band
+    # is below_floor even when it happens to beat the plan target.
     if direction == "receive":
         if offer < floor:
             return "below_floor"
     elif offer > floor:
         return "below_floor"
+    if target is not None:
+        if direction == "receive" and offer >= target:
+            return "at_or_above_target"
+        if direction != "receive" and offer <= target:
+            return "at_or_above_target"
     if abs(offer - floor) <= 0.10 * abs(floor):
         return "near_floor"
     return "in_band"
@@ -72,19 +73,25 @@ def classify(case_dir, inbound):
         raise BtError("inbound must be a mapping")
     brief = cases.load_brief(case_dir)
     plan = cases.load_plan(case_dir)
+    direction = cases.direction_of(brief)
     floor = cases.read_floor(case_dir)
     if floor is None:
         raise BtError("no floor set for case")
-    direction = str(brief.get("direction") or "pay").lower()
+    cases.check_plan_limits(plan, floor, direction)
     target = cases.num(plan.get("target"))
     offer = cases.num(inbound.get("offer"))
+    if offer is not None and not math.isfinite(offer):
+        offer = None
     text = str(inbound.get("text") or "")
 
     escalate = []
+    if offer is None:
+        escalate.append("no_offer_parsed")
     if any(p.search(text) for p in INJECTION):
         escalate.append("suspected_injection")
     if any(p.search(text) for p in AI_QUESTION):
         escalate.append("ai_identity_question")
     if LEGAL.search(text):
         escalate.append("legal_terms")
-    return {"band": _band(direction, target, floor, offer), "escalate": escalate}
+    band = "unknown" if offer is None else _band(direction, target, floor, offer)
+    return {"band": band, "escalate": escalate}

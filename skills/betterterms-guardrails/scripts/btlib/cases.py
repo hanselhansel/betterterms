@@ -7,16 +7,19 @@ default ``Path.home() / ".betterterms"``. ``case_id`` format:
 ``<pack>-<YYYYMMDD>-<4 hex>``.
 """
 
+import math
 import os
 import re
 import secrets
 from datetime import date
 from pathlib import Path
 
-from . import BtError, money, yaml
+from . import BtError, yaml
 
 PACK_RE = re.compile(r"^[a-z0-9-]{1,64}$")
 FLOOR_FILE = ".floor"
+FLOOR_MSG = "floor must be a single plain number like 1200 or 1200.50"
+_PLAIN_NUMBER = re.compile(r"\d+(?:\.(\d+))?$")
 
 AUTONOMY_DEFAULT = {"act": 2, "coach": 1}
 
@@ -123,18 +126,22 @@ def create_case(pack, mode="act", direction="pay"):
 
 
 def parse_number(text):
-    """Parse a single amount from text like ``1200``, ``$1,200.00``,
-    ``USD 1200``. Raises BtError unless exactly one number is present.
-    The rejected input is never echoed: it may hold the floor."""
-    s = text.strip()
-    try:
-        return float(s.replace(",", ""))
-    except ValueError:
-        pass
-    found = money.amounts(s)
-    if len(found) == 1:
-        return found[0]
-    raise BtError("floor must be a single number")
+    """Parse a floor value: one plain number like ``1200`` or
+    ``1200.50``. Currency marks, separators, signs, exponents, spelled
+    forms and extra decimals are all ambiguous, so they are rejected
+    with one fixed message that never echoes the input: the input may
+    hold the floor. A three-digit decimal tail (``85.000``) is a
+    thousands separator in some locales, so it is rejected too."""
+    m = _PLAIN_NUMBER.fullmatch(str(text or "").strip())
+    value = None
+    if m and (m.group(1) is None or len(m.group(1)) != 3):
+        try:
+            value = float(m.group(0))
+        except ValueError:
+            value = None
+    if value is None or not math.isfinite(value):
+        raise BtError(FLOOR_MSG)
+    return value
 
 
 def as_list(value):
@@ -178,11 +185,49 @@ def set_floor(case_dir_path, raw):
 
 
 def read_floor(case_dir_path):
-    """Return the floor as float, or None when the file is absent."""
+    """Floor as float, or None when the file is missing, unreadable or
+    holds anything ``parse_number`` rejects. A bad floor is a limit
+    failure, never a guess: callers must fail closed."""
     path = Path(case_dir_path) / FLOOR_FILE
-    if not path.is_file():
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except OSError:
         return None
     try:
-        return float(path.read_text(encoding="utf-8").strip())
-    except ValueError:
-        raise BtError(f"{path.name}: not a number")
+        return parse_number(raw)
+    except BtError:
+        return None
+
+
+def direction_of(brief):
+    """Brief ``direction``: exactly ``pay`` or ``receive``. Anything else
+    is a broken case file, so callers exit 2 instead of defaulting and
+    silently applying the wrong inequality."""
+    d = str((brief or {}).get("direction") or "").lower()
+    if d not in ("pay", "receive"):
+        raise BtError("direction must be pay or receive")
+    return d
+
+
+def check_plan_limits(plan, floor, direction):
+    """A plan whose target, option or ladder value is worse than the
+    floor was built against a different limit and must not be
+    negotiated. Raises BtError with a message that carries no numbers.
+    Skipped when no valid floor exists; that failure is reported by the
+    caller's own floor rule."""
+    if floor is None:
+        return
+    values = [num(plan.get("target"))]
+    for key in ("options", "ladder"):
+        for item in as_list(plan.get(key)):
+            if isinstance(item, dict):
+                values.append(num(item.get("value")))
+    for v in values:
+        if v is None:
+            continue
+        if not math.isfinite(v) or (
+            direction == "receive" and v < floor
+        ) or (
+            direction == "pay" and v > floor
+        ):
+            raise BtError("plan conflicts with your limits")
