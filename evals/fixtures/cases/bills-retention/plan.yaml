@@ -23,9 +23,15 @@ facts:
   - id: f1
     text: Nimbus Fiber offers the same speed tier at $55 per month at this address
     source: https://nimbus.example/pricing
+    amount: 55
+    period: month
   - id: f2
     text: provider retention policy allows loyalty discounts for tenured accounts
     source: https://provider.example/retention-policy
+    amount: null
+    period: once
   - id: f3
     text: current bill is $120 per month
     source: user statement
+    amount: 120
+    period: month

@@ -21,6 +21,10 @@ facts:
   - id: f1
     text: current subscription costs $22 per month
     source: user statement
+    amount: 22
+    period: month
   - id: f2
     text: provider advertises a $15 per month annual plan to new customers
     source: https://stream.example/plans
+    amount: 15
+    period: month

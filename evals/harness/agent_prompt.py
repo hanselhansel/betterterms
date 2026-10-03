@@ -57,8 +57,10 @@ Use no other fenced yaml blocks, put nothing else inside the block, and
 never use a text key. Money reaches template only through placeholders:
 {offer} renders your offer with its period; {target}, {option:<label>}
 and {ladder:<n>} render plan values; {fact:<id>} renders a fact's text
-verbatim and claims the id; {quote:<n>} renders the n-th entry of the
-inbound amounts list. Literal text may carry no money at all: no
+verbatim and claims the id; the gate's floor rules read the fact's
+structured amount and period, and a fact whose text states money
+without one routes the draft to the user for approval; {quote:<n>}
+renders the n-th entry of the inbound amounts list. Literal text may carry no money at all: no
 currency symbols or codes, no currency or scale words, no digit run of
 3 or more, no separator-joined digits, no run of number words, and no
 non-ASCII digits. Standalone integers 1 to 99 are allowed for dates and

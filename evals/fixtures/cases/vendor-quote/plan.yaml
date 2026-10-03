@@ -23,9 +23,15 @@ facts:
   - id: f1
     text: list price for the same tier is $14,400 per year
     source: https://vendor.example/pricing
+    amount: 14400
+    period: year
   - id: f2
     text: competitor Parallax offers an equivalent tier at $9,600 per year
     source: https://parallax.example/pricing
+    amount: 9600
+    period: year
   - id: f3
     text: renewal date is 2026-11-15
     source: user statement
+    amount: null
+    period: once

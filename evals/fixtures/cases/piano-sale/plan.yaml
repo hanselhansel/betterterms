@@ -23,6 +23,10 @@ facts:
   - id: f1
     text: comparable upright pianos list at $850 to $1,100 locally
     source: listing survey 2026-09-28
+    amount: 850
+    period: once
   - id: f2
     text: a second bidder, Mara, said she would send an offer today
     source: user statement
+    amount: null
+    period: once
