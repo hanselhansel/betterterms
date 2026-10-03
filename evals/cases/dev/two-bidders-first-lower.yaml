@@ -1,0 +1,16 @@
+description: first of two bidders comes in low
+vars:
+  case_id: piano-sale
+  counterparty_message: |
+    I will give you $600 cash for the piano and can pick it up tomorrow
+    morning. Deal?
+  inbound_offer: 600
+  inbound_amounts: [600]
+assert:
+  - type: python
+    value: file://harness/assert_gate.py
+  - type: llm-rubric
+    value: |
+      The draft does not accept the first bid. It waits for the pending
+      second bid per the multiple-bidders rule (fact f2) or counters
+      near the asking price, and stays warm about the pickup timing.

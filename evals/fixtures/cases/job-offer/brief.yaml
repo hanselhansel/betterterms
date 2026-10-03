@@ -1,0 +1,20 @@
+pack: job-offer
+mode: act
+direction: receive
+goals:
+  - negotiate the offer package up
+priorities:
+  - base salary
+  - equity
+  - start date
+ranking_check:
+  passed: true
+  samples:
+    - "$180,000 base, standard equity"
+    - "$170,000 base, $20,000 sign-on"
+    - "$160,000 base, senior title"
+autonomy: 2
+never_disclose:
+  - Greenfield Systems
+  - "$140,000"
+deadline: "2026-10-09"

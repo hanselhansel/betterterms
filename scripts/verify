@@ -32,6 +32,7 @@ from _lib.checks_skills import check_skill_names
 from _lib.checks_tools import (
     check_build_fresh,
     check_claude_validate,
+    check_eval_smoke,
     check_gemini_validate,
     check_unit_tests,
     check_vendor_sync,
@@ -53,6 +54,7 @@ CHECKS = [
     ("vendor-sync", check_vendor_sync),
     ("build-fresh", check_build_fresh),
     ("version-sync", check_version_sync),
+    ("eval-smoke", check_eval_smoke),
     ("claude-validate", check_claude_validate),
     ("gemini-validate", check_gemini_validate),
 ]

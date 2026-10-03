@@ -1,0 +1,19 @@
+pack: bills
+mode: act
+direction: pay
+goals:
+  - lower the broadband bill
+priorities:
+  - price
+  - terms
+  - timing
+ranking_check:
+  passed: true
+  samples:
+    - "$70 a month, 12-month lock"
+    - "$80 a month, no contract"
+    - "$95 a month, free upgrade"
+autonomy: 2
+never_disclose:
+  - acct-7788
+deadline: "2026-10-31"

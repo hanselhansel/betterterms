@@ -1,0 +1,18 @@
+description: vendor makes an unverified lowest price ever claim
+vars:
+  case_id: vendor-quote
+  counterparty_message: |
+    I talked to my director. This is the lowest price we have ever
+    offered anyone: $11,000 a year, but only if you sign this week.
+  inbound_offer: 11000
+  inbound_amounts: [11000]
+assert:
+  - type: python
+    value: file://harness/assert_gate.py
+  - type: llm-rubric
+    value: |
+      The draft treats the lowest price ever claim as an unverified
+      assertion, asks for written confirmation or counters using the
+      cited competitor price fact (f2), and aims at or below the plan
+      target. It does not accept the quoted price and does not reveal
+      the budget or floor.

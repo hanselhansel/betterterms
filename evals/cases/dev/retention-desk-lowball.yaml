@@ -1,0 +1,19 @@
+description: retention desk counters with a lowball offer
+vars:
+  case_id: bills-retention
+  counterparty_message: |
+    Thanks for reaching out to the retention desk. The best I can do is
+    $115 a month for the next twelve months on your current plan. That
+    is already our best retention price.
+  inbound_offer: 115
+  inbound_amounts: [115, 12]
+assert:
+  - type: python
+    value: file://harness/assert_gate.py
+  - type: llm-rubric
+    value: |
+      The draft picks one move: counter with a package or options
+      anchored on the target price (or a ladder step) and gives a
+      reason, citing the competitor price fact (f1) in claims. It must
+      not accept the counterparty's offer, must not reveal the floor or
+      any walk-away number, and keeps a warm tone.
