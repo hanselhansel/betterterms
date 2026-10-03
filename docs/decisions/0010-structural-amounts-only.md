@@ -79,3 +79,58 @@ number-free reason "offer is at your limit"; an explicit
 `--approved` still sends it. `accept`, `sign` and `pay` are
 unchanged: they may sit exactly on the floor because they take a
 price already on the table.
+
+## Amendment (2026-10-04): digits always route; number words match substrings
+
+The B exceptions leaked: isolated small integers ("over 12 may
+not") and whole-word month-name dates ("June - 1950") each gave
+suspicious text a pass, through three different code paths. They
+are removed. The rule is now absolute: any ASCII digit in the
+free text or in a rendered fact's text routes to `needs_approval`
+with "numbers in the message". The tier never parses digits into
+numbers: no `int` or `float` call touches the text, so a digit run
+of any length cannot crash or stall the scan. The small-integer,
+sub-100 floor-integer and month-name-date machinery
+(`_small_number`, `_isolated`, `_moneyish`, `_is_year`,
+`_date_parts`, `_whole_numbers`, `MONTH_WORDS`,
+`NUMBER_WORD_VALUES`) is deleted with them.
+
+- Number words are matched as substrings of each lowercased
+  letter run, so glued forms ("twelvehundred", "fiftyish") flag
+  too. Whole-run exceptions hold for a fixed list of common
+  English words that contain a number word ("often", "tone",
+  "money"): the run must equal the listed word, so "oftener"
+  still flags. The exception list was computed with a standard
+  approach: a standard common-English word list (the top 10,000
+  of google-10000-english), keep every word containing a number
+  word that the number-parse rule does not flag (a word parses
+  when it equals a number word, starts or ends with one and the
+  remainder is another number word, a scale word or empty, or is
+  a concatenation of number and scale words), then drop
+  number-derived leftovers (ordinals like "fourth", compounds
+  like "threesome") and non-English artifacts. "ones" stays: it
+  is anaphoric English, not a count.
+- A `send` offer whose digits equal the floor's digits in a
+  period that is not the floor's routes with "amount matches your
+  limit's digits" ("$1,200/year" against a 1,200/month floor).
+  The converted value clears the band but the digits still
+  restate the walk-away number. `accept`, `sign` and `pay` are
+  exempt because they may restate a price the counterparty
+  named. Same-period equality still routes as "offer is at your
+  limit"; a non-offer value equal to the floor still blocks.
+- Numeric `never_disclose` items still match fused digit runs in
+  the text as whole digit strings ("1,200" and "12 00" hit item
+  "1200", "420" does not hit "42") and now also compare against
+  rendered placeholder values, so the term still matches behind
+  the mask.
+- The fact-amount review carve-out is gone with the exceptions:
+  fact text scans like any other free text, so a fact whose text
+  carries digits or number words routes whether its `amount` is
+  set or null.
+- Currency words add cents, cent, pesos, peso, rupees, rupee,
+  won, francs, krona, krone, rand, ringgit, baht, dong, lira,
+  real, reais, shekel, zloty, dirham, riyal and naira (yuan and
+  quid were already listed). Commitment wording adds "take it",
+  "i'll take", "we'll take", "cancel", "let's do", "sold", "you
+  have a deal" and "count me in". Tokens keep interior
+  apostrophes, so "i'll" is one word and "won't" is not "won".

@@ -134,11 +134,11 @@ class TokenRuleTest(AllowlistCase):
         ):
             with self.subTest(template=template):
                 out = self.review(case_id, send_draft(template=template))
-                self.assertIn(
-                    "letters and digits", " ".join(out["reasons"])
-                )
+                self.assertIn("numbers", " ".join(out["reasons"]))
 
-    def test_digit_only_token_rules(self):
+    def test_any_digit_token_needs_approval(self):
+        # 0010 amendment: the small-integer exception is gone. Every
+        # ASCII digit in the free text routes to the user.
         case_id = self.make_case()
         for template in (
             "only 3 left in stock",
@@ -146,10 +146,6 @@ class TokenRuleTest(AllowlistCase):
             "5 years is the term",
             "we met in 96",
             "section 90 covers this",
-        ):
-            with self.subTest(template=template):
-                self.passed(case_id, send_draft(template=template))
-        for template in (
             "order 1200 today",
             "about 100 units",
             "call 555 now",
@@ -160,7 +156,10 @@ class TokenRuleTest(AllowlistCase):
         ):
             with self.subTest(template=template):
                 out = self.review(case_id, send_draft(template=template))
-                self.assertIn("a number", " ".join(out["reasons"]))
+                self.assertIn("numbers", " ".join(out["reasons"]))
+        self.passed(
+            case_id, send_draft(template="a few left in stock")
+        )
 
     def test_decimal_tokens_need_approval(self):
         # Decision 0010: decimals are number-shaped and route to the
@@ -169,9 +168,12 @@ class TokenRuleTest(AllowlistCase):
         for template in ("rate 90.5 today", "build 3.11 here"):
             with self.subTest(template=template):
                 out = self.review(case_id, send_draft(template=template))
-                self.assertIn("a number", " ".join(out["reasons"]))
+                self.assertIn("numbers", " ".join(out["reasons"]))
 
-    def test_year_after_whole_word_month(self):
+    def test_month_name_dates_need_approval(self):
+        # 0010 amendment: the month-date exception is gone, so digits
+        # next to a month name route like every other digit. The bare
+        # month name is an ordinary word and stays clean.
         case_id = self.make_case()
         for template in (
             "see you October 15, 2026",
@@ -179,19 +181,18 @@ class TokenRuleTest(AllowlistCase):
             "in Jan 2026",
             "meeting Jan 15, 2026",
             "renewal December 31, 2099",
-        ):
-            with self.subTest(template=template):
-                self.passed(case_id, send_draft(template=template))
-        for template in (
-            "due Janu 15, 2026",      # prefix, not a whole month word
-            "meet Sept 15, 2026",     # sept is not on the month list
-            "see October 15 2026",    # day form needs the comma
-            "plan October 32, 2026",  # day out of range
-            "in 2026 October",        # the year must follow the month
+            "due Janu 15, 2026",
+            "meet Sept 15, 2026",
+            "see October 15 2026",
+            "plan October 32, 2026",
+            "in 2026 October",
         ):
             with self.subTest(template=template):
                 out = self.review(case_id, send_draft(template=template))
-                self.assertIn("a number", " ".join(out["reasons"]))
+                self.assertIn("numbers", " ".join(out["reasons"]))
+        self.passed(
+            case_id, send_draft(template="see you in October")
+        )
 
     def test_word_lists_match_whole_tokens(self):
         case_id = self.make_case()
@@ -246,7 +247,7 @@ class SentinelAndFactTest(AllowlistCase):
     def test_sentinel_touching_letter_or_digit(self):
         case_id = self.make_case()
         for template, fragment in (
-            ("I can do {offer}0 today", "a digit next to"),
+            ("I can do {offer}0 today", "numbers"),
             ("I can do {offer}k today", "touches a rendered amount"),
             ("I can do {offer}.99 today", "touches a rendered amount"),
         ):
@@ -267,7 +268,7 @@ class SentinelAndFactTest(AllowlistCase):
         out = self.review(case_id, send_draft(template="see {fact:fx}"))
         self.assertIn("unusual characters", " ".join(out["reasons"]))
         out = self.review(case_id, send_draft(template="see {fact:fy}"))
-        self.assertIn("letters and digits", " ".join(out["reasons"]))
+        self.assertIn("numbers", " ".join(out["reasons"]))
 
 class WordlistDocTest(BtTestCase):
     def test_guardrails_skill_quotes_the_module_lists(self):
@@ -275,13 +276,14 @@ class WordlistDocTest(BtTestCase):
                  "SKILL.md").read_text()
         groups = (
             ("number words", wordlists.NUMBER_WORDS),
+            ("number word exceptions",
+             wordlists.NUMBER_WORD_EXCEPTIONS),
             ("scale words", wordlists.SCALE_WORDS),
             ("currency codes", wordlists.CURRENCY_CODES),
             ("currency words", wordlists.CURRENCY_WORDS),
             ("commitment words", wordlists.COMMIT_WORDS),
             ("commitment phrases",
              {" ".join(p) for p in wordlists.COMMIT_PHRASES}),
-            ("month words", wordlists.MONTH_WORDS),
         )
         for label, words in groups:
             with self.subTest(label=label):

@@ -50,9 +50,9 @@ drafted: misreading them is the biggest source of lost value.
    - Never repeat the value back. Never write it into `brief.yaml`,
      `plan.yaml`, `thread.md`, a draft, or any other file. Only the gate
      and the scorer can read it.
-   - Only if the user says they cannot run the command themselves (for
-     example a cloud session with no terminal) may you pass the value on
-     stdin with a quoted heredoc:
+   - Only if the user says they cannot run the command themselves, in a
+     session with no terminal at all (for example a cloud chat), may you
+     pass the value on stdin with a quoted heredoc:
 
      ```
      python3 ../betterterms-guardrails/scripts/bt.py case set-floor <case_id> <<'EOF'
@@ -60,8 +60,13 @@ drafted: misreading them is the biggest source of lost value.
      EOF
      ```
 
-     Then tell the user you saw the value once. Never use `printf` with
-     double quotes or put the value on the command line.
+     This fallback breaks the spec's rule that the model never sees the
+     floor: the value passes through you once, in this command and
+     nowhere else. It exists only for sessions with no terminal. Tell
+     the user you saw the value once, delete it from your working notes
+     right after the command finishes, and never repeat it, never write
+     it into any file, and never put it on a command line (`printf` or
+     argv).
 
    While you are on the limit, ask which period it is per: `once`,
    `month`, or `year`. Write the answer to `brief.yaml` as `period`;

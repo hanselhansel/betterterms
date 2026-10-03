@@ -1,13 +1,31 @@
-"""Whole-word lists for the gate's review tier (decision 0009
-amendment: the review tier is an allowlist).
+"""Word lists for the gate's review tier (decision 0009 amendment:
+the review tier is an allowlist; 0010 amendment: digits always route
+and number words match inside letter runs).
 
-Every list is matched as whole tokens on the rendered message's
-lowercased alphanumeric token stream, never as substrings or regexes.
-``CURRENCY_CODES`` is the one exception: it matches the raw token
-case-sensitively, because TRY, RUB and CAD are also common words in
-lowercase. ``k``, ``m``, ``mil`` and ``thou`` are scale abbreviations
-under decision 0010: a bare one is number-shaped enough to route to
-the user, so they live in ``SCALE_WORDS`` with the full words.
+``NUMBER_WORDS`` is matched as substrings of each lowercased letter
+run, so "twelvehundred" and "fiftyish" still flag.
+``NUMBER_WORD_EXCEPTIONS`` lists the common English words that
+contain a number word yet are not number forms ("often", "tone",
+"money"); the exception is whole-run only, so "oftener" still flags.
+Every other list is matched as whole tokens on the rendered message's
+token stream (tokens keep interior apostrophes, so "i'll" is one
+word and "won't" is not "won"). ``CURRENCY_CODES`` is the one
+exception: it matches the raw token case-sensitively, because TRY,
+RUB and CAD are also common words in lowercase. ``k``, ``m``,
+``mil`` and ``thou`` are scale abbreviations under decision 0010: a
+bare one is number-shaped enough to route to the user, so they live
+in ``SCALE_WORDS`` with the full words.
+
+``NUMBER_WORD_EXCEPTIONS`` was computed with a standard approach: a
+standard common-English word list (the top 10,000 of
+google-10000-english), keep every word containing a number word that
+the number-parse rule does not flag (a word parses as a number when
+it equals a number word, starts or ends with one and the remainder
+is another number word, a scale word or empty, or is a concatenation
+of number and scale words), then drop the number forms that still
+slipped in (ordinals like "fourth" and "sixth", compounds like
+"threesome") and the artifacts that are not English words. "ones"
+stays: it is anaphoric English, not a count.
 
 The guardrails SKILL.md quotes these lists verbatim; a unit test
 checks the quote.
@@ -20,19 +38,27 @@ NUMBER_WORDS = frozenset(
     "ninety".split()
 )
 
-# The integer each single number word stands for. A word equal to the
-# floor's integer part is a restated limit, not a harmless word; scale
-# words carry no value here because they never stand alone.
-NUMBER_WORD_VALUES = {
-    "zero": 0,
-    "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
-    "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
-    "eleven": 11, "twelve": 12, "thirteen": 13, "fourteen": 14,
-    "fifteen": 15, "sixteen": 16, "seventeen": 17, "eighteen": 18,
-    "nineteen": 19, "twenty": 20, "thirty": 30, "forty": 40,
-    "fifty": 50, "sixty": 60, "seventy": 70, "eighty": 80,
-    "ninety": 90,
-}
+NUMBER_WORD_EXCEPTIONS = frozenset(
+    "abandoned alone antenna anyone artwork attend attendance "
+    "attended attending attention bone bones clone commissioner "
+    "commissioners competent component components consistency "
+    "consistent consistently content contents done everyone "
+    "existence extend extended extending extends extension "
+    "extensions extensive extent forgotten freight gone gotten "
+    "headphones height heights honest honey hormone hydrocodone "
+    "indonesia indonesian intend intended intense intensity "
+    "intensive intent intention jones leone liechtenstein "
+    "lightweight listen listening lone lonely maintenance mentioned "
+    "microphone monetary money network networking networks "
+    "nintendo none often ones opponent opponents ozone patent "
+    "patents persistent phone phones pioneer potential potentially "
+    "practitioner practitioners prisoner prisoners retention "
+    "ringtone ringtones sentence sentences someone soonest "
+    "stationery stone stones superintendent telephone tenant tend "
+    "tender tennessee tennis tension tent threatened threatening "
+    "tone toner tones weight weighted weights written zone "
+    "zones".split()
+)
 
 SCALE_WORDS = frozenset(
     "hundred hundreds thousand thousands million millions billion "
@@ -48,41 +74,44 @@ CURRENCY_CODES = frozenset(
 )
 
 # Currency words plus the lowercase-safe codes (cad, try and rub are
-# also common words, so they are codes only).
+# also common words, so they are codes only). Some entries are common
+# words too ("won", "real", "rand"): a whole-token false positive is
+# still routed to the user, never a silent send.
 CURRENCY_WORDS = frozenset(
-    "aed aud brl chf cnh cny czk dkk dollar dollars buck bucks eur "
-    "euro euros gbp grand hkd huf idr ils inr jpy krw mxn myr nok "
-    "nzd php pln pound pounds quid renminbi sar sek sgd thb twd usd "
-    "vnd yen yuan zar".split()
+    "aed aud baht brl buck bucks cent cents chf cnh cny czk dirham "
+    "dkk dollar dollars dong eur euro euros francs gbp grand hkd "
+    "huf idr ils inr jpy krona krone krw lira mxn myr naira nok "
+    "nzd peso pesos php pln pound pounds quid rand reais real "
+    "renminbi ringgit riyal rupee rupees sar sek sgd shekel thb "
+    "twd usd vnd won yen yuan zar zloty".split()
 )
 
 COMMIT_WORDS = frozenset(
     "accept acceptance accepted accepting accepts agree agreeable "
-    "agreed agreeing agreement agreements charge confirm "
-    "confirmation confirmed confirming confirms deal pay".split()
+    "agreed agreeing agreement agreements cancel charge confirm "
+    "confirmation confirmed confirming confirms deal pay sold".split()
 )
 
-# Two- or three-token phrases matched on the lowercased token stream.
+# Two- or three-token phrases matched on the lowercased token stream;
+# interior apostrophes stay inside the token ("i'll take" matches).
 COMMIT_PHRASES = frozenset((
     ("cancel", "my"),
+    ("count", "me", "in"),
     ("glad", "to", "pay"),
     ("go", "ahead"),
     ("happy", "to", "pay"),
+    ("i'll", "take"),
+    ("let's", "do"),
     ("process", "it"),
     ("ready", "to", "pay"),
     ("sign", "me", "up"),
     ("sounds", "good"),
+    ("take", "it"),
+    ("we'll", "take"),
     ("willing", "to", "pay"),
     ("work", "for", "me"),
     ("work", "for", "us"),
     ("works", "for", "me"),
     ("works", "for", "us"),
+    ("you", "have", "a", "deal"),
 ))
-
-# Whole-word month names and their three-letter forms; a 1900-2100
-# year right after one is a date, not an amount.
-MONTH_WORDS = frozenset(
-    "january february march april may june july august september "
-    "october november december jan feb mar apr jun jul aug sep oct "
-    "nov dec".split()
-)

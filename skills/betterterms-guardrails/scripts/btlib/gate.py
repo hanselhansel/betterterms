@@ -42,13 +42,17 @@ draft whose rendered text (placeholder outputs masked, fact text
 visible) trips a check in ``btlib.review`` returns
 ``needs_approval`` with plain-word reasons that carry no numbers.
 The text scan is an allowlist (decisions 0009 amendment, 0010):
-characters off the permitted set, tokens mixing letters and digits,
-any number word, decimal, separator-joined or non-isolated digit
-token, currency or scale word or abbreviation, listed commitment
-words, a fact that states a number its ``amount`` does not carry,
-sentinel glue and every ``never_disclose`` term all route to the
-user. Irreversible actions, coach mode, autonomy 1 and a ``send``
-offer at the floor also need approval.
+characters off the permitted set, any ASCII digit anywhere, any
+number word inside a letter run outside the listed exceptions,
+currency or scale words and codes, listed commitment words and
+phrases, sentinel glue and every ``never_disclose`` term all route
+to the user; numeric ``never_disclose`` items also compare against
+the rendered placeholder values. A ``send`` offer whose digits equal
+the floor's digits in a different period routes too (``amount
+matches your limit's digits``): the converted value clears the band
+but the digits still restate the walk-away number. Irreversible
+actions, coach mode, autonomy 1 and a ``send`` offer at the floor
+also need approval.
 
 ``block`` dominates ``needs_approval``, which dominates ``pass``, and
 every floor-related block reports the same generic reason so the
@@ -106,6 +110,26 @@ def _converted_match(find, floor, plan_period):
                 val, (floor,)
             ):
                 return True
+    return False
+
+
+def _floor_digits(find, floor, plan_period, action):
+    """True when the rendered offer repeats the floor's digits in a
+    period that is not the floor's: "$1,200/year" next to a
+    1,200/month floor is a coincidence the user must judge, not a
+    clean pass. A match in the floor's own period already routes as
+    "offer is at your limit" and a non-offer value equal to the floor
+    blocks outright, so only the offer needs this check. ``accept``,
+    ``sign`` and ``pay`` are exempt: they may restate a price the
+    counterparty already named."""
+    if action in OFFERED:
+        return False
+    for v in find.values:
+        if v.kind != "offer":
+            continue
+        nv = render.convert(v.value, v.period, plan_period)
+        if _same(v.value, (floor,)) and not _same(nv, (floor,)):
+            return True
     return False
 
 
@@ -242,13 +266,18 @@ def check(case_dir, draft, approved=False, inbound=None):
             findings.append(("approval", "autonomy 1: the user approves every send"))
         if clean:
             for reason in review.review(
-                find, floor, cases.as_list(brief.get("never_disclose"))
+                find, cases.as_list(brief.get("never_disclose"))
             ):
                 findings.append(("approval", reason))
-            if floor is not None and _converted_match(
-                find, floor, plan_period
-            ):
-                findings.append(("approval", "amount matches a converted limit"))
+            if floor is not None:
+                if _converted_match(find, floor, plan_period):
+                    findings.append(
+                        ("approval", "amount matches a converted limit")
+                    )
+                if _floor_digits(find, floor, plan_period, action):
+                    findings.append(
+                        ("approval", "amount matches your limit's digits")
+                    )
 
     reasons = []
     seen = set()

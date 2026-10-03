@@ -1,4 +1,5 @@
-"""betterterms runtime library. Python stdlib only, no network access."""
+"""betterterms runtime library. Python stdlib plus the vendored
+PyYAML under ``_vendor``; no network access."""
 
 MAX_TEXT = 64 * 1024
 """The 64 KB bound on every text the gate or the scorer scans: a
