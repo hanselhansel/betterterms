@@ -1,5 +1,6 @@
 target: 8000
 currency: USD
+floor_period: year
 options:
   - label: annual-commit
     value: 8000

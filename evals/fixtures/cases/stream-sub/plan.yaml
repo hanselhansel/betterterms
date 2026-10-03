@@ -1,5 +1,6 @@
 target: 15
 currency: USD
+floor_period: month
 options:
   - label: annual-prepay
     value: 15

@@ -1,5 +1,6 @@
 target: 89
 currency: USD
+floor_period: once
 options:
   - label: full-refund
     value: 89

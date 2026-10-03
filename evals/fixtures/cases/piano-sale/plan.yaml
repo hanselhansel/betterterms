@@ -1,5 +1,6 @@
 target: 900
 currency: USD
+floor_period: once
 options:
   - label: cash-pickup
     value: 900

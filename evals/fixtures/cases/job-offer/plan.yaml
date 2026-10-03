@@ -1,5 +1,6 @@
 target: 180000
 currency: USD
+floor_period: year
 options:
   - label: base-focused
     value: 180000

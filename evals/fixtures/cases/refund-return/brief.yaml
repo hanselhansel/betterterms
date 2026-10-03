@@ -16,3 +16,4 @@ autonomy: 2
 never_disclose:
   - card ending 4417
 deadline: "2026-11-20"
+period: once

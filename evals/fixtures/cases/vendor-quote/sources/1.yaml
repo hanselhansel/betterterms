@@ -1,5 +1,5 @@
 url: https://vendor.example/pricing
-read_at: 2026-10-02
+read_at: "2026-10-02"
 quote: List price for the same tier is $14,400 per year
 trust: official
 used_for: vendor list pricing
