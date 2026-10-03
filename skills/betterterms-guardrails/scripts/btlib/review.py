@@ -5,11 +5,11 @@ placeholder output replaced by :data:`render._MASK`, fact text
 visible) and ``find.values``, and returns one plain-word reason per
 tripped check; reasons carry no numbers. The 0010 amendment keeps
 the tier simple and strict: any ASCII digit in the free text or in a
-rendered fact's text, any number word inside a lowercased letter run
-(outside the listed common-English exceptions), any scale word,
-currency word or code, any commitment word or phrase, characters off
-the allowed set, glue on a rendered amount and every
-``never_disclose`` term all route to the user. A numeric
+rendered fact's text, any number word or scale word stem inside a
+lowercased letter run (outside the listed common-English
+exceptions), any scale word, currency word or code, any commitment
+word or phrase, characters off the allowed set, glue on a rendered
+amount and every ``never_disclose`` term all route to the user. A numeric
 ``never_disclose`` item also compares against the rendered
 placeholder values, so the term still matches behind the mask. There
 is no digit parsing in this tier: a digit run of any length is a
@@ -34,7 +34,8 @@ _ALLOWED = frozenset(
 # backtracking. Interior apostrophes stay inside the token so "i'll
 # take" matches the commitment phrase and "won't" is not "won".
 _TOKEN = re.compile(r"[0-9A-Za-z]+(?:'[0-9A-Za-z]+)*")
-# Lowercase letter runs for the number-word substring check.
+# Lowercase letter runs for the number-word and scale-stem
+# substring checks.
 _LETTERS = re.compile(r"[a-z]+")
 # The digit rule: one ASCII digit anywhere is a match.
 _DIGIT = re.compile(r"[0-9]")
@@ -79,6 +80,17 @@ def _number_word_hit(run):
     if run in wordlists.NUMBER_WORD_EXCEPTIONS:
         return False
     return any(w in run for w in wordlists.NUMBER_WORDS)
+
+
+def _scale_word_hit(run):
+    """A lowercased letter run is scale-shaped when it contains a
+    scale word stem ("halfmillion", "thousandfold", "hundredish",
+    "grandtotal") and is not a listed common English word. The one-
+    and two-letter abbreviations stay whole-token: inside a run they
+    are ordinary letters ("milk", "family")."""
+    if run in wordlists.NUMBER_WORD_EXCEPTIONS:
+        return False
+    return any(w in run for w in wordlists.SCALE_WORD_STEMS)
 
 
 def _digit_groups(masked, toks):
@@ -136,6 +148,10 @@ def review(find, never_items):
             or l in wordlists.CURRENCY_WORDS or tok in wordlists.CURRENCY_CODES
         )
         flags["commit"] = flags["commit"] or l in wordlists.COMMIT_WORDS
+    runs = _LETTERS.findall(masked.lower())
+    flags["scale"] = flags["scale"] or any(
+        _scale_word_hit(run) for run in runs
+    )
     for key, msg in (
         ("scale", "a scale word in the message"),
         ("currency", "a currency symbol or code in the message"),
@@ -143,10 +159,7 @@ def review(find, never_items):
     ):
         if flags[key]:
             reasons.append(msg)
-    if any(
-        _number_word_hit(run)
-        for run in _LETTERS.findall(masked.lower())
-    ):
+    if any(_number_word_hit(run) for run in runs):
         reasons.append("a number word in the message")
     # A phrase whose first word is absent cannot match, so most
     # phrases cost one set lookup on the token set, not a scan.

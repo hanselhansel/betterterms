@@ -17,14 +17,18 @@ For each inbound message:
 5. **Gate.** `bt.py gate` checks: the offer inside the band; every
    factual claim id in the fact list; every structural rule fails
    closed. Write `offer` in `draft.yaml` as a plain number or null; a
-   string such as "$1,250" blocks the gate. Put money in `template`
-   only through placeholders (`{offer}`, `{target}`, `{option:<label>}`,
+   string such as "$1,250" blocks the gate. Write `period` in the
+   floor's period or one that converts to it (month x12 = year); a
+   mix with `once` cannot compare, so it routes the send to the
+   user. Put money in `template` only through placeholders
+   (`{offer}`, `{target}`, `{option:<label>}`,
    `{ladder:<n>}`, `{fact:<id>}`, `{quote:<n>}`); typed-in prices and
    other money-shaped, numeric, committal or invisible literal text do
    not block, but the review scan routes the draft to `needs_approval`
-   so the user sees it before it sends. `{fact:<id>}` renders the
-   fact's text verbatim; money in a fact without a structured `amount`
-   in `plan.yaml` goes to the user as `needs_approval`. Pass
+   so the user sees it before it sends. Every ASCII digit routes:
+   there are no small-number or date exceptions. `{fact:<id>}` renders
+   the fact's text verbatim; digits in that text route to the user
+   too, whether the fact carries a structured `amount` or not. Pass
    `--inbound` with this
    turn's inbound message so `{quote:n}` resolves against its `amounts`
    list. On a floor-related block the reason is generic, so escalate

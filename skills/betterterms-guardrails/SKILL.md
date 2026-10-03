@@ -44,8 +44,9 @@ Exit codes and results:
   to the user. On any other block, redraft without the blocked content.
 - 2: usage or file error. Fix the call.
 - 3, `needs_approval`: the action is irreversible, coach mode,
-  autonomy level 1, a `send` offer at the user's limit, or the
-  review scan flagged the rendered text.
+  autonomy level 1, a `send` offer at the user's limit, a `send`
+  offer in a period the floor cannot compare, or the review scan
+  flagged the rendered text.
   Show the user the `rendered` text and the plain-word reasons, ask
   for an explicit yes, then re-run with `--approved`.
 
@@ -80,7 +81,11 @@ Hard blocks, in order:
    `period`, default `once`; month x12 = year): block. `accept`,
    `sign`, and `pay` need a numeric offer inside the band, and
    `accept` needs an in-band inbound offer equal to the draft offer,
-   both read in the floor's period.
+   both read in the floor's period. `once` has no conversion factor,
+   so a period mismatch where either side is `once` cannot be
+   verified: `send` routes to the user ("period differs from your
+   limit"), `accept`, `sign` and `pay` block, and the same rule
+   covers the inbound offer's period on `accept`.
 7. Any rendered placeholder value equal to the floor: block, except
    the in-band offer itself (an offer exactly at the floor is inside
    the band, but on `send` it routes to the user). A value equal
@@ -113,15 +118,17 @@ that carries no numbers:
 - Any ASCII digit in the free text or in a rendered fact's text:
   "numbers in the message". Small counts, dates, room numbers and
   codes all route to the user; there are no exceptions.
-- Any number word inside a lowercased letter run ("twelvehundred",
-  "fiftyish", "two"), except a run that equals a listed common
-  English word ("often", "tone", "money"): "a number word in the
-  message".
+- Any number word or scale word stem inside a lowercased letter run
+  ("twelvehundred", "fiftyish", "halfmillion", "thousandfold"),
+  except a run that equals a listed common English word ("often",
+  "tone", "money", "attentive"): "a number word in the message" or
+  "a scale word in the message".
 - A letter or a `.`/`,` separator plus digit glued to a rendered
   amount: "$1,100k" or "$1,100.99" restates a price.
-- The whole-word lists below, matched on the token stream (currency
+- The whole-token lists below, matched on the token stream (currency
   codes match the raw token case-sensitively; tokens keep interior
-  apostrophes, so "i'll take" matches and "won't" is not "won").
+  apostrophes, so "i'll take" matches and "won't" is not "won"; the
+  scale word stems match inside letter runs as above).
 - Any `never_disclose` term, matched on normalized text with format
   characters stripped; numeric items match fused digit runs in the
   text and also compare against rendered placeholder values.
@@ -140,8 +147,9 @@ The word lists live in `scripts/btlib/wordlists.py`, the single
 module the runtime and this file share:
 
 number words: eight, eighteen, eighty, eleven, fifteen, fifty, five, forty, four, fourteen, nine, nineteen, ninety, one, seven, seventeen, seventy, six, sixteen, sixty, ten, thirteen, thirty, three, twelve, twenty, two, zero
-number word exceptions: abandoned, alone, antenna, anyone, artwork, attend, attendance, attended, attending, attention, bone, bones, clone, commissioner, commissioners, competent, component, components, consistency, consistent, consistently, content, contents, done, everyone, existence, extend, extended, extending, extends, extension, extensions, extensive, extent, forgotten, freight, gone, gotten, headphones, height, heights, honest, honey, hormone, hydrocodone, indonesia, indonesian, intend, intended, intense, intensity, intensive, intent, intention, jones, leone, liechtenstein, lightweight, listen, listening, lone, lonely, maintenance, mentioned, microphone, monetary, money, network, networking, networks, nintendo, none, often, ones, opponent, opponents, ozone, patent, patents, persistent, phone, phones, pioneer, potential, potentially, practitioner, practitioners, prisoner, prisoners, retention, ringtone, ringtones, sentence, sentences, someone, soonest, stationery, stone, stones, superintendent, telephone, tenant, tend, tender, tennessee, tennis, tension, tent, threatened, threatening, tone, toner, tones, weight, weighted, weights, written, zone, zones
+number word exceptions: abandoned, alone, antenna, anyone, artwork, attend, attendance, attended, attending, attention, attentive, bitten, bone, bones, clone, commissioner, commissioners, competent, component, components, consistency, consistent, consistently, content, contents, done, everyone, existence, extend, extended, extending, extends, extension, extensions, extensive, extent, forgotten, freight, frightened, gone, gotten, headphones, height, heights, honest, honestly, honey, hormone, hydrocodone, indonesia, indonesian, intend, intended, intense, intensity, intensive, intent, intention, intentionally, jones, leone, liechtenstein, lightweight, listen, listened, listening, lone, lonely, maintenance, mentioned, microphone, monetary, money, network, networking, networks, nintendo, none, nonetheless, often, oftentimes, ones, opponent, opponents, ozone, patent, patents, persistent, phone, phoned, phones, phoning, pioneer, potential, potentially, practitioner, practitioners, prisoner, prisoners, retention, ringtone, ringtones, sentence, sentences, softened, someone, soonest, stationery, stone, stones, superintendent, telephone, tenant, tend, tender, tennessee, tennis, tension, tent, tenure, threatened, threatening, tone, toned, toner, tones, weight, weighted, weights, written, zone, zones
 scale words: billion, billions, bn, hundred, hundreds, k, m, mil, million, millions, mm, thou, thousand, thousands, trillion, trillions
+scale word stems: billion, grand, hundred, million, thousand, trillion
 currency codes: AED, AUD, BRL, CAD, CHF, CNH, CNY, CZK, DKK, EUR, GBP, HKD, HUF, IDR, ILS, INR, JPY, KRW, MXN, MYR, NOK, NZD, PHP, PLN, RUB, SAR, SEK, SGD, THB, TRY, TWD, USD, VND, ZAR
 currency words: aed, aud, baht, brl, buck, bucks, cent, cents, chf, cnh, cny, czk, dirham, dkk, dollar, dollars, dong, eur, euro, euros, francs, gbp, grand, hkd, huf, idr, ils, inr, jpy, krona, krone, krw, lira, mxn, myr, naira, nok, nzd, peso, pesos, php, pln, pound, pounds, quid, rand, reais, real, renminbi, ringgit, riyal, rupee, rupees, sar, sek, sgd, shekel, thb, twd, usd, vnd, won, yen, yuan, zar, zloty
 commitment words: accept, acceptance, accepted, accepting, accepts, agree, agreeable, agreed, agreeing, agreement, agreements, cancel, charge, confirm, confirmation, confirmed, confirming, confirms, deal, pay, sold

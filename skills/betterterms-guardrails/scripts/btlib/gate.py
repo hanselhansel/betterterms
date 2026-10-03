@@ -19,7 +19,11 @@ guarantees and fail closed:
    period -> block; ``accept``, ``sign`` and ``pay`` also require a
    numeric offer inside the band, and ``accept`` requires an inbound
    offer inside the band equal to the draft offer, both read in the
-   floor's period
+   floor's period. ``once`` has no conversion factor, so a period
+   mismatch where either side is ``once`` can never be verified:
+   ``send`` routes to the user (``period differs from your limit``),
+   the agreeing actions block, and the same rule covers the inbound
+   offer's period on ``accept``
 8. any rendered placeholder value equal to the floor -> block,
    except the in-band offer itself; a value equal only to the
    floor's x12 or /12 conversion is a review hit (``amount matches
@@ -219,6 +223,14 @@ def check(case_dir, draft, approved=False, inbound=None):
             if in_offer is None:
                 findings.append(("block", "accept requires the counterparty's offer"))
             else:
+                # The inbound offer's period must match or convert
+                # like the draft's; a once mix fails closed.
+                if in_period != plan_period and "once" in (
+                    in_period, plan_period
+                ):
+                    findings.append(
+                        ("block", "period differs from your limit")
+                    )
                 in_floor = render.convert(in_offer, in_period, plan_period)
                 if offer is not None and abs(
                     render.convert(offer, period, plan_period) - in_floor
@@ -230,11 +242,21 @@ def check(case_dir, draft, approved=False, inbound=None):
     if floor is not None:
         if offer is not None:
             offer_floor = render.convert(offer, period, plan_period)
+            # "once" has no conversion factor, so a period mismatch
+            # with it can never verify the offer against the floor:
+            # a send routes to the user, an agreeing action fails
+            # closed. A raw equal value there is a coincidence, not
+            # "at your limit", so the at-limit route skips it too.
+            unconvertible = (
+                period != plan_period
+                and "once" in (period, plan_period)
+            )
             if _worse(offer_floor, floor, direction):
                 findings.append(("block", LIMITS))
             elif (
                 not approved
                 and action == "send"
+                and not unconvertible
                 and _same(offer_floor, (floor,))
             ):
                 # A send offer at the floor is inside the band, but it
@@ -242,6 +264,16 @@ def check(case_dir, draft, approved=False, inbound=None):
                 # accept, sign and pay may sit on it: they take a price
                 # already on the table.
                 findings.append(("approval", "offer is at your limit"))
+            if unconvertible:
+                if action == "send":
+                    if not approved:
+                        findings.append(
+                            ("approval", "period differs from your limit")
+                        )
+                else:
+                    findings.append(
+                        ("block", "period differs from your limit")
+                    )
         if clean:
             _check_values(find, action, floor, direction, plan_period, findings)
 

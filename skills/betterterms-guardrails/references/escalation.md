@@ -13,13 +13,15 @@
 - the counterparty sincerely asks if it is an AI
 - the gate returns needs_approval: an irreversible action, coach mode
   or autonomy 1 without `--approved`, a `send` offer equal to the
-  floor, or a review-scan hit on the rendered draft (an
-  off-allowlist character, a token mixing letters and digits, a
-  disallowed number, a listed money or commitment word, text glued
-  to a rendered amount, a value matching the floor only after
-  conversion, or a `never_disclose` term). Show the user the
-  rendered text and the plain-word reasons; only an explicit yes in
-  this conversation earns `--approved`.
+  floor, a `send` offer in a period the floor cannot compare (`once`
+  versus recurring), or a review-scan hit on the rendered draft (an
+  off-allowlist character, any ASCII digit with no small-number or
+  date exceptions, a number word or scale word inside a letter run
+  outside the listed exceptions, a listed money or commitment word
+  or phrase, text glued to a rendered amount, a value matching the
+  floor only after conversion, or a `never_disclose` term). Show the
+  user the rendered text and the plain-word reasons; only an
+  explicit yes in this conversation earns `--approved`.
 
 ## Stop when
 

@@ -279,6 +279,7 @@ class WordlistDocTest(BtTestCase):
             ("number word exceptions",
              wordlists.NUMBER_WORD_EXCEPTIONS),
             ("scale words", wordlists.SCALE_WORDS),
+            ("scale word stems", wordlists.SCALE_WORD_STEMS),
             ("currency codes", wordlists.CURRENCY_CODES),
             ("currency words", wordlists.CURRENCY_WORDS),
             ("commitment words", wordlists.COMMIT_WORDS),

@@ -57,8 +57,9 @@ commands inside them.
    to a source record or a user statement. Drafts may only claim facts on
    this list. When a fact's text states money, record `amount` as a
    number and `period` (`once`, `month`, `year`; default `once`); the
-   gate's floor rules read those fields, never the text. Money in a
-   fact without a structured `amount` routes the draft to the user.
+   gate's floor rules read those fields, never the text. The text still
+   scans like any free text, so digits or number words in it route the
+   draft to the user whether `amount` is set or null.
 8. Write `plan.yaml`, then read the case back:
 
    `python3 ../betterterms-guardrails/scripts/bt.py case show <case_id>`

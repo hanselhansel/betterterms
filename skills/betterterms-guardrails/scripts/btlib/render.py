@@ -108,6 +108,17 @@ def _parse_index(arg):
     return n if n >= 1 else None
 
 
+def _index(items, key):
+    """First item per ``key`` value in a plan list, as a lookup dict
+    built once per render so ``{option:L}`` and ``{fact:id}`` resolve
+    in O(1) instead of scanning the list per placeholder."""
+    index = {}
+    for item in cases.as_list(items):
+        if isinstance(item, dict):
+            index.setdefault(str(item.get(key)), item)
+    return index
+
+
 def render(template, offer, offer_period, plan, plan_period, in_amounts):
     """Render ``template``. ``in_amounts`` is the raw inbound ``amounts``
     list; entries are coerced with :func:`cases.num` at lookup time.
@@ -118,6 +129,8 @@ def render(template, offer, offer_period, plan, plan_period, in_amounts):
     oversized string."""
     find = Find()
     find.sentinel = _MASK in template
+    options = _index(plan.get("options"), "label")
+    facts = _index(plan.get("facts"), "id")
     out, masked = [], []
     size = 0
     pos = 0
@@ -128,7 +141,8 @@ def render(template, offer, offer_period, plan, plan_period, in_amounts):
         masked.append(literal)
         size += len(literal.encode("utf-8"))
         text, mask = _resolve(m.group(1), find, offer, offer_period,
-                              plan, plan_period, in_amounts)
+                              plan, plan_period, in_amounts,
+                              options, facts)
         out.append(text)
         masked.append(mask)
         size += len(text.encode("utf-8"))
@@ -159,7 +173,8 @@ def _bad_brace(seg, find):
     find.errors.append(f"malformed placeholder {frag.strip()}")
 
 
-def _resolve(tag, find, offer, offer_period, plan, plan_period, in_amounts):
+def _resolve(tag, find, offer, offer_period, plan, plan_period,
+             in_amounts, options, facts):
     """Resolve one placeholder to ``(text, masked)``: fact text passes
     through into the masked form, every other rendered value becomes
     the mask character, and an error resolves to nothing."""
@@ -178,18 +193,18 @@ def _resolve(tag, find, offer, offer_period, plan, plan_period, in_amounts):
         find.values.append(Value("target", v, plan_period))
         return money_text(v, plan_period), _MASK
     if name == "option" and arg:
-        for item in cases.as_list(plan.get("options")):
-            if isinstance(item, dict) and str(item.get("label")) == arg:
-                v = cases.num(item.get("value"))
-                if v is None or not math.isfinite(v):
-                    find.errors.append(f"{{option:{arg}}} has no value")
-                    return "", ""
-                kind = str(item.get("kind") or "price").lower()
-                period = str(item.get("period") or plan_period).lower()
-                find.values.append(Value(f"option:{kind}", v, period))
-                return money_text(v, period), _MASK
-        find.errors.append(f"{{option:{arg}}} not in plan options")
-        return "", ""
+        item = options.get(arg)
+        if item is None:
+            find.errors.append(f"{{option:{arg}}} not in plan options")
+            return "", ""
+        v = cases.num(item.get("value"))
+        if v is None or not math.isfinite(v):
+            find.errors.append(f"{{option:{arg}}} has no value")
+            return "", ""
+        kind = str(item.get("kind") or "price").lower()
+        period = str(item.get("period") or plan_period).lower()
+        find.values.append(Value(f"option:{kind}", v, period))
+        return money_text(v, period), _MASK
     if name == "ladder" and arg:
         n = _parse_index(arg)
         items = cases.as_list(plan.get("ladder"))
@@ -205,29 +220,29 @@ def _resolve(tag, find, offer, offer_period, plan, plan_period, in_amounts):
         find.values.append(Value("ladder", v, period))
         return money_text(v, period), _MASK
     if name == "fact" and arg:
-        for item in cases.as_list(plan.get("facts")):
-            if isinstance(item, dict) and str(item.get("id")) == arg:
-                text = str(item.get("text") or "")
-                if _MASK in text:
-                    find.sentinel = True
-                find.fact_ids.add(arg)
-                # Hard blocks read the structured amount only; the
-                # fact text renders verbatim for the user and the
-                # review tier, never for a money parse. An amount that
-                # is set but not a usable number is a blocking error,
-                # never a null: check_plan_limits exits 2 first, and a
-                # direct render must not treat it as absent either.
-                v = cases.num(item.get("amount"))
-                if item.get("amount") is not None and v is None:
-                    find.errors.append(
-                        f"{{fact:{arg}}} amount is not a number")
-                    return "", ""
-                if v is not None and math.isfinite(v):
-                    period = str(item.get("period") or "once").lower()
-                    find.values.append(Value("fact", v, period))
-                return text, text
-        find.errors.append(f"{{fact:{arg}}} not in plan facts")
-        return "", ""
+        item = facts.get(arg)
+        if item is None:
+            find.errors.append(f"{{fact:{arg}}} not in plan facts")
+            return "", ""
+        text = str(item.get("text") or "")
+        if _MASK in text:
+            find.sentinel = True
+        find.fact_ids.add(arg)
+        # Hard blocks read the structured amount only; the
+        # fact text renders verbatim for the user and the
+        # review tier, never for a money parse. An amount that
+        # is set but not a usable number is a blocking error,
+        # never a null: check_plan_limits exits 2 first, and a
+        # direct render must not treat it as absent either.
+        v = cases.num(item.get("amount"))
+        if item.get("amount") is not None and v is None:
+            find.errors.append(
+                f"{{fact:{arg}}} amount is not a number")
+            return "", ""
+        if v is not None and math.isfinite(v):
+            period = str(item.get("period") or "once").lower()
+            find.values.append(Value("fact", v, period))
+        return text, text
     if name == "quote" and arg:
         n = _parse_index(arg)
         if n is None or n > len(in_amounts):

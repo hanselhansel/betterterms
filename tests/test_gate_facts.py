@@ -141,7 +141,8 @@ class StructuralFactTest(FactAmountCase):
         )
         case_id = self.make_case(plan=plan)
         proc, out = self.gate(
-            case_id, send_draft(template="see {fact:f1}"),
+            case_id,
+            send_draft(period="month", template="see {fact:f1}"),
             approved=True,
         )
         self.assertEqual(proc.returncode, 1, out)

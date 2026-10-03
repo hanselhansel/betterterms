@@ -1,10 +1,12 @@
 """Step-2 review fixes: a sentinel the template cannot type, NUL and
 control characters off the allowlist, digits anywhere in the text
 routing to the user, number-word runs across punctuation and inside
-glued letter runs, and 64 KB scans that stay linear."""
+glued letter runs, scale words inside glued letter runs, and 64 KB
+scans that stay linear."""
 
 import time
 import unittest
+from unittest import mock
 
 from bt_helpers import (
     BRIEF_PAY,
@@ -16,7 +18,7 @@ from bt_helpers import (
     write_case_files,
     write_draft,
 )
-from btlib import render, yaml
+from btlib import render, review, wordlists, yaml
 
 
 class ReviewFixCase(BtTestCase):
@@ -253,6 +255,123 @@ class FactExpansionTest(ReviewFixCase):
         self.assertEqual(proc.returncode, 1, out)
         self.assertIn("too large", " ".join(out["reasons"]))
         self.assertIsNone(out["rendered"])
+
+
+class ScaleWordRunTest(ReviewFixCase):
+    def test_glued_scale_forms_need_approval(self):
+        # Scale words match inside letter runs like number words do:
+        # "halfmillion" and "thousandfold" are number-shaped, never
+        # ordinary words.
+        case_id = self.make_case()
+        for template in (
+            "a halfmillion total",
+            "the thousandfold increase",
+            "it cost hundredish",
+            "a multimillion market",
+            "grandtotal due",
+            "tengrand flat",
+        ):
+            with self.subTest(template=template):
+                out = self.review(case_id, send_draft(template=template))
+                self.assertIn("scale", " ".join(out["reasons"]))
+
+    def test_k_suffix_forms_need_approval(self):
+        # A number word plus a scale suffix inside one run still
+        # routes: "twok" and "fiftym" read as numbers.
+        case_id = self.make_case()
+        for template in (
+            "about twok",
+            "a fiftym cap",
+            "tenmil users",
+        ):
+            with self.subTest(template=template):
+                out = self.review(case_id, send_draft(template=template))
+                self.assertIn(
+                    "number word", " ".join(out["reasons"])
+                )
+
+    def test_scale_abbreviations_stay_whole_token(self):
+        # The one- and two-letter abbreviations are ordinary letters
+        # inside a run, so they still match whole tokens only.
+        case_id = self.make_case()
+        for template in (
+            "the milk is cold",
+            "a family matter",
+            "worth a thou",
+            "plan k is third",
+        ):
+            with self.subTest(template=template):
+                if template in ("worth a thou", "plan k is third"):
+                    out = self.review(
+                        case_id, send_draft(template=template)
+                    )
+                    self.assertIn("scale", " ".join(out["reasons"]))
+                else:
+                    self.passed(case_id, send_draft(template=template))
+
+    def test_inflected_common_words_pass(self):
+        # Common English words that contain a number word stay on the
+        # whole-run exception list, inflections included.
+        case_id = self.make_case()
+        for template in (
+            "the tenure is standard",
+            "we listened carefully",
+            "we are listening",
+            "honestly it is fine",
+            "nonetheless we try",
+            "she phoned earlier",
+            "he is phoning now",
+            "a frightened look",
+            "an attentive reader",
+            "close attention",
+            "not intentionally",
+            "good intention",
+            "a bitten nail",
+            "the softened edges",
+            "how often does it renew",
+            "oftentimes it helps",
+            "money is not the issue",
+            "a monetary policy",
+            "we are done",
+            "they are gone",
+            "none of it",
+            "a stone wall outside",
+            "the tone is professional",
+            "the toned surface",
+        ):
+            with self.subTest(template=template):
+                self.passed(case_id, send_draft(template=template))
+
+    def test_wont_is_not_the_currency_won(self):
+        # Tokens keep interior apostrophes: "won't" is one token and
+        # never the currency word "won".
+        case_id = self.make_case()
+        proc, out = self.gate(
+            case_id, send_draft(template="i won't say")
+        )
+        self.assertEqual(proc.returncode, 0, out)
+        self.assertEqual(out["reasons"], [])
+
+
+class CommitPhraseIsolationTest(BtTestCase):
+    def test_each_phrase_flags_on_its_own(self):
+        # Deleting any one phrase must fail here: the commit-word
+        # list is masked of the phrase's own words, so the phrase is
+        # the only thing left that can produce the commitment reason.
+        for phrase in sorted(wordlists.COMMIT_PHRASES):
+            with self.subTest(phrase=" ".join(phrase)):
+                find = render.render(
+                    " ".join(phrase), None, "once", {}, "once", []
+                )
+                remaining = wordlists.COMMIT_WORDS - set(phrase)
+                with mock.patch.object(
+                    wordlists, "COMMIT_WORDS", remaining
+                ):
+                    reasons = review.review(find, [])
+                self.assertIn(
+                    "agreement or commitment wording in the message",
+                    reasons,
+                )
 
 
 if __name__ == "__main__":

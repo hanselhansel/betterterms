@@ -309,7 +309,8 @@ class Pass3ProbeTest(ProbeTest):
 
     def test_once_offer_against_month_floor(self):
         # Floor declared monthly; a once offer cannot convert, so the
-        # raw values compare.
+        # draft routes to the user. A clearly worse raw value still
+        # fails closed.
         plan = dict(PLAN_BILLS, period="month")
         case_id = self.make_case(plan=plan)
         out = self.blocked(
@@ -318,21 +319,28 @@ class Pass3ProbeTest(ProbeTest):
                        template="I can do {offer} prepaid"),
         )
         self.assertIn(LIMITS, out["reasons"])
-        proc, out = self.gate(
-            case_id,
-            send_draft(offer=1100, period="once",
-                       template="I can do {offer} prepaid"),
+        draft = send_draft(
+            offer=1100, period="once",
+            template="I can do {offer} prepaid",
         )
+        proc, out = self.gate(case_id, draft)
+        self.assertEqual(proc.returncode, 3, out)
+        self.assertIn("period differs", " ".join(out["reasons"]))
+        proc, out = self.gate(case_id, draft, approved=True)
         self.assertEqual(proc.returncode, 0, out)
 
     def test_month_offer_against_once_floor(self):
-        # Floor declared once; a monthly offer compares raw.
+        # Floor declared once; a monthly offer cannot convert, so the
+        # draft routes to the user.
         case_id = self.make_case()
-        proc, out = self.gate(
-            case_id,
-            send_draft(offer=1100, period="month",
-                       template="I can do {offer}"),
+        draft = send_draft(
+            offer=1100, period="month",
+            template="I can do {offer}",
         )
+        proc, out = self.gate(case_id, draft)
+        self.assertEqual(proc.returncode, 3, out)
+        self.assertIn("period differs", " ".join(out["reasons"]))
+        proc, out = self.gate(case_id, draft, approved=True)
         self.assertEqual(proc.returncode, 0, out)
 
 
@@ -353,7 +361,15 @@ class TemplateShapeTest(ProbeTest):
                 proc, out = self.gate(
                     case_id, send_draft(offer=1100, period=period)
                 )
-                self.assertEqual(proc.returncode, 0, out)
+                if period == "once":
+                    self.assertEqual(proc.returncode, 0, out)
+                else:
+                    # A recurring offer against the once floor
+                    # cannot convert, so it routes to the user.
+                    self.assertEqual(proc.returncode, 3, out)
+                    self.assertIn(
+                        "period differs", " ".join(out["reasons"])
+                    )
 
 
 if __name__ == "__main__":

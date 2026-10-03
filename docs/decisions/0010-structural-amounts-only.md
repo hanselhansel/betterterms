@@ -134,3 +134,27 @@ sub-100 floor-integer and month-name-date machinery
   "i'll take", "we'll take", "cancel", "let's do", "sold", "you
   have a deal" and "count me in". Tokens keep interior
   apostrophes, so "i'll" is one word and "won't" is not "won".
+
+## Amendment (2026-10-04): scale words match substrings; unconvertible periods fail closed
+
+- The singular scale words (hundred, thousand, million, billion,
+  trillion) plus "grand" match as substrings of each lowercased
+  letter run, like number words: "halfmillion", "thousandfold",
+  "hundredish" and "grandtotal" route to `needs_approval`. The
+  abbreviation forms (k, m, mil, mm, bn, thou) stay whole-token
+  only; inside a run they are ordinary letters ("milk"). The
+  whole-run exception list covers the common English words the
+  substring rule would catch ("attentive", "softened", "tenure",
+  "oftentimes", "honestly", "nonetheless", "phoned", "frightened",
+  "bitten", "intentionally", "listened", "phoning", "toned" and
+  the earlier entries).
+- `once` has no conversion factor, so an offer or inbound offer
+  period that differs from the floor's declared period where
+  either side is `once` can never be verified against the floor.
+  Raw comparison was the old behavior and compared unlike units.
+  A `send` draft now routes to `needs_approval` with "period
+  differs from your limit" ("{offer} per month" against a `once`
+  floor), and `accept`, `sign` and `pay` block unless the periods
+  match or a month/year conversion applies. The same rule covers
+  the inbound offer's period on `accept` (a 1100/month draft
+  against a 1100/year inbound with a `once` floor blocks).

@@ -79,14 +79,24 @@ class GateTest(BtTestCase):
         self.assertEqual(out["rendered"], "my best is $1,200")
 
     def test_offer_with_month_period_renders(self):
+        # A monthly offer against a once floor cannot convert, so the
+        # send routes to the user; the rendered text is still exact.
         case_id, _ = self.make_case(floor=1200)
-        proc, out = self.gate(
-            case_id,
-            send_draft(offer=85, period="month",
-                       template="I can do {offer} on the new plan"),
+        draft = send_draft(
+            offer=85, period="month",
+            template="I can do {offer} on the new plan",
         )
+        proc, out = self.gate(case_id, draft)
+        self.assertEqual(proc.returncode, 3, out)
+        self.assertIn("period differs", " ".join(out["reasons"]))
+        self.assertEqual(
+            out["rendered"], "I can do $85/month on the new plan"
+        )
+        proc, out = self.gate(case_id, draft, approved=True)
         self.assertEqual(proc.returncode, 0, out)
-        self.assertEqual(out["rendered"], "I can do $85/month on the new plan")
+        self.assertEqual(
+            out["rendered"], "I can do $85/month on the new plan"
+        )
 
     def test_gate_direction_receive(self):
         case_id, _ = self.make_case(direction="receive", floor=150000)

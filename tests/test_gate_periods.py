@@ -105,12 +105,15 @@ class ConvertedLimitTest(PeriodCase):
         case_id = self.make_case(floor=60, plan=plan)
         out = self.review(
             case_id,
-            send_draft(offer=50, template="term is {quote:1}"),
+            send_draft(offer=50, period="month",
+                       template="term is {quote:1}"),
             inbound=inbound_msg(text="x", amounts=[5]),
         )
         self.assertIn("converted limit", " ".join(out["reasons"]))
         out = self.review(
-            case_id, send_draft(offer=50, template="every 5 years")
+            case_id,
+            send_draft(offer=50, period="month",
+                       template="every 5 years"),
         )
         self.assertIn("numbers", " ".join(out["reasons"]))
 
@@ -232,6 +235,114 @@ class FloorPeriodKeyTest(PeriodCase):
                 proc, out = self.gate(case_id, send_draft(template="hi"))
                 self.assertEqual(proc.returncode, 2, out)
                 self.assertIn("period", out["error"])
+
+
+class UnconvertiblePeriodTest(PeriodCase):
+    """"once" and a recurring period have no conversion factor, so a
+    mixed-period offer can never be verified against the floor: a
+    ``send`` routes to the user, an agreeing action fails closed."""
+
+    def test_send_monthly_offer_against_once_floor_needs_approval(self):
+        # "{offer} per month" against a once floor cannot convert.
+        case_id = self.make_case()
+        draft = send_draft(
+            offer=1100, period="month",
+            template="I can do {offer} per month",
+        )
+        out = self.review(case_id, draft)
+        self.assertIn(
+            "period differs from your limit", out["reasons"]
+        )
+        proc, out = self.gate(case_id, draft, approved=True)
+        self.assertEqual(proc.returncode, 0, out)
+        self.assertEqual(
+            out["rendered"], "I can do $1,100/month per month"
+        )
+
+    def test_send_once_offer_against_month_floor_needs_approval(self):
+        # The mirror: a one-time offer against a monthly floor.
+        plan = dict(plan_for("pay", 1200), period="month")
+        case_id = self.make_case(plan=plan)
+        out = self.review(
+            case_id,
+            send_draft(offer=1100, period="once",
+                       template="flat {offer}"),
+        )
+        self.assertIn(
+            "period differs from your limit", out["reasons"]
+        )
+
+    def test_recurring_periods_still_convert(self):
+        # month and year still convert to each other: only once
+        # mixes route.
+        plan = dict(plan_for("pay", 1200), period="month")
+        case_id = self.make_case(plan=plan)
+        self.passed(
+            case_id,
+            send_draft(offer=13000, period="year",
+                       template="prepaid {offer}"),
+        )
+
+    def test_accept_monthly_offer_against_once_floor_blocks(self):
+        # accept 1100/month against a 1100/year inbound, once floor:
+        # neither side converts to once, so it fails closed.
+        case_id = self.make_case()
+        proc, out = self.gate(
+            case_id,
+            send_draft(action="accept", offer=1100, period="month",
+                       template="let us close"),
+            approved=True,
+            inbound={"offer": 1100, "period": "year", "text": "x",
+                     "amounts": []},
+        )
+        self.assertEqual(proc.returncode, 1, out)
+        self.assertIn(
+            "period differs from your limit", out["reasons"]
+        )
+
+    def test_accept_inbound_period_mismatch_blocks(self):
+        # Draft offer matches the once floor, but the inbound offer
+        # is per month against a once floor: unverifiable, so block.
+        case_id = self.make_case()
+        proc, out = self.gate(
+            case_id,
+            send_draft(action="accept", offer=1100, period="once",
+                       template="let us close"),
+            approved=True,
+            inbound={"offer": 1100, "period": "month", "text": "x",
+                     "amounts": []},
+        )
+        self.assertEqual(proc.returncode, 1, out)
+        self.assertIn(
+            "period differs from your limit", out["reasons"]
+        )
+
+    def test_sign_and_pay_mismatched_period_block(self):
+        case_id = self.make_case()
+        for action in ("sign", "pay"):
+            with self.subTest(action=action):
+                proc, out = self.gate(
+                    case_id,
+                    send_draft(action=action, offer=1100,
+                               period="month",
+                               template="let us close"),
+                    approved=True,
+                )
+                self.assertEqual(proc.returncode, 1, out)
+                self.assertIn(
+                    "period differs", " ".join(out["reasons"])
+                )
+
+    def test_matching_periods_do_not_route(self):
+        # Control: an in-band monthly offer against a monthly floor
+        # sends without the period reason.
+        plan = dict(plan_for("pay", 1200), period="month")
+        case_id = self.make_case(plan=plan)
+        self.passed(
+            case_id,
+            send_draft(offer=1100, period="month",
+                       template="I can do {offer}"),
+        )
 
 
 class NumCapTest(PeriodCase):

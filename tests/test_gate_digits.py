@@ -302,7 +302,8 @@ class FloorDigitsTest(AmendmentCase):
         case_id = self.month_case()
         proc, out = self.gate(
             case_id,
-            send_draft(template="you quoted {quote:1}"),
+            send_draft(period="month",
+                       template="you quoted {quote:1}"),
             inbound=inbound_msg(text="x", amounts=[1200]),
         )
         self.assertEqual(proc.returncode, 1, out)

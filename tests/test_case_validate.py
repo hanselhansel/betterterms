@@ -112,7 +112,9 @@ class CaseValidateTest(BtTestCase):
                 "facts": [],
             }
         )
-        proc, out = self.gate(case_id, send_draft(template="hi"))
+        proc, out = self.gate(
+            case_id, send_draft(period="month", template="hi")
+        )
         self.assertEqual(proc.returncode, 0, out)
 
     def test_mode_case_insensitive(self):
