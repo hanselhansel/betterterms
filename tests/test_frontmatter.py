@@ -76,10 +76,13 @@ class ParseTest(unittest.TestCase):
         self.assertIn("line 3", str(cm.exception))
 
     def test_indicator_start_value_rejected_but_flow_ok(self):
-        for v in ("- x", "? x", ": x", ",x", "*a", "&a", "!t", ">x", "%p", "@r", "`z`"):
+        for v in ("- x", "? x", ": x", ",x", "*a", "!t", ">x", "%p", "@r", "`z`"):
             with self.subTest(v=v):
                 with self.assertRaises(frontmatter.Error):
                     frontmatter.parse(self._write(f"---\ndescription: {v}\n---\nbody\n"))
+        # An anchor on an empty node is valid YAML and parses as None.
+        fm, _ = frontmatter.parse(self._write("---\ndescription: &a\n---\nbody\n"))
+        self.assertIsNone(fm["description"])
         fm, _ = frontmatter.parse(
             self._write('---\ndescription: "a: b"\nallowed-tools: [Read, Bash]\n---\nbody\n')
         )

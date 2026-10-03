@@ -3,10 +3,10 @@
 
 Usage: python3 scripts/verify [ROOT|all]
 
-ROOT defaults to the repo containing this script and must be a directory
-holding VERSION and kit.config.json; 'all' means the same. Anything else
-exits 2. Prints `PASS <name>`, `FAIL <name>: <reason>` or
-`SKIP <name>: <reason>` per check and exits 1 when any FAILs.
+ROOT defaults to the repo containing this script and must hold VERSION
+and kit.config.json ('all' means the same; anything else exits 2).
+Prints `PASS <name>`, `FAIL <name>: <reason>` or `SKIP <name>: <reason>`
+per check and exits 1 when any FAILs.
 """
 
 import json
@@ -21,17 +21,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from _lib import frontmatter, miniyaml
 
-try:
-    import yaml
-except ImportError:
-    yaml = None
-
 REPO_ROOT = Path(__file__).resolve().parent.parent
 _ROOT_FILES = ("VERSION", "kit.config.json")
 
-# SKIP_DIRS_TOP applies only to direct children of the root so a nested
-# .venv or dist is still scanned; SKIP_PATHS holds exact directory
-# prefixes: .claude is scanned but .claude/worktrees is not.
+# SKIP_DIRS_TOP applies only to direct children of the root; SKIP_PATHS
+# holds exact prefixes: .claude is scanned but .claude/worktrees is not.
 SKIP_DIRS_ANYWHERE = {".git", "__pycache__", "node_modules"}
 SKIP_DIRS_TOP = {
     ".venv", "venv", "dist", "holdout", ".idea",
@@ -39,29 +33,27 @@ SKIP_DIRS_TOP = {
 }
 SKIP_PATHS = {(".claude", "worktrees")}
 
-# Internal docs hold research, specs, plans and decisions that quote
-# prose and local paths freely, so both prose-rules and no-local-paths
-# skip them. docs/guides and everything else shipped IS checked.
+# Internal docs quote prose and local paths freely, so prose-rules and
+# no-local-paths skip them; docs/guides and shipped files ARE checked.
+# Vendored code is verbatim, so any path under a _vendor dir is exempt
+# from file-size, prose-rules and no-local-paths.
 INTERNAL_DOCS = {
     ("docs", "research"), ("docs", "specs"),
     ("docs", "plans"), ("docs", "decisions"),
 }
+VENDOR_PART = "_vendor"
 
 SKILL_NAME = re.compile(r"^[a-z0-9-]{1,64}$")
-ALLOWED_FM_KEYS = {
-    "name", "description", "license", "compatibility",
-    "metadata", "allowed-tools",
-}
+ALLOWED_FM_KEYS = {"name", "description", "license",
+                   "compatibility", "metadata", "allowed-tools"}
 BANNED_WORDS = re.compile(
     r"\b(delv\w*|pivotal|crucial|showcas\w*|leverag\w*|robust|comprehensive|"
     r"nuanced|underscor\w*|foster\w*|moreover|furthermore)\b",
     re.IGNORECASE,
 )
 EM_DASH = "\u2014"
-# Written so these lines cannot match themselves. POSIX home paths are
-# case-sensitive and need a non-URL left edge, so http://h/Users/x and
-# http://api.example.com/users/42 stay clean; Windows home paths match
-# any case.
+# Written so these lines cannot match themselves. POSIX home paths need
+# a non-URL left edge; Windows home paths match any case.
 LOCAL_PATH = re.compile(
     r"(?<![/\w:])(?:/Users/|/home/[\w.-]+/)"
     r"|~/[A-Za-z0-9_]"
@@ -78,6 +70,10 @@ def _is_internal_doc(rel):
     return any(rel.parts[: len(skip)] == skip for skip in INTERNAL_DOCS)
 
 
+def _is_vendor(rel):
+    return VENDOR_PART in rel.parts
+
+
 def _skipped(parts):
     """Whether directory parts hit a skip rule."""
     return bool(parts) and (
@@ -89,7 +85,7 @@ def _skipped(parts):
 
 def _git_relpaths(root):
     """Tracked plus non-ignored untracked files when root is a git repo;
-    None when not, so callers fall back to os.walk."""
+    None otherwise, so callers fall back to os.walk."""
     if not (root / ".git").exists():
         return None
     try:
@@ -156,25 +152,6 @@ def check_unit_tests(root):
     return ("PASS", "") if r.returncode == 0 else ("FAIL", _tail(r))
 
 
-def _pyyaml_frontmatter(skill_md, fm):
-    """A problem string when PyYAML (if installed) would resolve the
-    frontmatter block differently than frontmatter.parse did."""
-    if yaml is None:
-        return None
-    text = frontmatter.block(skill_md)
-    if text is None:
-        return None
-    try:
-        want = yaml.safe_load(text)
-    except Exception as e:
-        return f"PyYAML rejects frontmatter: {e}"
-    if want is None:
-        want = {}
-    if want != fm:
-        return f"frontmatter {fm!r} != PyYAML {want!r}"
-    return None
-
-
 def check_skill_names(root):
     skills = root / "skills"
     if not skills.is_dir():
@@ -195,9 +172,6 @@ def check_skill_names(root):
         except Exception as e:
             problems.append(f"skills/{name}: {e}")
             continue
-        mismatch = _pyyaml_frontmatter(skill_md, fm)
-        if mismatch:
-            problems.append(f"skills/{name}: {mismatch}")
         extra = sorted(str(k) for k in fm if k not in ALLOWED_FM_KEYS)
         if extra:
             problems.append(f"skills/{name}: unexpected keys: {', '.join(extra)}")
@@ -215,11 +189,9 @@ def check_skill_names(root):
 
 
 def check_no_bin(root):
-    return (
-        ("FAIL", "top-level bin/ is not allowed")
-        if (root / "bin").exists()
-        else ("PASS", "")
-    )
+    if (root / "bin").exists():
+        return "FAIL", "top-level bin/ is not allowed"
+    return "PASS", ""
 
 
 def check_no_root_claude_md(root):
@@ -235,7 +207,7 @@ def check_no_local_paths(root):
     bad = []
     for p in _file_list(root):
         rel = p.relative_to(root)
-        if _is_internal_doc(rel):
+        if _is_internal_doc(rel) or _is_vendor(rel):
             continue
         try:
             text = p.read_text(encoding="utf-8")
@@ -264,26 +236,20 @@ def _strings(value):
             yield from _strings(v)
 
 
-def _data_strings(root):
+def _data_files(root):
+    """kit.config.json plus skills/**/*.{json,yaml,yml}, vendor exempt."""
     for p in _file_list(root):
         rel = p.relative_to(root)
-        if rel.parts == ("kit.config.json",) or (
-            rel.parts[0] == "skills" and p.suffix in (".json", ".yaml")
-        ):
-            try:
-                text = p.read_text(encoding="utf-8")
-                data = json.loads(text) if p.suffix == ".json" else miniyaml.load(text)
-            except (OSError, UnicodeDecodeError, ValueError, miniyaml.Error):
-                continue
-            for s in _strings(data):
-                yield rel, s
+        in_skills = rel.parts[0] == "skills" and p.suffix in (".json", ".yaml", ".yml")
+        if not _is_vendor(rel) and (in_skills or rel.parts == ("kit.config.json",)):
+            yield p, rel
 
 
 def check_prose_rules(root):
     bad = []
     for p in _file_list(root):
         rel = p.relative_to(root)
-        if p.suffix != ".md" or _is_internal_doc(rel):
+        if p.suffix != ".md" or _is_internal_doc(rel) or _is_vendor(rel):
             continue
         try:
             text = p.read_text(encoding="utf-8")
@@ -291,8 +257,15 @@ def check_prose_rules(root):
             continue
         for i, line in enumerate(text.splitlines(), 1):
             _prose_hit(f"{rel}:{i}", line, bad)
-    for rel, s in _data_strings(root):
-        _prose_hit(f"{rel}: string value", s, bad)
+    for p, rel in _data_files(root):
+        try:
+            text = p.read_text(encoding="utf-8")
+            data = json.loads(text) if p.suffix == ".json" else miniyaml.load(text)
+        except (OSError, UnicodeDecodeError, ValueError, miniyaml.Error) as e:
+            bad.append(f"{rel}: cannot parse ({e})")
+            continue
+        for s in _strings(data):
+            _prose_hit(f"{rel}: string value", s, bad)
     return ("FAIL", _join(bad)) if bad else ("PASS", "")
 
 
@@ -300,10 +273,8 @@ def check_file_size(root):
     bad = []
     for p in _file_list(root):
         rel = p.relative_to(root)
-        is_source = p.suffix in (".py", ".js") or (
-            rel.parts and rel.parts[0] == "scripts" and "." not in p.name
-        )
-        if not is_source:
+        scripts_file = rel.parts and rel.parts[0] == "scripts" and "." not in p.name
+        if _is_vendor(rel) or (p.suffix not in (".py", ".js") and not scripts_file):
             continue
         try:
             n = len(p.read_text(encoding="utf-8").splitlines())
@@ -323,6 +294,34 @@ def _run_script(root, name, *args):
         capture_output=True, text=True, timeout=SUBPROCESS_TIMEOUT,
     )
     return ("PASS", "") if r.returncode == 0 else ("FAIL", _tail(r))
+
+
+def _payload(p):
+    """{relpath: bytes} under a dir (skips __pycache__), a file's own
+    bytes keyed "", or {} when the path does not exist."""
+    if p.is_file():
+        return {"": p.read_bytes()}
+    out = {}
+    if p.is_dir():
+        for f in sorted(p.rglob("*")):
+            rel = f.relative_to(p)
+            if f.is_file() and "__pycache__" not in rel.parts:
+                out[str(rel)] = f.read_bytes()
+    return out
+
+
+def check_vendor_sync(root):
+    """btlib ships byte-identical copies of the YAML layer; SKIP when
+    skills/betterterms-guardrails/scripts/btlib is absent."""
+    btlib = root / "skills/betterterms-guardrails/scripts/btlib"
+    if not btlib.is_dir():
+        return "SKIP", "no skills/betterterms-guardrails/scripts/btlib"
+    problems = [
+        f"btlib/{rel} is not identical to scripts/_lib/{src}"
+        for rel, src in (("_vendor/yaml", "_vendor/yaml"), ("yaml.py", "miniyaml.py"))
+        if _payload(btlib / rel) != _payload(root / "scripts/_lib" / src)
+    ]
+    return ("FAIL", _join(problems)) if problems else ("PASS", "")
 
 
 def check_build_fresh(root):
@@ -364,6 +363,7 @@ CHECKS = [
     ("no-local-paths", check_no_local_paths),
     ("prose-rules", check_prose_rules),
     ("file-size", check_file_size),
+    ("vendor-sync", check_vendor_sync),
     ("build-fresh", check_build_fresh),
     ("version-sync", check_version_sync),
     ("claude-validate", check_claude_validate),
