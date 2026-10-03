@@ -20,7 +20,7 @@ in the open Agent Skills format; promptfoo 0.123 for evals; Node only for the mo
 
 **Spec:** `docs/specs/2026-10-03-betterterms-design.md`,
 `docs/specs/2026-10-03-betterterms-negotiation-procedure.md`. Deviations are recorded in
-`docs/decisions/` (0001 to 0004) and summarized at the end of this plan.
+`docs/decisions/` (0001 to 0005) and summarized at the end of this plan.
 
 ## Global Constraints
 
@@ -217,7 +217,7 @@ Same file layout as step 6, `mode: coach`, `direction: receive`. Coach skill flo
 **Files:** `scripts/_lib/gen_{gemini,cursor,muse,agent_plugins}.py`; generated `gemini-extension.json`, `GEMINI.md`, `.cursor-plugin/plugin.json`, `.muse-plugin/plugin.json` (`schemaVersion: 1`), root `plugin.json` (Agent Plugins 1.0: `skills/`). Tests in `tests/test_build.py`.
 
 - [ ] `gemini extensions validate .` passes (verify check). Others validated against a JSON shape in tests. Not install-tested (decision per user: Claude Code and Codex are the test hosts).
-- [ ] Orchestrator checks open question 7 (does Claude Code read root `plugin.json`, which wins) by installing with both present; record in decision 0005.
+- [ ] Orchestrator checks open question 7 (does Claude Code read root `plugin.json`, which wins) by installing with both present; record in decision 0006.
 
 ## Step 9: Mod plugin (PR 9, 0.9.0)
 
@@ -245,3 +245,4 @@ Same file layout as step 6, `mode: coach`, `direction: receive`. Coach skill flo
 - 0002: Packs are siblings under `skills/` (not `packs/`); template at `templates/pack/`. One relative path to the runtime works in every layout.
 - 0003: Open decisions resolved: cloud cases are short-lived; response sharing off; `ai-api` covers pricing only; comp data user-supplied plus cited public sources.
 - 0004: Evals move from step 7 to step 3 so pack prompt changes have baselines.
+- 0005: The YAML layer is vendored pure-Python PyYAML 6.0.3 behind a `miniyaml` wrapper, replacing a hand-written subset that kept diverging from real YAML.
