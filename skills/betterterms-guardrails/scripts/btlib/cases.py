@@ -278,11 +278,12 @@ def check_plan_limits(plan, floor, direction, brief=None):
     period = floor_period(plan, brief)
     values = [num(plan.get("target"))]
     for item in as_list(plan.get("options")):
-        if isinstance(item, dict) and option_kind(item) == "price":
+        if isinstance(item, dict):
+            kind = option_kind(item)
             item_period = str(item.get("period") or period).lower()
             if item_period not in PERIODS:
-                raise BtError("option period must be once, month or year")
-            if item_period == period:
+                raise BtError("invalid option period")
+            if kind == "price" and item_period == period:
                 values.append(num(item.get("value")))
     for item in as_list(plan.get("ladder")):
         if isinstance(item, dict):

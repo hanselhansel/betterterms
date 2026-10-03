@@ -25,7 +25,7 @@ import math
 import re
 import unicodedata
 
-from . import cases, money
+from . import BtError, cases, money
 
 PERIODS = ("once", "month", "year")
 _MONTHS = {"month": 1.0, "year": 12.0}
@@ -149,6 +149,8 @@ def convert(value, from_period, to_period):
     conversion factor, so mixed once/other compares the raw value."""
     if from_period == to_period or "once" in (from_period, to_period):
         return value
+    if from_period not in _MONTHS or to_period not in _MONTHS:
+        raise BtError("invalid option period")
     return value * _MONTHS[to_period] / _MONTHS[from_period]
 
 
@@ -178,6 +180,7 @@ def render(template, offer, offer_period, plan, plan_period, in_amounts):
     pos = 0
     for m in TAG.finditer(template):
         literal = template[pos:m.start()]
+        _bad_brace(literal, find)
         out.append(literal)
         masked.append(literal)
         text, mask = _resolve(m.group(1), find, offer, offer_period,
@@ -185,11 +188,23 @@ def render(template, offer, offer_period, plan, plan_period, in_amounts):
         out.append(text)
         masked.append(mask)
         pos = m.end()
-    out.append(template[pos:])
-    masked.append(template[pos:])
+    tail = template[pos:]
+    _bad_brace(tail, find)
+    out.append(tail)
+    masked.append(tail)
     find.text = "".join(out)
     find.masked = "".join(masked)
     return find
+
+
+def _bad_brace(seg, find):
+    """Literal template text may not contain a brace: an unmatched or
+    nested ``{``/``}`` is a malformed placeholder, never sendable."""
+    i = min((seg.find(c) for c in "{}" if c in seg), default=-1)
+    if i < 0:
+        return
+    frag = seg[i:i + 40] if seg[i] == "{" else seg[max(0, i - 39):i + 1]
+    find.errors.append(f"malformed placeholder {frag.strip()}")
 
 
 def _resolve(tag, find, offer, offer_period, plan, plan_period, in_amounts):
@@ -269,6 +284,28 @@ def _invisible(ch):
     return unicodedata.category(ch) == "Cf" or ch in _MN_JOINERS
 
 
+def _touching(text):
+    """A character that could extend a rendered amount sits right
+    against a mask sentinel: a letter or digit ("$1,100k" reads as
+    1,100,000), or a ``.``/``,`` separator with a digit on its far
+    side ("$1,100.99" restates the price). A separator followed by a
+    space or a word is ordinary sentence punctuation, not glue."""
+    for i, c in enumerate(text):
+        if c != _MASK:
+            continue
+        for j in (i - 1, i + 1):
+            if not 0 <= j < len(text):
+                continue
+            d = text[j]
+            if d.isalnum():
+                return True
+            if d in ".,":
+                k = j + (j - i)  # the character past the separator
+                if 0 <= k < len(text) and text[k].isdigit():
+                    return True
+    return False
+
+
 def review(find, floor, never_items):
     """Review-tier checks on the rendered message. Reads ``find.masked``
     (placeholder outputs masked, fact text visible) and returns one
@@ -282,6 +319,8 @@ def review(find, floor, never_items):
     norm = normalize(masked)
     if _ADJACENT.search(norm):
         reasons.append("a digit next to a rendered amount")
+    if _touching(norm):
+        reasons.append("text touches a rendered amount")
     if (
         _CURSYM.search(norm)
         or _CURCODE.search(norm)

@@ -20,7 +20,7 @@ in the open Agent Skills format; promptfoo 0.123 for evals; Node only for the mo
 
 **Spec:** `docs/specs/2026-10-03-betterterms-design.md`,
 `docs/specs/2026-10-03-betterterms-negotiation-procedure.md`. Deviations are recorded in
-`docs/decisions/` (0001 to 0005) and summarized at the end of this plan.
+`docs/decisions/` (0001 to 0009) and summarized at the end of this plan.
 
 ## Global Constraints
 
@@ -247,4 +247,7 @@ Same file layout as step 6, `mode: coach`, `direction: receive`. Coach skill flo
 - 0003: Open decisions resolved: cloud cases are short-lived; response sharing off; `ai-api` covers pricing only; comp data user-supplied plus cited public sources.
 - 0004: Evals move from step 7 to step 3 so pack prompt changes have baselines.
 - 0005: The YAML layer is vendored pure-Python PyYAML 6.0.3 behind a `miniyaml` wrapper, replacing a hand-written subset that kept diverging from real YAML.
-- 0007: Gate hardening: user-typed floor entry, strict plain-number floor parsing, an every-amount floor rule, oracle-free block reasons, plan and direction validation, a 64 KB text cap, and ledger guards.
+- 0006: Recorded on the step-8 branch, not in this tree. Resolves open question 7: whether Claude Code reads the root `plugin.json`, and which manifest wins.
+- 0007: Gate hardening: user-typed floor entry, strict plain-number floor parsing, an every-amount floor rule, oracle-free block reasons, plan and direction validation, a 64 KB text cap, and ledger guards. Its text-scanning parts were amended by 0009.
+- 0008: Structured amounts: the draft is `action`, `offer`, `period`, `template` and `claims`; every price in a message renders through a `{placeholder}` the gate controls, so the only money in a send comes from values the gate renders itself. Its free-text money ban was amended by 0009.
+- 0009: Gate scope split into two tiers. Structural rules (placeholders, floor comparisons, period declarations, the 64 KB cap) hard-block and fail closed; the old prove-it-clean text scan became a review tier that routes anything suspicious to `needs_approval` with plain-word, number-free reasons.
