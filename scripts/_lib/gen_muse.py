@@ -4,7 +4,7 @@ gen(root, version) -> {relpath: content} produces
 .muse-plugin/plugin.json with schemaVersion 1. Meta does not document
 the Muse manifest; this shape is modeled on the .muse-plugin/plugin.json
 that superpowers 6.4.2 ships, and the assumption is recorded in
-docs/decisions/0010-host-manifests.md. Skills are listed explicitly
+docs/decisions/0011-host-manifests.md. Skills are listed explicitly
 under capabilities.skills as {id, path} pairs, one per
 skills/<name>/SKILL.md. The session-start hook mirrors the one
 superpowers registers; hooks/session-start.sh is plain sh and prints

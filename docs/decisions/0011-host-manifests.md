@@ -1,4 +1,4 @@
-# 0010. Host manifests: Gemini, Cursor, Muse, Agent Plugins; open question 7
+# 0011. Host manifests: Gemini, Cursor, Muse, Agent Plugins; open question 7
 
 Status: accepted. Date: 2026-10-03.
 
