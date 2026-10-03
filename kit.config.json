@@ -1,0 +1,17 @@
+{
+  "name": "betterterms",
+  "description": "Cross-agent negotiation toolkit: core skills, packs, and a pre-send gate for bills, refunds, cancellations, and offers.",
+  "author": {
+    "name": "Hansel Wahjono",
+    "url": "https://github.com/hanselhansel"
+  },
+  "repository": "https://github.com/hanselhansel/betterterms",
+  "license": "MIT",
+  "keywords": [
+    "negotiation",
+    "agent-skills",
+    "claude-code",
+    "codex",
+    "betterterms"
+  ]
+}
