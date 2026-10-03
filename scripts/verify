@@ -229,6 +229,10 @@ def check_version_sync(root):
     return _run_script(root, "bump-version", "--check")
 
 
+def check_eval_smoke(root):
+    return _run_script(root, "eval", "--smoke")
+
+
 def check_claude_validate(root):
     if not (root / ".claude-plugin" / "plugin.json").is_file():
         return "SKIP", "no .claude-plugin/plugin.json"
@@ -264,6 +268,7 @@ CHECKS = [
     ("btlib-yaml-sync", check_btlib_yaml_sync),
     ("build-fresh", check_build_fresh),
     ("version-sync", check_version_sync),
+    ("eval-smoke", check_eval_smoke),
     ("claude-validate", check_claude_validate),
     ("gemini-validate", check_gemini_validate),
 ]

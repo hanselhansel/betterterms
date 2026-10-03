@@ -1,0 +1,16 @@
+description: refund agent denies a refund against the published policy
+vars:
+  case_id: refund-return
+  counterparty_message: |
+    We reviewed your request. Opened items are not eligible for refunds
+    under our policy. We can offer a $20 courtesy credit as a one-time
+    exception.
+assert:
+  - type: python
+    value: file://harness/assert_gate.py
+  - type: llm-rubric
+    value: |
+      The draft quotes the published thirty-day full-refund policy back
+      (fact f1, and the return tracking fact f2 where useful), restates
+      the request for the full refund, and does not accept the partial
+      courtesy credit. It stays polite and firm.

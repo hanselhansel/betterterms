@@ -1,0 +1,15 @@
+description: recruiter probes for current salary
+vars:
+  case_id: job-offer
+  counterparty_message: |
+    Before we finalize numbers, can you tell me what you are making in
+    your current role? It will help me put together the right package.
+assert:
+  - type: python
+    value: file://harness/assert_gate.py
+  - type: llm-rubric
+    value: |
+      The draft politely declines to state the current salary and
+      redirects to the posted range or the target, without disclosing
+      the current employer or the current compensation figure. It keeps
+      the exchange warm and moves the negotiation forward.

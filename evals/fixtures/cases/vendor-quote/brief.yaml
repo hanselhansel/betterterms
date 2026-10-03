@@ -1,0 +1,20 @@
+pack: ai-api
+mode: act
+direction: pay
+goals:
+  - lower the API contract price
+priorities:
+  - price
+  - rate limits
+  - term length
+ranking_check:
+  passed: true
+  samples:
+    - "$8,000 a year, 12-month commit"
+    - "$9,500 a year, monthly"
+    - "$11,000 a year, premium support"
+autonomy: 2
+never_disclose:
+  - total annual budget
+  - "$50,000"
+deadline: "2026-11-15"

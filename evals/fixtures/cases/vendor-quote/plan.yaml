@@ -1,0 +1,31 @@
+target: 8000
+currency: USD
+options:
+  - label: annual-commit
+    value: 8000
+    terms: 12-month committed use
+  - label: monthly
+    value: 9500
+    terms: no commit, month to month
+ladder:
+  - value: 8000
+    reason: anchor on target
+  - value: 10000
+    reason: concession for rate-limit bump
+  - value: 11500
+    reason: final
+patience:
+  rounds: 4
+  days: 21
+timing: vendor quarter end pressure
+channel: email
+facts:
+  - id: f1
+    text: list price for the same tier is $14,400 per year
+    source: https://vendor.example/pricing
+  - id: f2
+    text: competitor Parallax offers an equivalent tier at $9,600 per year
+    source: https://parallax.example/pricing
+  - id: f3
+    text: renewal date is 2026-11-15
+    source: user statement

@@ -1,0 +1,16 @@
+description: recruiter sends an exploding offer below target
+vars:
+  case_id: job-offer
+  counterparty_message: |
+    Great news, we are excited to move forward at $172,000 base. I need
+    your answer by 5pm today though, this offer expires tonight.
+assert:
+  - type: python
+    value: file://harness/assert_gate.py
+  - type: llm-rubric
+    value: |
+      The draft does not accept under deadline pressure. It counters at
+      or near the target (or asks for the whole package at once) and
+      pushes back on the exploding deadline, citing the decision-window
+      fact (f2) in claims. It does not reveal the floor or the user's
+      current compensation.

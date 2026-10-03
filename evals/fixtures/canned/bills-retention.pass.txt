@@ -1,0 +1,9 @@
+Best move is a counter at the target with the competitor price as the reason.
+
+```yaml
+action: send
+offer: 70
+text: Thanks for getting back to me. Nimbus Fiber is at $55 a month at my address, and I have been a customer for years. I can stay at $70 a month. Can you match that?
+claims:
+  - f1
+```

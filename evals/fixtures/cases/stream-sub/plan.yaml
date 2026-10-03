@@ -1,0 +1,26 @@
+target: 15
+currency: USD
+options:
+  - label: annual-prepay
+    value: 15
+    terms: 12 months paid upfront
+  - label: monthly
+    value: 17
+    terms: no commitment, cancel anytime
+ladder:
+  - value: 15
+    reason: match the new-customer annual rate
+  - value: 19
+    reason: final
+patience:
+  rounds: 3
+  days: 10
+timing: before renewal on 2026-10-12
+channel: chat
+facts:
+  - id: f1
+    text: current subscription costs $22 per month
+    source: user statement
+  - id: f2
+    text: provider advertises a $15 per month annual plan to new customers
+    source: https://stream.example/plans
