@@ -4,7 +4,7 @@ scorer and the ledger. Every subcommand prints one JSON object to
 stdout.
 
   bt.py case new --pack <pack> [--mode act|coach] [--direction pay|receive]
-  bt.py case set-floor <case_id>     (value read from stdin, never argv)
+  bt.py case set-floor <case_id>     (hidden getpass prompt on a TTY, else stdin, never argv)
   bt.py case show <case_id>
   bt.py gate <case_id> --draft <draft.yaml> [--approved] [--inbound <inbound.yaml>]
   bt.py score <case_id> --inbound <inbound.yaml>
@@ -104,7 +104,7 @@ def build_parser():
     p_new.add_argument("--direction", choices=["pay", "receive"], default="pay")
     p_new.set_defaults(fn=cmd_case_new)
 
-    p_floor = case_sub.add_parser("set-floor", help="set the floor from stdin")
+    p_floor = case_sub.add_parser("set-floor", help="set the floor (hidden getpass prompt on a TTY, else stdin; never argv)")
     p_floor.add_argument("case_id")
     p_floor.set_defaults(fn=cmd_case_set_floor)
 

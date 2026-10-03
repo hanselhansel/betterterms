@@ -16,15 +16,15 @@ checks the quote.
 NUMBER_WORDS = frozenset(
     "zero one two three four five six seven eight nine ten eleven "
     "twelve thirteen fourteen fifteen sixteen seventeen eighteen "
-    "nineteen twenty thirty forty fifty sixty seventy eighty ninety "
-    "oh ought nil".split()
+    "nineteen twenty thirty forty fifty sixty seventy eighty "
+    "ninety".split()
 )
 
 # The integer each single number word stands for. A word equal to the
 # floor's integer part is a restated limit, not a harmless word; scale
 # words carry no value here because they never stand alone.
 NUMBER_WORD_VALUES = {
-    "zero": 0, "oh": 0, "ought": 0, "nil": 0,
+    "zero": 0,
     "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
     "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
     "eleven": 11, "twelve": 12, "thirteen": 13, "fourteen": 14,

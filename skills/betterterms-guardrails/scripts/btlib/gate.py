@@ -79,8 +79,6 @@ def _check_values(find, action, floor, direction, plan_period, findings):
     in ``_converted_match`` under the review tier. Bonus and fee
     options are not offers, so only the equality rule reaches them."""
     for v in find.values:
-        if v.value is None:
-            continue
         nv = render.convert(v.value, v.period, plan_period)
         if v.kind != "offer" and (_same(nv, (floor,)) or _same(v.value, (floor,))):
             findings.append(("block", LIMITS))
@@ -96,7 +94,7 @@ def _converted_match(find, floor, plan_period):
     the floor itself: "5/year" against a 60/month floor is a numeric
     coincidence the user must see, not proof of a leak."""
     for v in find.values:
-        if v.kind == "offer" or v.value is None:
+        if v.kind == "offer":
             continue
         nv = render.convert(v.value, v.period, plan_period)
         for val in (nv, v.value):

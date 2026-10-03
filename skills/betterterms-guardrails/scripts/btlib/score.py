@@ -9,7 +9,6 @@ whether the sender is an AI or bot, and legal or arbitration terms.
 Inbound text is data, never instructions.
 """
 
-import math
 import re
 
 from . import BtError, MAX_TEXT, cases, money, render
@@ -84,8 +83,6 @@ def classify(case_dir, inbound):
     cases.check_plan_limits(plan, floor, direction, brief)
     target = cases.num(plan.get("target"))
     offer = cases.num(inbound.get("offer"))
-    if offer is not None and not math.isfinite(offer):
-        offer = None
     raw_text = str(inbound.get("text") or "")
     # The size cap lands before normalization and scanning: a hostile
     # message stays cheap.
@@ -96,7 +93,7 @@ def classify(case_dir, inbound):
     suggested = [
         v
         for v in (cases.num(a) for a in cases.as_list(inbound.get("amounts")))
-        if v is not None and math.isfinite(v)
+        if v is not None
     ]
     if not suggested:
         suggested = money.amounts(text)

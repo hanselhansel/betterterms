@@ -234,6 +234,13 @@ class TokenRuleTest(AllowlistCase):
                 out = self.review(case_id, send_draft(template=template))
                 self.assertIn("number word", " ".join(out["reasons"]))
 
+    def test_oh_is_not_a_number_word(self):
+        # "Oh", "ought" and "nil" were false-positive spellings of
+        # zero: they are ordinary words now, so this passes the review
+        # tier instead of routing to the user.
+        case_id = self.make_case()
+        self.passed(case_id, send_draft(template="Oh, thanks"))
+
 
 class SentinelAndFactTest(AllowlistCase):
     def test_sentinel_touching_letter_or_digit(self):

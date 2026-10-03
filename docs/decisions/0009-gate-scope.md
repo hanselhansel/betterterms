@@ -105,9 +105,10 @@ enumerate suspicious forms; it fails closed on anything unusual.
   forms route to the user like any other number shape.
 - Number words, scale words, currency words and commitment words
   stay as whole-word lists matched on the token stream. They live in
-  one shared module (`scripts/btlib/wordlists.py`) that the
-  guardrails SKILL.md quotes verbatim, pinned by a unit test. Under
-  0010 every spelled number word and every scale abbreviation
+  one shared module
+  (`skills/betterterms-guardrails/scripts/btlib/wordlists.py`) that
+  the guardrails SKILL.md quotes verbatim, pinned by a unit test.
+  Under 0010 every spelled number word and every scale abbreviation
   (including a bare k, m, mil or thou) routes to the user, singly or
   in combination.
 - A sentinel touching a letter or digit still routes to the user.

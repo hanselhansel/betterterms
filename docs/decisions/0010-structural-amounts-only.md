@@ -22,7 +22,10 @@ A. Facts in `plan.yaml` carry `{id, text, source, amount, period}`.
    the floor in an agreeing context, which is any action but
    `send`) reads only the structured amount, converted from the
    fact's own period to the floor's. The gate never runs money
-   parsing on fact text.
+   parsing on fact text. A fact id in `claims` that no `{fact:id}`
+   placeholder renders is checked only for membership in
+   `plan.facts`; its `amount` joins no floor comparison because its
+   text is not sent.
 
 B. The review tier (`needs_approval`, never a silent pass) is
    stricter and simple, over the rendered text with non-fact

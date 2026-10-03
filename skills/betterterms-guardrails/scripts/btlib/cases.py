@@ -310,11 +310,21 @@ def check_plan_limits(plan, floor, direction, brief=None):
     # A fact's period defaults to ``once``; anything else invalid is a
     # broken plan. The ``amount`` field itself never joins ``values``:
     # a fact states what the counterparty said, not a price on offer.
+    # But a malformed amount must fail closed here, not parse to null
+    # downstream where render and the floor rules would read it as
+    # "no structured amount".
     for item in as_list(plan.get("facts")):
         if isinstance(item, dict):
             item_period = str(item.get("period") or "once").lower()
             if item_period not in PERIODS:
                 raise BtError("fact period must be once, month or year")
+            amount = item.get("amount")
+            if amount is not None and (
+                isinstance(amount, bool)
+                or not isinstance(amount, (int, float))
+                or num(amount) is None
+            ):
+                raise BtError("fact amount must be a number or null")
     for v in values:
         if v is None:
             continue

@@ -134,7 +134,7 @@ that carries no numbers:
 The word lists live in `scripts/btlib/wordlists.py`, the single
 module the runtime and this file share:
 
-number words: eight, eighteen, eighty, eleven, fifteen, fifty, five, forty, four, fourteen, nil, nine, nineteen, ninety, oh, one, ought, seven, seventeen, seventy, six, sixteen, sixty, ten, thirteen, thirty, three, twelve, twenty, two, zero
+number words: eight, eighteen, eighty, eleven, fifteen, fifty, five, forty, four, fourteen, nine, nineteen, ninety, one, seven, seventeen, seventy, six, sixteen, sixty, ten, thirteen, thirty, three, twelve, twenty, two, zero
 scale words: billion, billions, bn, hundred, hundreds, k, m, mil, million, millions, mm, thou, thousand, thousands, trillion, trillions
 currency codes: AED, AUD, BRL, CAD, CHF, CNH, CNY, CZK, DKK, EUR, GBP, HKD, HUF, IDR, ILS, INR, JPY, KRW, MXN, MYR, NOK, NZD, PHP, PLN, RUB, SAR, SEK, SGD, THB, TRY, TWD, USD, VND, ZAR
 currency words: aed, aud, brl, buck, bucks, chf, cnh, cny, czk, dkk, dollar, dollars, eur, euro, euros, gbp, grand, hkd, huf, idr, ils, inr, jpy, krw, mxn, myr, nok, nzd, php, pln, pound, pounds, quid, renminbi, sar, sek, sgd, thb, twd, usd, vnd, yen, yuan, zar
@@ -150,9 +150,11 @@ Gate and score exit 2 when the brief `direction` is not `pay` or
 `receive`, when `mode` is not `act` or `coach` (case-insensitive), when
 `autonomy` is not an integer 1 to 4, when the case id is not
 `[a-z0-9-]`, when the floor is missing or invalid (gate blocks
-instead), or when a plan `price` value in the floor's declared period
-sits outside the band ("plan conflicts with your limits"). Options
-with `kind` `bonus` or `fee` are not offers and skip the check.
+instead), when a fact `amount` is neither a number nor null or a
+fact `period` is outside `once|month|year`, or when a plan `price`
+value in the floor's declared period sits outside the band ("plan
+conflicts with your limits"). Options with `kind` `bonus` or `fee`
+are not offers and skip the check.
 
 The scorer (`bt.py score`) reports a band: `at_or_above_target`,
 `in_band`, `near_floor` (within 10% of the floor), `below_floor`, or
