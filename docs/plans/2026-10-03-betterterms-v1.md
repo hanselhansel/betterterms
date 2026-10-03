@@ -69,7 +69,7 @@ in the open Agent Skills format; promptfoo 0.123 for evals; Node only for the mo
 | `bt.py case new --pack <pack> [--mode act\|coach] [--direction pay\|receive]` | 0 ok, 2 usage | `{"case_id": "...", "path": "..."}` |
 | `bt.py case set-floor <case_id>` (value read from stdin, never argv) | 0, 2 | `{"ok": true}` (never echoes the value) |
 | `bt.py case show <case_id>` | 0, 2 | brief + plan, floor field omitted |
-| `bt.py gate <case_id> --draft <draft.yaml> [--approved]` | 0 pass, 1 block, 2 usage/error, 3 needs approval | `{"result": "pass\|block\|needs_approval", "reasons": [...]}` |
+| `bt.py gate <case_id> --draft <draft.yaml> [--approved] [--inbound <inbound.yaml>]` | 0 pass, 1 block, 2 usage/error, 3 needs approval | `{"result": "pass\|block\|needs_approval", "reasons": [...]}` |
 | `bt.py score <case_id> --inbound <inbound.yaml>` | 0, 2 | `{"band": "at_or_above_target\|in_band\|near_floor\|below_floor", "escalate": [...]}` |
 | `bt.py ledger add <case_id> --before N --after N --period month\|year` | 0, 2 | `{"saved_per_year": N}` |
 | `bt.py ledger total` | 0 | `{"cases": N, "saved_per_year": N, "by_pack": {...}}` |

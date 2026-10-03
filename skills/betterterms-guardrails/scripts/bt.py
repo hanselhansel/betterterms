@@ -6,7 +6,7 @@ stdout.
   bt.py case new --pack <pack> [--mode act|coach] [--direction pay|receive]
   bt.py case set-floor <case_id>     (value read from stdin, never argv)
   bt.py case show <case_id>
-  bt.py gate <case_id> --draft <draft.yaml> [--approved]
+  bt.py gate <case_id> --draft <draft.yaml> [--approved] [--inbound <inbound.yaml>]
   bt.py score <case_id> --inbound <inbound.yaml>
   bt.py ledger add <case_id> --before N --after N --period month|year
   bt.py ledger total
@@ -61,7 +61,8 @@ def cmd_case_show(args):
 def cmd_gate(args):
     d = cases.require_case(args.case_id)
     draft = _load_yaml_file(args.draft, "draft")
-    result, reasons = gate.check(d, draft, approved=args.approved)
+    inbound = _load_yaml_file(args.inbound, "inbound") if args.inbound else None
+    result, reasons = gate.check(d, draft, approved=args.approved, inbound=inbound)
     return {"pass": 0, "block": 1, "needs_approval": 3}[result], {
         "result": result,
         "reasons": reasons,
@@ -109,6 +110,7 @@ def build_parser():
     p_gate.add_argument("case_id")
     p_gate.add_argument("--draft", required=True, help="path to draft.yaml")
     p_gate.add_argument("--approved", action="store_true")
+    p_gate.add_argument("--inbound", help="path to inbound.yaml this draft answers; amounts in it count as traced")
     p_gate.set_defaults(fn=cmd_gate)
 
     p_score = sub.add_parser("score", help="score an inbound message")

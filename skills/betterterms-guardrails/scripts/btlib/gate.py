@@ -10,8 +10,9 @@ Rules, in order:
 5. any ``never_disclose`` string in ``text`` -> block
 6. any claim id not in ``plan.facts`` -> block
 7. any marked amount in ``text`` that is not the offer, an option or
-   ladder value, the target, or an amount inside a fact's text -> block
-   ("untraced number")
+   ladder value, the target, an amount inside a fact's text, or an
+   amount the counterparty itself stated in ``inbound`` (text or offer)
+   -> block ("untraced number")
 
 All rules run; block dominates needs_approval, which dominates pass.
 """
@@ -33,9 +34,11 @@ def _values(mapping, key):
     return out
 
 
-def check(case_dir, draft, approved=False):
+def check(case_dir, draft, approved=False, inbound=None):
     if not isinstance(draft, dict):
         raise BtError("draft must be a mapping")
+    if inbound is not None and not isinstance(inbound, dict):
+        raise BtError("inbound must be a mapping")
     brief = cases.load_brief(case_dir)
     plan = cases.load_plan(case_dir)
     floor = cases.read_floor(case_dir)
@@ -91,6 +94,11 @@ def check(case_dir, draft, approved=False):
             allowed.append(v)
     allowed += _values(plan.get("options"), "value")
     allowed += _values(plan.get("ladder"), "value")
+    if inbound is not None:
+        v = cases.num(inbound.get("offer"))
+        if v is not None:
+            allowed.append(v)
+        allowed += money.amounts(str(inbound.get("text") or ""))
 
     seen = set()
     for a in found:

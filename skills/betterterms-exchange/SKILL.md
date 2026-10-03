@@ -50,9 +50,10 @@ or ask for their offer when it is not. Then gate, send, and log as below.
    rival quotes) against the fact list or a fresh source check.
 4. Pick one move per the turn procedure. Draft `draft.yaml`. Every id in
    `claims` must exist in `plan.yaml` facts.
-5. Gate it:
+5. Gate it. When this turn answers an inbound message, pass it so
+   amounts the counterparty itself stated count as traced:
 
-   `python3 ../betterterms-guardrails/scripts/bt.py gate <case_id> --draft <path>/draft.yaml`
+   `python3 ../betterterms-guardrails/scripts/bt.py gate <case_id> --draft <path>/draft.yaml --inbound <path>/inbound.yaml`
 
    - Exit 0, `pass`: send per the autonomy level.
    - Exit 3, `needs_approval`: ask the user for an explicit yes, then
