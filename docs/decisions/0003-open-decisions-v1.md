@@ -12,5 +12,5 @@ Resolves design spec section 13, items 2 to 5.
   public levels data with links). No scraping.
 
 Item 1 (trademark and package names): USPTO knockout search on 2026-10-03 found no live
-BETTERTERMS mark; two abandoned class 36 filings. npm and PyPI names unclaimed; claiming them is
-pending account access. Items 6 and 7 are checked during the build and recorded separately.
+BETTERTERMS mark; two abandoned class 36 filings. npm and PyPI names unclaimed. v1 claims npm only;
+PyPI is dropped by owner decision on 2026-10-03. Items 6 and 7 are checked during the build and recorded separately.
