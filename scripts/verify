@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """Repo verification checks.
 
-Usage: python3 scripts/verify [ROOT]
+Usage: python3 scripts/verify [ROOT|all]
 
 ROOT defaults to the repo containing this script and must be a directory
-holding VERSION and kit.config.json; anything else exits 2. Prints one
-line per check: `PASS <name>`, `FAIL <name>: <reason>`, or
-`SKIP <name>: <reason>`. Exits 1 when any check FAILs. Checks live in
-the CHECKS registry so later steps can add more.
+holding VERSION and kit.config.json; 'all' means the same. Anything else
+exits 2. Prints `PASS <name>`, `FAIL <name>: <reason>` or
+`SKIP <name>: <reason>` per check and exits 1 when any FAILs.
 """
 
+import json
 import os
 import re
 import shutil
@@ -19,24 +19,29 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from _lib import frontmatter
+from _lib import frontmatter, miniyaml
+
+try:
+    import yaml
+except ImportError:
+    yaml = None
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+_ROOT_FILES = ("VERSION", "kit.config.json")
 
-# Skipped directory names. SKIP_DIRS_ANYWHERE applies at every level;
-# SKIP_DIRS_TOP applies only to direct children of the root, so a nested
-# .venv or dist under a package is still scanned.
+# SKIP_DIRS_TOP applies only to direct children of the root so a nested
+# .venv or dist is still scanned; SKIP_PATHS holds exact directory
+# prefixes: .claude is scanned but .claude/worktrees is not.
 SKIP_DIRS_ANYWHERE = {".git", "__pycache__", "node_modules"}
 SKIP_DIRS_TOP = {
-    ".claude", ".venv", "venv", "dist", "holdout", ".idea",
+    ".venv", "venv", "dist", "holdout", ".idea",
     ".mypy_cache", ".pytest_cache", ".ruff_cache", ".promptfoo",
 }
+SKIP_PATHS = {(".claude", "worktrees")}
 
-# Internal documentation directories (repo-relative path prefixes) hold
-# research, specs, plans and decisions that quote prose freely and may
-# embed local paths, so both prose-rules and no-local-paths skip them.
-# docs/guides and everything else shipped IS checked. tests/ is also
-# exempt from no-local-paths (fixtures may legitimately embed paths).
+# Internal docs hold research, specs, plans and decisions that quote
+# prose and local paths freely, so both prose-rules and no-local-paths
+# skip them. docs/guides and everything else shipped IS checked.
 INTERNAL_DOCS = {
     ("docs", "research"), ("docs", "specs"),
     ("docs", "plans"), ("docs", "decisions"),
@@ -53,11 +58,14 @@ BANNED_WORDS = re.compile(
     re.IGNORECASE,
 )
 EM_DASH = "\u2014"
-# Written as char classes / ranges so the pattern does not match this line.
-# Flags user home paths; dotfiles under home stay allowed.
+# Written so these lines cannot match themselves. POSIX home paths are
+# case-sensitive and need a non-URL left edge, so http://h/Users/x and
+# http://api.example.com/users/42 stay clean; Windows home paths match
+# any case.
 LOCAL_PATH = re.compile(
-    r"[/]Users/|/home/[\w.-]+/|~/[A-Za-z0-9_]|[A-Za-z]:\\Users\\",
-    re.IGNORECASE,
+    r"(?<![/\w:])(?:/Users/|/home/[\w.-]+/)"
+    r"|~/[A-Za-z0-9_]"
+    r"|(?i:[A-Za-z]:\\Users\\)"
 )
 MAX_SOURCE_LINES = 400
 MAX_SKILL_BODY_LINES = 500
@@ -71,10 +79,11 @@ def _is_internal_doc(rel):
 
 
 def _skipped(parts):
-    """Whether a path's directory parts hit a skip rule."""
+    """Whether directory parts hit a skip rule."""
     return bool(parts) and (
         parts[0] in SKIP_DIRS_TOP
         or any(part in SKIP_DIRS_ANYWHERE for part in parts)
+        or any(parts[: len(s)] == s for s in SKIP_PATHS)
     )
 
 
@@ -85,43 +94,42 @@ def _git_relpaths(root):
         return None
     try:
         r = subprocess.run(
-            ["git", "ls-files", "--cached", "--others",
-             "--exclude-standard", "-z"],
-            cwd=root, capture_output=True, text=True,
-            timeout=SUBPROCESS_TIMEOUT,
+            ["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z"],
+            cwd=root, capture_output=True, text=True, timeout=SUBPROCESS_TIMEOUT,
         )
     except (OSError, subprocess.TimeoutExpired):
         return None
-    if r.returncode != 0:
-        return None
-    return r.stdout.split("\0")
+    return r.stdout.split("\0") if r.returncode == 0 else None
 
 
-def _files(root):
-    """Yield files under root, honoring SKIP_DIRS_TOP at the top level and
-    SKIP_DIRS_ANYWHERE everywhere. When root is a git repo only tracked or
-    non-ignored untracked files are walked."""
+_LIST_CACHE = {}
+
+
+def _file_list(root):
+    """The scan file list for root, computed once per verify run: the git
+    file list when available, os.walk otherwise, filtered by skip rules."""
+    key = str(root)
+    if key in _LIST_CACHE:
+        return _LIST_CACHE[key]
     rels = _git_relpaths(root)
     if rels is not None:
-        for rel in rels:
-            if not rel:
-                continue
-            p = root / rel
-            if p.is_file() and not _skipped(Path(rel).parts):
-                yield p
-        return
-    for dirpath, dirnames, filenames in os.walk(root):
-        rel = Path(dirpath).relative_to(root)
-        top = not rel.parts
-        dirnames[:] = [
-            d
-            for d in dirnames
-            if d not in SKIP_DIRS_ANYWHERE and not (top and d in SKIP_DIRS_TOP)
+        files = [
+            root / rel
+            for rel in rels
+            if rel
+            and (root / rel).is_file()
+            and not _skipped(Path(rel).parts[:-1])
         ]
-        for name in filenames:
-            if name == ".git":  # worktree marker is a file, not a dir
-                continue
-            yield Path(dirpath) / name
+    else:
+        files = []
+        for dirpath, dirnames, filenames in os.walk(root):
+            rel = Path(dirpath).relative_to(root)
+            dirnames[:] = [d for d in dirnames if not _skipped(rel.parts + (d,))]
+            for name in filenames:
+                if name != ".git":  # worktree marker is a file, not a dir
+                    files.append(Path(dirpath) / name)
+    _LIST_CACHE[key] = files
+    return files
 
 
 def _tail(result, n=5):
@@ -148,6 +156,25 @@ def check_unit_tests(root):
     return ("PASS", "") if r.returncode == 0 else ("FAIL", _tail(r))
 
 
+def _pyyaml_frontmatter(skill_md, fm):
+    """A problem string when PyYAML (if installed) would resolve the
+    frontmatter block differently than frontmatter.parse did."""
+    if yaml is None:
+        return None
+    text = frontmatter.block(skill_md)
+    if text is None:
+        return None
+    try:
+        want = yaml.safe_load(text)
+    except Exception as e:
+        return f"PyYAML rejects frontmatter: {e}"
+    if want is None:
+        want = {}
+    if want != fm:
+        return f"frontmatter {fm!r} != PyYAML {want!r}"
+    return None
+
+
 def check_skill_names(root):
     skills = root / "skills"
     if not skills.is_dir():
@@ -168,11 +195,12 @@ def check_skill_names(root):
         except Exception as e:
             problems.append(f"skills/{name}: {e}")
             continue
+        mismatch = _pyyaml_frontmatter(skill_md, fm)
+        if mismatch:
+            problems.append(f"skills/{name}: {mismatch}")
         extra = sorted(str(k) for k in fm if k not in ALLOWED_FM_KEYS)
         if extra:
-            problems.append(
-                f"skills/{name}: unexpected frontmatter keys: {', '.join(extra)}"
-            )
+            problems.append(f"skills/{name}: unexpected keys: {', '.join(extra)}")
         if fm.get("name") != name:
             problems.append(f"skills/{name}: name {fm.get('name')!r} != folder")
         desc = fm.get("description")
@@ -187,15 +215,17 @@ def check_skill_names(root):
 
 
 def check_no_bin(root):
-    if (root / "bin").exists():
-        return "FAIL", "top-level bin/ is not allowed"
-    return "PASS", ""
+    return (
+        ("FAIL", "top-level bin/ is not allowed")
+        if (root / "bin").exists()
+        else ("PASS", "")
+    )
 
 
 def check_no_root_claude_md(root):
     bad = [
         str(p.relative_to(root))
-        for p in _files(root)
+        for p in _file_list(root)
         if p.name.lower() in ("claude.md", "agents.md")
     ]
     return ("FAIL", _join(bad)) if bad else ("PASS", "")
@@ -203,9 +233,9 @@ def check_no_root_claude_md(root):
 
 def check_no_local_paths(root):
     bad = []
-    for p in _files(root):
+    for p in _file_list(root):
         rel = p.relative_to(root)
-        if rel.parts[0] == "tests" or _is_internal_doc(rel):
+        if _is_internal_doc(rel):
             continue
         try:
             text = p.read_text(encoding="utf-8")
@@ -217,9 +247,41 @@ def check_no_local_paths(root):
     return ("FAIL", _join(bad)) if bad else ("PASS", "")
 
 
+def _prose_hit(label, text, bad):
+    if EM_DASH in text:
+        bad.append(f"{label}: em dash")
+    m = BANNED_WORDS.search(text)
+    if m:
+        bad.append(f"{label}: banned word {m.group(0)!r}")
+
+
+def _strings(value):
+    """Every string value inside a parsed JSON/YAML structure."""
+    if isinstance(value, str):
+        yield value
+    elif isinstance(value, (dict, list)):
+        for v in (value.values() if isinstance(value, dict) else value):
+            yield from _strings(v)
+
+
+def _data_strings(root):
+    for p in _file_list(root):
+        rel = p.relative_to(root)
+        if rel.parts == ("kit.config.json",) or (
+            rel.parts[0] == "skills" and p.suffix in (".json", ".yaml")
+        ):
+            try:
+                text = p.read_text(encoding="utf-8")
+                data = json.loads(text) if p.suffix == ".json" else miniyaml.load(text)
+            except (OSError, UnicodeDecodeError, ValueError, miniyaml.Error):
+                continue
+            for s in _strings(data):
+                yield rel, s
+
+
 def check_prose_rules(root):
     bad = []
-    for p in _files(root):
+    for p in _file_list(root):
         rel = p.relative_to(root)
         if p.suffix != ".md" or _is_internal_doc(rel):
             continue
@@ -228,17 +290,15 @@ def check_prose_rules(root):
         except (OSError, UnicodeDecodeError):
             continue
         for i, line in enumerate(text.splitlines(), 1):
-            if EM_DASH in line:
-                bad.append(f"{rel}:{i}: em dash")
-            m = BANNED_WORDS.search(line)
-            if m:
-                bad.append(f"{rel}:{i}: banned word {m.group(0)!r}")
+            _prose_hit(f"{rel}:{i}", line, bad)
+    for rel, s in _data_strings(root):
+        _prose_hit(f"{rel}: string value", s, bad)
     return ("FAIL", _join(bad)) if bad else ("PASS", "")
 
 
 def check_file_size(root):
     bad = []
-    for p in _files(root):
+    for p in _file_list(root):
         rel = p.relative_to(root)
         is_source = p.suffix in (".py", ".js") or (
             rel.parts and rel.parts[0] == "scripts" and "." not in p.name
@@ -259,8 +319,8 @@ def _run_script(root, name, *args):
     if not path.is_file():
         return "SKIP", f"no scripts/{name}"
     r = subprocess.run(
-        [sys.executable, str(path), *args],
-        cwd=root, capture_output=True, text=True, timeout=SUBPROCESS_TIMEOUT,
+        [sys.executable, str(path), *args], cwd=root,
+        capture_output=True, text=True, timeout=SUBPROCESS_TIMEOUT,
     )
     return ("PASS", "") if r.returncode == 0 else ("FAIL", _tail(r))
 
@@ -273,28 +333,27 @@ def check_version_sync(root):
     return _run_script(root, "bump-version", "--check")
 
 
-def check_claude_validate(root):
-    if not (root / ".claude-plugin" / "plugin.json").is_file():
-        return "SKIP", "no .claude-plugin/plugin.json"
-    if shutil.which("claude") is None:
-        return "SKIP", "claude not installed"
+def _validate(root, marker, tool, args, skip_msg):
+    """Run a host tool's validator when its manifest and binary exist."""
+    if not (root / marker).is_file():
+        return "SKIP", skip_msg
+    if shutil.which(tool) is None:
+        return "SKIP", f"{tool} not installed"
     r = subprocess.run(
-        ["claude", "plugin", "validate", "."],
+        [tool, *args],
         cwd=root, capture_output=True, text=True, timeout=SUBPROCESS_TIMEOUT,
     )
     return ("PASS", "") if r.returncode == 0 else ("FAIL", _tail(r))
+
+
+def check_claude_validate(root):
+    return _validate(root, ".claude-plugin/plugin.json", "claude",
+                     ["plugin", "validate", "."], "no .claude-plugin/plugin.json")
 
 
 def check_gemini_validate(root):
-    if not (root / "gemini-extension.json").is_file():
-        return "SKIP", "no gemini-extension.json"
-    if shutil.which("gemini") is None:
-        return "SKIP", "gemini not installed"
-    r = subprocess.run(
-        ["gemini", "extensions", "validate", "."],
-        cwd=root, capture_output=True, text=True, timeout=SUBPROCESS_TIMEOUT,
-    )
-    return ("PASS", "") if r.returncode == 0 else ("FAIL", _tail(r))
+    return _validate(root, "gemini-extension.json", "gemini",
+                     ["extensions", "validate", "."], "no gemini-extension.json")
 
 
 CHECKS = [
@@ -316,18 +375,13 @@ def main(argv):
     if len(argv) > 1:
         print(__doc__.strip(), file=sys.stderr)
         return 2
-    root = Path(argv[0]).resolve() if argv else REPO_ROOT
-    if (
-        not root.is_dir()
-        or not (root / "VERSION").is_file()
-        or not (root / "kit.config.json").is_file()
-    ):
-        print(
-            f"error: {root} is not a repo root; "
-            "need a directory containing VERSION and kit.config.json",
-            file=sys.stderr,
-        )
+    root = REPO_ROOT if not argv or argv[0] == "all" else Path(argv[0]).resolve()
+    required = root.is_dir() and all((root / f).is_file() for f in _ROOT_FILES)
+    if not required:
+        print(f"error: {root} is not a repo root (need VERSION + kit.config.json)",
+              file=sys.stderr)
         return 2
+    _LIST_CACHE.clear()
     failures = 0
     for name, fn in CHECKS:
         try:

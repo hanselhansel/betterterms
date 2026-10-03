@@ -1,11 +1,19 @@
+import contextlib
+import importlib.machinery
+import importlib.util
+import io
+import json
+import shutil
 import subprocess
 import sys
 import tempfile
+import types
 import unittest
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 VERIFY = REPO / "scripts" / "verify"
+GIT = shutil.which("git")
 
 SKILL = """\
 ---
@@ -15,13 +23,28 @@ description: Test skill. Use when testing.
 body
 """
 
+# Built at runtime so this file itself contains no local paths.
+MAC_HOME = "/" + "Users/hansel/repo"
+UNIX_HOME = "/" + "home/hansel/repo"
+
+
+def load_verify():
+    loader = importlib.machinery.SourceFileLoader("bt_verify_under_test", str(VERIFY))
+    spec = importlib.util.spec_from_loader("bt_verify_under_test", loader)
+    mod = importlib.util.module_from_spec(spec)
+    loader.exec_module(mod)
+    return mod
+
+
+VERIFY_MOD = load_verify()
+
 
 def run_verify(root):
-    return subprocess.run(
-        [sys.executable, str(VERIFY), str(root)],
-        capture_output=True,
-        text=True,
-        timeout=120,
+    out, err = io.StringIO(), io.StringIO()
+    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+        code = VERIFY_MOD.main([str(root)])
+    return types.SimpleNamespace(
+        returncode=code, stdout=out.getvalue(), stderr=err.getvalue()
     )
 
 
@@ -29,6 +52,11 @@ def make_repo_root(path):
     """Give a temp dir the files verify requires of a repo root."""
     (path / "VERSION").write_text("0.1.0\n")
     (path / "kit.config.json").write_text('{"name": "x"}\n')
+
+
+def assert_failed(case, proc, check):
+    case.assertNotEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+    case.assertIn(f"FAIL {check}", proc.stdout)
 
 
 class VerifyCheckTest(unittest.TestCase):
@@ -43,9 +71,13 @@ class VerifyCheckTest(unittest.TestCase):
         d.mkdir(parents=True)
         (d / "SKILL.md").write_text(SKILL.format(name=name) + extra_body)
 
+    def write_skill(self, text):
+        d = self.root / "skills" / "betterterms-x"
+        d.mkdir(parents=True)
+        (d / "SKILL.md").write_text(text)
+
     def assert_failed(self, proc, check):
-        self.assertNotEqual(proc.returncode, 0, proc.stdout + proc.stderr)
-        self.assertIn(f"FAIL {check}", proc.stdout)
+        assert_failed(self, proc, check)
 
     def test_bad_root_exits_2(self):
         with tempfile.TemporaryDirectory() as empty:
@@ -65,34 +97,72 @@ class VerifyCheckTest(unittest.TestCase):
         self.assert_failed(run_verify(self.root), "no-bin")
 
     def test_local_path_fails(self):
-        (self.root / "notes.txt").write_text("built under /Users/hansel/repo\n")
+        (self.root / "notes.txt").write_text(f"built under {MAC_HOME}\n")
         self.assert_failed(run_verify(self.root), "no-local-paths")
 
     def test_home_and_windows_paths_fail_but_tilde_dotfiles_pass(self):
         self.add_skill(extra_body="reads ~/.claude/settings.json at runtime\n")
         proc = run_verify(self.root)
         self.assertNotIn("FAIL no-local-paths", proc.stdout)
-        (self.root / "a.txt").write_text("see /home/hansel/repo\n")
+        (self.root / "a.txt").write_text(f"see {UNIX_HOME}\n")
         (self.root / "b.txt").write_text("see C:\\Users\\hansel\\repo\n")
         proc = run_verify(self.root)
         self.assert_failed(proc, "no-local-paths")
         self.assertIn("a.txt:1", proc.stdout)
         self.assertIn("b.txt:1", proc.stdout)
 
+    def test_urls_containing_home_paths_pass(self):
+        urls = (
+            "docs: http://host/home/x/ and https://api.example.com/users/42\n"
+            "more: http://example.com/Users/alice/page\n"
+        )
+        (self.root / "links.txt").write_text(urls)
+        proc = run_verify(self.root)
+        self.assertNotIn("FAIL no-local-paths", proc.stdout)
+        (self.root / "mix.txt").write_text(
+            f"see http://host/home/x/ then {MAC_HOME}\n"
+        )
+        self.assert_failed(run_verify(self.root), "no-local-paths")
+
+    def test_lowercase_windows_path_fails(self):
+        (self.root / "w.txt").write_text("see c:\\users\\hansel\\repo\n")
+        self.assert_failed(run_verify(self.root), "no-local-paths")
+
+    def test_tests_dir_not_exempt_from_local_paths(self):
+        tests = self.root / "tests"
+        tests.mkdir()
+        (tests / "fixture.py").write_text(f'PATH = "{MAC_HOME}"\n')
+        proc = run_verify(self.root)
+        self.assert_failed(proc, "no-local-paths")
+        self.assertIn("tests/fixture.py:1", proc.stdout)
+
     def test_internal_docs_exempt_but_docs_guides_checked(self):
         research = self.root / "docs" / "research"
         research.mkdir(parents=True)
-        (research / "notes.md").write_text("/Users/hansel/x and moreover.\n")
+        (research / "notes.md").write_text(f"{MAC_HOME} and moreover.\n")
         proc = run_verify(self.root)
         self.assertNotIn("FAIL no-local-paths", proc.stdout)
         self.assertNotIn("FAIL prose-rules", proc.stdout)
         guides = self.root / "docs" / "guides"
         guides.mkdir(parents=True)
-        (guides / "g.md").write_text("built under /Users/hansel/repo\n")
+        (guides / "g.md").write_text(f"built under {UNIX_HOME}\n")
         self.assert_failed(run_verify(self.root), "no-local-paths")
 
     def test_em_dash_in_skill_markdown_fails(self):
         self.add_skill(extra_body="offer one \u2014 offer two\n")
+        self.assert_failed(run_verify(self.root), "prose-rules")
+
+    def test_em_dash_and_banned_word_in_json_and_yaml_fail(self):
+        cfg = self.root / "kit.config.json"
+        cfg.write_text(json.dumps({"name": "x", "note": "one \u2014 two"}) + "\n")
+        self.assert_failed(run_verify(self.root), "prose-rules")
+        cfg.write_text('{"name": "x"}\n')
+        d = self.root / "skills" / "betterterms-x"
+        d.mkdir(parents=True)
+        (d / "config.json").write_text('{"hint": "a robust plan"}\n')
+        self.assert_failed(run_verify(self.root), "prose-rules")
+        (d / "config.json").write_text("{}\n")
+        (d / "data.yaml").write_text("hint: delving deep\n")
         self.assert_failed(run_verify(self.root), "prose-rules")
 
     def test_banned_word_inflections_fail(self):
@@ -105,6 +175,18 @@ class VerifyCheckTest(unittest.TestCase):
         (self.root / "claude.md").write_text("instructions\n")
         self.assert_failed(run_verify(self.root), "no-root-claude-md")
 
+    def test_dot_claude_files_scanned_except_worktrees(self):
+        claude_dir = self.root / ".claude"
+        (claude_dir / "worktrees" / "wt").mkdir(parents=True)
+        (claude_dir / "worktrees" / "wt" / "notes.md").write_text("em \u2014 dash\n")
+        (claude_dir / "CLAUDE.md").write_text("instructions\n")
+        proc = run_verify(self.root)
+        self.assert_failed(proc, "no-root-claude-md")
+        self.assertNotIn("worktrees", proc.stdout)
+        (claude_dir / "CLAUDE.md").unlink()
+        (claude_dir / "settings.json").write_text(f'{{"p": "{MAC_HOME}"}}\n')
+        self.assert_failed(run_verify(self.root), "no-local-paths")
+
     def test_nested_venv_scanned_but_promptfoo_skipped(self):
         nested = self.root / "pkg" / ".venv"
         nested.mkdir(parents=True)
@@ -116,15 +198,12 @@ class VerifyCheckTest(unittest.TestCase):
         self.assertIn("pkg/.venv/notes.md", proc.stdout)
         self.assertNotIn(".promptfoo", proc.stdout)
 
-    def test_git_ignored_files_are_not_scanned(self):
-        subprocess.run(["git", "init", "-q"], cwd=self.root, check=True)
-        (self.root / ".gitignore").write_text("ignored.txt\n")
-        (self.root / "ignored.txt").write_text("built under /Users/hansel/repo\n")
-        (self.root / "seen.txt").write_text("built under /home/hansel/repo\n")
-        proc = run_verify(self.root)
-        self.assert_failed(proc, "no-local-paths")
-        self.assertIn("seen.txt", proc.stdout)
-        self.assertNotIn("ignored.txt", proc.stdout)
+    def test_non_git_root_walks_files(self):
+        # Explicit fallback coverage: no .git here, so os.walk is used.
+        self.assertIsNone(VERIFY_MOD._git_relpaths(self.root))
+        (self.root / "deep" / "deeper").mkdir(parents=True)
+        (self.root / "deep" / "deeper" / "n.txt").write_text(f"{MAC_HOME}\n")
+        self.assert_failed(run_verify(self.root), "no-local-paths")
 
     def test_unknown_frontmatter_key_fails(self):
         self.write_skill(
@@ -139,6 +218,19 @@ class VerifyCheckTest(unittest.TestCase):
         proc = run_verify(self.root)
         self.assert_failed(proc, "skill-names")
         self.assertIn("needs quoting", proc.stdout)
+
+    def test_pyyaml_frontmatter_mismatch_fails(self):
+        self.add_skill()
+        class FakeYaml:
+            @staticmethod
+            def safe_load(_text):
+                return {"tampered": True}
+        real = VERIFY_MOD.yaml
+        VERIFY_MOD.yaml = FakeYaml
+        try:
+            self.assert_failed(run_verify(self.root), "skill-names")
+        finally:
+            VERIFY_MOD.yaml = real
 
     # Generated by /ship coverage audit.
     # Value: protects=verify fails when a CLAUDE.md or AGENTS.md exists anywhere
@@ -243,16 +335,19 @@ class VerifyCheckTest(unittest.TestCase):
                     self.assert_failed(proc, check)
                     self.assertIn(message, proc.stdout)
 
-    def write_skill(self, text):
-        d = self.root / "skills" / "betterterms-x"
-        d.mkdir(parents=True)
-        (d / "SKILL.md").write_text(text)
-
     def test_clean_tree_passes(self):
         self.add_skill()
         proc = run_verify(self.root)
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         self.assertNotIn("FAIL", proc.stdout)
+
+    def test_cli_smoke(self):
+        self.add_skill()
+        proc = subprocess.run(
+            [sys.executable, str(VERIFY), str(self.root)],
+            capture_output=True, text=True, timeout=60,
+        )
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
 
 
 if __name__ == "__main__":

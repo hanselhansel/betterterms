@@ -50,9 +50,9 @@ def main(argv):
         print(__doc__.strip(), file=sys.stderr)
         return 2
     files = outputs(ROOT)
+    manifest = ROOT / MANIFEST
+    previous = manifest.read_text().splitlines() if manifest.is_file() else []
     if "--check" in argv:
-        manifest = ROOT / MANIFEST
-        previous = manifest.read_text().splitlines() if manifest.is_file() else []
         stale = [
             rel
             for rel, content in sorted(files.items())
@@ -69,15 +69,19 @@ def main(argv):
             return 1
         print("build check passed" if files else "build check passed (no generators registered)")
         return 0
+    for rel in previous:
+        # Drop files the last build generated that are orphaned now.
+        path = ROOT / rel
+        if rel not in files and path.is_file() and path.resolve().is_relative_to(ROOT):
+            path.unlink()
+            print(f"deleted orphan {rel}")
     for rel, content in sorted(files.items()):
         path = ROOT / rel
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content)
         print(f"wrote {rel}")
     if not files:
-        manifest = ROOT / MANIFEST
-        if manifest.is_file():
-            manifest.unlink()
+        manifest.unlink(missing_ok=True)
         print("no generators registered; nothing to build")
     return 0
 

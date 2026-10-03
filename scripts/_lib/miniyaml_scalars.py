@@ -10,10 +10,41 @@ import json
 import math
 import re
 
-_INT_RE = re.compile(r"^[+-]?[0-9]+$")
-_FLOAT_RE = re.compile(r"^[+-]?([0-9]+\.[0-9]*|\.[0-9]+)([eE][+-]?[0-9]+)?$|^[+-]?[0-9]+[eE][+-]?[0-9]+$")
+# Scalars this subset resolves. Anything else a full YAML parser would
+# resolve to a non-string type raises instead of returning a wrong value.
+_INT_RE = re.compile(r"^[+-]?(?:0|[1-9][0-9]*)$")
+_FLOAT_RE = re.compile(
+    r"^[+-]?[0-9]+\.[0-9]*(?:[eE][-+][0-9]+)?$|^\.[0-9]+(?:[eE][-+][0-9]+)?$"
+)
 _HEX_RE = re.compile(r"^[0-9a-fA-F]+$")
-_DATE_RE = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$")
+
+# PyYAML implicit resolvers outside the subset. Matching scalars raise so
+# load never returns a value yaml.safe_load would resolve differently.
+_YAML_BOOL_RE = re.compile(
+    r"^(?:yes|Yes|YES|no|No|NO|true|True|TRUE|false|False|FALSE|"
+    r"on|On|ON|off|Off|OFF)$"
+)
+_YAML_INT_RE = re.compile(
+    r"^(?:[-+]?0b[0-1_]+|[-+]?0[0-7_]+|[-+]?(?:0|[1-9][0-9_]*)"
+    r"|[-+]?0x[0-9a-fA-F_]+|[-+]?[1-9][0-9_]*(?::[0-5]?[0-9])+)$"
+)
+_YAML_FLOAT_RE = re.compile(
+    r"^(?:[-+]?(?:[0-9][0-9_]*)\.[0-9_]*(?:[eE][-+][0-9]+)?"
+    r"|\.[0-9][0-9_]*(?:[eE][-+][0-9]+)?"
+    r"|[-+]?[0-9][0-9_]*(?::[0-5]?[0-9])+\.[0-9_]*"
+    r"|[-+]?\.(?:inf|Inf|INF)|\.(?:nan|NaN|NAN))$"
+)
+_YAML_TS_RE = re.compile(
+    r"^(?:[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]"
+    r"|[0-9][0-9][0-9][0-9]-[0-9][0-9]?-[0-9][0-9]?"
+    r"(?:[Tt]|[ \t]+)[0-9][0-9]?:[0-9][0-9]:[0-9][0-9](?:\.[0-9]*)?"
+    r"(?:[ \t]*(?:Z|[-+][0-9][0-9]?(?::[0-9][0-9])?))?)$"
+)
+
+_NULLS = {"", "~", "null", "Null", "NULL"}
+_TRUE = {"true", "True", "TRUE"}
+_FALSE = {"false", "False", "FALSE"}
+_TAG_SCALARS = {"=", "<<"}
 
 
 class Error(Exception):
@@ -21,27 +52,40 @@ class Error(Exception):
 
     def __init__(self, message, line=None):
         self.line = line
+        self.message = message
         super().__init__(f"line {line}: {message}" if line is not None else message)
 
 
 # --- loading: scalar and flow parsing -----------------------------------------
 
-def _plain(s):
-    low = s.lower()
-    if low in ("", "null", "~"):
+def _plain(s, ln):
+    """Resolve a plain scalar. Strings a full YAML parser would resolve to
+    a non-string type raise instead of returning a different value."""
+    if s in _NULLS:
         return None
-    if low == "true":
+    if s in _TRUE:
         return True
-    if low == "false":
+    if s in _FALSE:
         return False
     if _INT_RE.match(s):
         return int(s)
     if _FLOAT_RE.match(s):
         return float(s)
+    if s in _TAG_SCALARS:
+        raise Error(f"{s!r} resolves as a YAML tag; quote it", ln)
+    if (
+        _YAML_BOOL_RE.match(s)
+        or _YAML_INT_RE.match(s)
+        or _YAML_FLOAT_RE.match(s)
+        or _YAML_TS_RE.match(s)
+    ):
+        raise Error(f"plain scalar {s!r} resolves to a non-string in full YAML; quote it", ln)
     return s
 
 
 def _scalar(s, ln):
+    if "\t" in s:
+        raise Error("tabs are not allowed in scalars", ln)
     s = s.strip()
     if not s:
         return None
@@ -51,16 +95,28 @@ def _scalar(s, ln):
             raise Error("trailing characters after scalar", ln)
         return val
     if s[0] in "&*!%@`":
-        raise Error(f"unsupported indicator {s[0]!r} (anchors, aliases and tags are not supported)", ln)
-    return _plain(s)
+        raise Error(
+            f"unsupported indicator {s[0]!r} "
+            "(anchors, aliases and tags are not supported)",
+            ln,
+        )
+    if s[0] in "|>":
+        raise Error("block scalar indicator must follow 'key:' on the same line", ln)
+    if s[0] in ",]}" or (s[0] in "-?:" and (len(s) == 1 or s[1] == " ")):
+        raise Error(f"scalar {s!r} starts with an indicator character", ln)
+    if ": " in s or s.endswith(":"):
+        raise Error(f"plain scalar {s!r} needs quoting", ln)
+    return _plain(s, ln)
 
 
 def _key(s, ln):
     """Resolve a mapping key. Quoted keys unquote; plain keys resolve like
     plain scalars so ``1: x`` maps under int 1 and round-trips."""
+    if s == "?" or s.startswith("? "):
+        raise Error("explicit '?' keys are not supported", ln)
     if s[0] in "\"'":
         return _quoted(s, 0, ln)[0]
-    return _plain(s)
+    return _plain(s, ln)
 
 
 def _quoted_or_flow(s, pos, ln):
@@ -72,7 +128,8 @@ def _quoted_or_flow(s, pos, ln):
 _ESCAPES = {
     "n": "\n", "t": "\t", "r": "\r", "0": "\0", "a": "\a", "b": "\b",
     "f": "\f", "v": "\v", "e": "\x1b", '"': '"', "'": "'", "\\": "\\",
-    "/": "/", " ": " ", "_": " ",
+    "/": "/", " ": " ", "_": "\xa0", "N": "\x85", "L": "\u2028",
+    "P": "\u2029",
 }
 
 
@@ -92,8 +149,8 @@ def _quoted(s, pos, ln):
                 e = s[pos]
                 if e in _ESCAPES:
                     out.append(_ESCAPES[e])
-                elif e in "xu":
-                    n = 2 if e == "x" else 4
+                elif e in "xuU":
+                    n = {"x": 2, "u": 4, "U": 8}[e]
                     digits = s[pos + 1:pos + 1 + n]
                     if len(digits) != n or not _HEX_RE.match(digits):
                         raise Error("bad escape", ln)
@@ -140,11 +197,11 @@ def _flow(s, pos, ln):
         return out, pos + 1
     while pos < len(s):
         if opener == "{":
-            key, pos = _flow_scalar(s, pos, ln, key=True)
+            key, pos = _flow_scalar(s, pos, ln)
             pos = _skip_ws(s, pos)
             if pos >= len(s) or s[pos] != ":":
                 raise Error("expected ':' in flow mapping", ln)
-            value, pos = _flow_value(s, pos + 1, ln)
+            value, pos = _flow_value(s, pos + 1, ln, allow_empty=True)
             try:
                 out[key] = value
             except TypeError:
@@ -166,28 +223,35 @@ def _flow(s, pos, ln):
     raise Error(f"unterminated flow collection, expected '{closer}'", ln)
 
 
-def _flow_value(s, pos, ln):
+def _flow_value(s, pos, ln, allow_empty=False):
     pos = _skip_ws(s, pos)
     if pos >= len(s):
         raise Error("unexpected end of flow collection", ln)
     if s[pos] in "[{":
         return _flow(s, pos, ln)
-    return _flow_scalar(s, pos, ln)
+    return _flow_scalar(s, pos, ln, allow_empty=allow_empty)
 
 
-def _flow_scalar(s, pos, ln, key=False):
+def _flow_scalar(s, pos, ln, allow_empty=False):
     pos = _skip_ws(s, pos)
     if pos < len(s) and s[pos] in "\"'":
         return _quoted(s, pos, ln)
     start = pos
     while pos < len(s):
         c = s[pos]
-        if c in ",]}" or (key and c == ":"):
+        if c in ",]}":
             break
-        if not key and c == ":" and (pos + 1 >= len(s) or s[pos + 1] in " ,]}"):
+        if c == ":" and (pos + 1 >= len(s) or s[pos + 1] in " ,]}"):
             break
         pos += 1
-    return _plain(s[start:pos].strip()), pos
+    text = s[start:pos].strip()
+    if not text:
+        if not allow_empty:
+            raise Error("empty entry in flow collection", ln)
+        return None, pos
+    if text == "?" or text.startswith("? "):
+        raise Error("explicit '?' keys are not supported", ln)
+    return _plain(text, ln), pos
 
 
 def _split_key(text):
@@ -275,39 +339,50 @@ def _scalar_repr(v):
     if isinstance(v, float):
         if not math.isfinite(v):
             raise Error(f"cannot dump non-finite float {v!r}")
-        return repr(v)
+        r = repr(v)
+        if "." not in r and "e" in r:
+            r = r.replace("e", ".0e", 1)
+        return r
     if isinstance(v, dict):
         return "{}"
     if isinstance(v, list):
         return "[]"
     if isinstance(v, str):
-        return v if _plain_safe(v) else json.dumps(v, ensure_ascii=False)
+        if _plain_safe(v):
+            return v
+        # Escape line-break chars PyYAML would treat as real breaks even
+        # inside quotes; other non-ASCII stays readable.
+        esc = any(c in v for c in "\x85\u2028\u2029")
+        return json.dumps(v, ensure_ascii=esc)
     raise Error(f"cannot dump value of type {type(v).__name__}")
 
 
-_AMBIGUOUS_PLAIN = {"yes", "no", "on", "off", "y", "n"}
+# Plain strings PyYAML keeps as strings but other YAML 1.1 readers resolve
+# to a non-string. Dumping them quoted keeps the value stable everywhere.
+_EXTRA_QUOTE_RE = re.compile(
+    r"^(?:[yYnN]|[-+]?0[oO][0-7_]+"
+    r"|[-+]?(?:[0-9][0-9_]*(?:\.[0-9_]*)?|\.[0-9][0-9_]*)[eE][-+]?[0-9]+)$"
+)
 
 
 def _plain_safe(s):
     """A string may dump unquoted when it cannot parse back as anything
-    else and carries no indicator characters, comments or edges. YAML 1.1
-    booleans (yes/no/on/off/y/n), dates, and hex/octal-looking values must
-    also be quoted so stricter parsers read them back as strings."""
+    else and carries no indicator characters, comments or edges."""
     if not s or s != s.strip():
         return False
     if s[0] in "-?:,[]{}#&*!|>'\"%@`":
         return False
     if any(c in s for c in "[]{}\"';"):
         return False
+    if s[0] == "\ufeff" or any(c in s for c in "\x85\u2028\u2029"):
+        return False
     if any(ord(c) < 0x20 or ord(c) == 0x7F for c in s):
         return False
     if ": " in s or s.endswith(":") or " #" in s:
         return False
-    low = s.lower()
-    if low in _AMBIGUOUS_PLAIN or low.startswith(("0x", "0o")):
+    if _EXTRA_QUOTE_RE.match(s):
         return False
-    if _DATE_RE.match(s):
+    try:
+        return _plain(s, None) is s
+    except Error:
         return False
-    if _plain(s) is not s:
-        return False
-    return True

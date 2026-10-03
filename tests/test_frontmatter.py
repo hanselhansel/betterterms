@@ -69,8 +69,14 @@ class ParseTest(unittest.TestCase):
         with self.assertRaises(frontmatter.Error):
             frontmatter.parse(self._write("---\ndescription: a: b\n---\nbody\n"))
 
+    def test_error_names_file_line_not_block_line(self):
+        path = self._write("---\nname: x\ndescription: a: b\n---\nbody\n")
+        with self.assertRaises(frontmatter.Error) as cm:
+            frontmatter.parse(path)
+        self.assertIn("line 3", str(cm.exception))
+
     def test_indicator_start_value_rejected_but_flow_ok(self):
-        for v in ("- x", "? x", ": x", ",x", "*a", "&a", "!t", ">x", "#c", "%p", "@r", "`z`"):
+        for v in ("- x", "? x", ": x", ",x", "*a", "&a", "!t", ">x", "%p", "@r", "`z`"):
             with self.subTest(v=v):
                 with self.assertRaises(frontmatter.Error):
                     frontmatter.parse(self._write(f"---\ndescription: {v}\n---\nbody\n"))

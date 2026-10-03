@@ -136,9 +136,10 @@ class LoadTest(unittest.TestCase):
                 with self.assertRaises(miniyaml.Error):
                     miniyaml.load(src)
 
-    def test_split_on_newline_only_strips_trailing_cr(self):
+    def test_crlf_breaks_but_lone_cr_raises(self):
         self.assertEqual(miniyaml.load("a: 1\r\nb: 2\r\n"), {"a": 1, "b": 2})
-        self.assertEqual(miniyaml.load("a: x\ry\n"), {"a": "x\ry"})
+        with self.assertRaises(miniyaml.Error):
+            miniyaml.load("a: x\ry\n")
 
     def test_folded_keeps_more_indented_line_breaks(self):
         out = miniyaml.load(

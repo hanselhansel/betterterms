@@ -15,7 +15,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-SEMVER = re.compile(r"^\d+\.\d+\.\d+([-.][0-9A-Za-z.-]+)?$")
+SEMVER = re.compile(r"^\d+\.\d+\.\d+$")
 
 
 def _build_module():
@@ -25,10 +25,6 @@ def _build_module():
     mod = importlib.util.module_from_spec(spec)
     loader.exec_module(mod)
     return mod
-
-
-def _manifest_paths(build):
-    return sorted(build.expected(ROOT))
 
 
 def check():
@@ -41,7 +37,7 @@ def check():
         print(f"VERSION {version!r} is not X.Y.Z semver", file=sys.stderr)
         return 2
     problems = []
-    for rel in _manifest_paths(_build_module()):
+    for rel in sorted(_build_module().expected(ROOT)):
         path = ROOT / rel
         if not path.is_file():
             continue  # unbuilt manifests are build-fresh's problem
@@ -74,9 +70,10 @@ def bump(new):
     if result.returncode != 0:
         if old is None:
             version_file.unlink(missing_ok=True)
+            print("build failed; removed VERSION (it did not exist before)", file=sys.stderr)
         else:
             version_file.write_text(old)
-        print("build failed; restored previous VERSION", file=sys.stderr)
+            print(f"build failed; restored VERSION to {old.strip()!r}", file=sys.stderr)
         return result.returncode or 1
     print(f"VERSION set to {new}")
     return 0
