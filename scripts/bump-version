@@ -15,7 +15,9 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-SEMVER = re.compile(r"^\d+\.\d+\.\d+([-.][0-9A-Za-z.-]+)?$")
+# ASCII digits only, no leading zeros; always compared with fullmatch so
+# trailing newlines or Unicode digits cannot slip through.
+SEMVER = re.compile(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)")
 
 
 def _build_module():
@@ -27,18 +29,17 @@ def _build_module():
     return mod
 
 
-def _manifest_paths(build):
-    return sorted(build.expected(ROOT))
-
-
 def check():
     version_file = ROOT / "VERSION"
     if not version_file.is_file():
         print("VERSION file missing", file=sys.stderr)
         return 2
     version = version_file.read_text().strip()
+    if not SEMVER.fullmatch(version):
+        print(f"VERSION {version!r} is not X.Y.Z semver", file=sys.stderr)
+        return 2
     problems = []
-    for rel in _manifest_paths(_build_module()):
+    for rel in sorted(_build_module().expected(ROOT)):
         path = ROOT / rel
         if not path.is_file():
             continue  # unbuilt manifests are build-fresh's problem
@@ -49,25 +50,33 @@ def check():
         if isinstance(data, dict) and "version" in data and str(data["version"]) != version:
             problems.append(f"{rel}: version {data['version']!r} != VERSION {version!r}")
     if problems:
-        print("manifest versions out of sync:", file=sys.stderr)
+        print("versions out of sync:", file=sys.stderr)
         for p in problems:
             print(f"  {p}", file=sys.stderr)
-        print("run scripts/bump-version", file=sys.stderr)
+        print("run scripts/build", file=sys.stderr)
         return 1
     print(f"version check passed ({version})")
     return 0
 
 
 def bump(new):
-    if not SEMVER.match(new):
+    if not SEMVER.fullmatch(new):
         print(f"bad version {new!r}; expected X.Y.Z", file=sys.stderr)
         return 2
-    (ROOT / "VERSION").write_text(new + "\n")
+    version_file = ROOT / "VERSION"
+    old = version_file.read_text() if version_file.is_file() else None
+    version_file.write_text(new + "\n")
     result = subprocess.run(
         [sys.executable, str(ROOT / "scripts" / "build")], cwd=ROOT
     )
     if result.returncode != 0:
-        return result.returncode
+        if old is None:
+            version_file.unlink(missing_ok=True)
+            print("build failed; removed VERSION (it did not exist before)", file=sys.stderr)
+        else:
+            version_file.write_text(old)
+            print(f"build failed; restored VERSION to {old.strip()!r}", file=sys.stderr)
+        return result.returncode or 1
     print(f"VERSION set to {new}")
     return 0
 
