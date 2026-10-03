@@ -62,6 +62,23 @@ def write_draft(tmpdir, draft):
     return path
 
 
+def send_draft(template="hi", **kw):
+    """A well-formed send draft under the structured-amounts contract.
+    ``offer`` defaults to 1100 (inside the band for a pay floor of
+    1200); any key may be overridden or removed with ``key=None``."""
+    d = {"action": "send", "offer": 1100, "period": "once",
+         "template": template, "claims": []}
+    d.update(kw)
+    return d
+
+
+def inbound_msg(offer=None, text="", amounts=None):
+    """An inbound.yaml mapping: counterparty text, the extracted
+    ``amounts`` list, and an optional numeric offer."""
+    return {"offer": offer, "text": text,
+            "amounts": [] if amounts is None else amounts}
+
+
 BRIEF_PAY = {
     "pack": "bills",
     "mode": "act",

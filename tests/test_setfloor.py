@@ -150,7 +150,8 @@ class CorruptFloorTest(BtTestCase):
     def gate(self, case_id):
         path = write_draft(
             self.tmp,
-            {"action": "send", "offer": 1100, "text": "hi", "claims": []},
+            {"action": "send", "offer": 1100, "template": "hi",
+             "claims": []},
         )
         return run_bt_json(self.home, "gate", case_id, "--draft", str(path))
 

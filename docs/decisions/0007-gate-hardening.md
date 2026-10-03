@@ -36,8 +36,13 @@ D. Money parsing adds `one thousand, two hundred`, `1 200`, `1.2
    a digits-only scan for the floor's digit string. Numeric
    `never_disclose` items are normalized through money parsing.
 E. Every floor-related block reports one generic reason, "outside your
-   limits; escalate to the user". On a floor-related block the skill
-   escalates instead of redrafting toward a guessed limit.
+   limits; escalate to the user". The gate can still be probed by
+   repeated calls: it has no way to see or rate-limit its own
+   invocations, and the generic reason keeps each call from leaking
+   direction or distance. The mitigation sits in the skills, which cap
+   gate calls per turn: on a floor-related block the skill redrafts at
+   most once, then escalates to the user instead of redrafting toward
+   a guessed limit.
 F. `direction` must be `pay` or `receive` (else exit 2). The scorer
    checks the floor before the target. A plan target, option, or ladder
    value outside the band exits 2 with "plan conflicts with your

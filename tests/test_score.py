@@ -155,6 +155,39 @@ class ScoreTest(BtTestCase):
         proc, out = self.score(case_id, {"offer": 50000, "text": "low"})
         self.assertEqual(out["band"], "below_floor")
 
+    def test_suggested_amounts_passthrough(self):
+        # The agent-extracted amounts list comes back so the draft can
+        # reference it through {quote:n} placeholders.
+        case_id = self.make_case(direction="pay", floor=100, target=70)
+        proc, out = self.score(
+            case_id,
+            {"offer": 65, "text": "we quoted 65 and 80 earlier",
+             "amounts": [65, 80]},
+        )
+        self.assertEqual(proc.returncode, 0, out)
+        self.assertEqual(out["suggested_amounts"], [65.0, 80.0])
+
+    def test_suggested_amounts_parsed_from_text(self):
+        # No amounts list: money.py parses the counterparty's text into
+        # suggestions for the agent to confirm.
+        case_id = self.make_case(direction="pay", floor=100, target=70)
+        proc, out = self.score(
+            case_id,
+            {"offer": None, "text": "best we can do is $95"},
+        )
+        self.assertEqual(proc.returncode, 0, out)
+        self.assertIn(95.0, out["suggested_amounts"])
+        self.assertIn("no_offer_parsed", out["escalate"])
+
+    def test_suggested_amounts_skips_non_numbers(self):
+        case_id = self.make_case(direction="pay", floor=100, target=70)
+        proc, out = self.score(
+            case_id,
+            {"offer": 65, "text": "x", "amounts": [65, "later", True]},
+        )
+        self.assertEqual(proc.returncode, 0, out)
+        self.assertEqual(out["suggested_amounts"], [65.0])
+
     def test_plan_conflicting_with_floor_errors(self):
         # A target, option or ladder value worse than the floor is a
         # broken plan: exit 2 with no numbers in the message.
