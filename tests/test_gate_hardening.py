@@ -286,13 +286,16 @@ class HardeningTest(BtTestCase):
                 proc, _ = self.gate(case_id, draft)
                 self.assertEqual(proc.returncode, code)
 
-    def test_offer_equal_floor_passes(self):
+    def test_send_offer_equal_floor_needs_approval(self):
+        # A send offer at the floor hands the counterparty the
+        # walk-away number even when the template never renders it.
         case_id, _ = self.make_case(floor=1200)
         proc, out = self.gate(
             case_id, send_draft(offer=1200, template="meet me halfway")
         )
-        self.assertEqual(proc.returncode, 0)
-        self.assertEqual(out["result"], "pass")
+        self.assertEqual(proc.returncode, 3)
+        self.assertEqual(out["result"], "needs_approval")
+        self.assertIn("offer is at your limit", out["reasons"])
 
     def test_offer_nan_or_inf_blocks(self):
         case_id, _ = self.make_case()

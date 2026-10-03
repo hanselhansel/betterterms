@@ -121,14 +121,17 @@ class QuoteAndPeriodTest(ProbeTest):
 
     def test_offer_at_floor_converted_from_yearly(self):
         # plan period month, floor 1200/month: a $14,400/year offer is
-        # the floor converted and inside the band, so it may render.
+        # the floor converted. Inside the band, but on send it reveals
+        # the walk-away number, so it routes to the user.
         plan = dict(PLAN_BILLS, period="month")
         case_id = self.make_case(plan=plan)
-        proc, out = self.gate(
-            case_id,
-            send_draft(offer=14400, period="year",
-                       template="I can do {offer} prepaid"),
-        )
+        draft = send_draft(offer=14400, period="year",
+                           template="I can do {offer} prepaid")
+        proc, out = self.gate(case_id, draft)
+        self.assertEqual(proc.returncode, 3, out)
+        self.assertIn("offer is at your limit", out["reasons"])
+        self.assertEqual(out["rendered"], "I can do $14,400/year prepaid")
+        proc, out = self.gate(case_id, draft, approved=True)
         self.assertEqual(proc.returncode, 0, out)
         self.assertEqual(out["rendered"], "I can do $14,400/year prepaid")
         proc, out = self.gate(

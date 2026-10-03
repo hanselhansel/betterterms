@@ -12,11 +12,12 @@
 - the patience budget is spent
 - the counterparty sincerely asks if it is an AI
 - the gate returns needs_approval: an irreversible action, coach mode
-  or autonomy 1 without `--approved`, or a review-scan hit on the
-  rendered draft (an off-allowlist character, a token mixing letters
-  and digits, a disallowed number, a listed money or commitment word,
-  text glued to a rendered amount, a value matching the floor only
-  after conversion, or a `never_disclose` term). Show the user the
+  or autonomy 1 without `--approved`, a `send` offer equal to the
+  floor, or a review-scan hit on the rendered draft (an
+  off-allowlist character, a token mixing letters and digits, a
+  disallowed number, a listed money or commitment word, text glued
+  to a rendered amount, a value matching the floor only after
+  conversion, or a `never_disclose` term). Show the user the
   rendered text and the plain-word reasons; only an explicit yes in
   this conversation earns `--approved`.
 

@@ -190,25 +190,42 @@ class AcceptConversionTest(PeriodCase):
 class FloorPeriodKeyTest(PeriodCase):
     def test_floor_period_key_declares_the_floor_period(self):
         # ``floor_period`` is the canonical key; the legacy ``period``
-        # key on the plan still works.
+        # key on the plan still works. A 720/year offer converts to
+        # the 60/month floor exactly: inside the band, but on send it
+        # is the walk-away number, so it routes to the user.
         for key in ("floor_period", "period"):
             with self.subTest(key=key):
                 plan = dict(
                     plan_for("pay", 60, target=50), **{key: "month"}
                 )
                 case_id = self.make_case(floor=60, plan=plan)
-                proc, out = self.gate(
-                    case_id,
-                    send_draft(offer=720, period="year",
-                               template="I can do {offer}"),
+                draft = send_draft(offer=720, period="year",
+                                   template="I can do {offer}")
+                proc, out = self.gate(case_id, draft)
+                self.assertEqual(proc.returncode, 3, out)
+                self.assertEqual(out["rendered"], "I can do $720/year")
+                self.assertIn(
+                    "offer is at your limit", out["reasons"]
                 )
+                proc, out = self.gate(case_id, draft, approved=True)
                 self.assertEqual(proc.returncode, 0, out)
                 self.assertEqual(out["rendered"], "I can do $720/year")
 
+    # Extended by /ship coverage audit (pass 2): the ladder row.
+    # Value: protects=an unrendered ladder entry with a bad period is a
+    #   broken plan (exit 2), like a bad floor, option or fact period;
+    # fails_when=check_plan_limits stops validating ladder periods, so the
+    #   bad entry passes until some later draft renders it;
+    # why_new=only floor, option and fact bad periods were pinned; seam=none
     def test_invalid_floor_period_exits_2(self):
-        for key in ("floor_period", "period"):
+        bad_ladder = [{"value": 1000, "reason": "r", "period": "weekly"}]
+        for key, extra in (
+            ("floor_period", {"floor_period": "weekly"}),
+            ("period", {"period": "weekly"}),
+            ("ladder", {"ladder": bad_ladder}),
+        ):
             with self.subTest(key=key):
-                plan = dict(plan_for("pay", 1200), **{key: "weekly"})
+                plan = dict(plan_for("pay", 1200), **extra)
                 case_id = self.make_case(plan=plan)
                 proc, out = self.gate(case_id, send_draft(template="hi"))
                 self.assertEqual(proc.returncode, 2, out)

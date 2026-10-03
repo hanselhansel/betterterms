@@ -59,12 +59,21 @@ class GateTest(BtTestCase):
         self.assertEqual(out["reasons"], [])
         self.assertEqual(out["rendered"], "could you do better on price")
 
-    def test_offer_at_floor_passes_and_renders(self):
-        # The user said the floor is acceptable, so an offer exactly at
-        # it is inside the band and {offer} may render it.
+    def test_offer_at_floor_needs_approval_and_renders(self):
+        # An offer exactly at the floor is inside the band, but on
+        # send it reveals the walk-away number, so it routes to the
+        # user; an explicit yes still renders it.
         case_id, _ = self.make_case(floor=1200)
         proc, out = self.gate(
             case_id, send_draft(offer=1200, template="my best is {offer}")
+        )
+        self.assertEqual(proc.returncode, 3, out)
+        self.assertIn("offer is at your limit", out["reasons"])
+        self.assertEqual(out["rendered"], "my best is $1,200")
+        proc, out = self.gate(
+            case_id,
+            send_draft(offer=1200, template="my best is {offer}"),
+            approved=True,
         )
         self.assertEqual(proc.returncode, 0, out)
         self.assertEqual(out["rendered"], "my best is $1,200")
@@ -284,6 +293,72 @@ class GateTest(BtTestCase):
         proc, out = self.gate(case_id, send_draft(offer=1300))
         self.assertEqual(proc.returncode, 1, out)
         self.assertIsNone(out["rendered"])
+
+    def test_send_offer_at_floor_needs_approval_both_directions(self):
+        # A send offer equal to the floor hands the counterparty the
+        # user's walk-away number: needs_approval in both directions,
+        # with a number-free reason, and an explicit yes sends it.
+        for direction, floor in (("pay", 1200), ("receive", 150000)):
+            with self.subTest(direction=direction):
+                case_id, _ = self.make_case(
+                    direction=direction, floor=floor
+                )
+                draft = send_draft(offer=floor, template="counter")
+                proc, out = self.gate(case_id, draft)
+                self.assertEqual(proc.returncode, 3, out)
+                self.assertEqual(out["result"], "needs_approval")
+                self.assertIn("offer is at your limit", out["reasons"])
+                self.assertFalse(
+                    any(any(c.isdigit() for c in r)
+                        for r in out["reasons"])
+                )
+                proc, out = self.gate(case_id, draft, approved=True)
+                self.assertEqual(proc.returncode, 0, out)
+
+    def test_send_offer_at_floor_after_period_conversion(self):
+        # floor 1200/month: a yearly or monthly offer landing on it
+        # after conversion routes to the user too.
+        plan = dict(plan_for("pay", 1200), period="month")
+        case_id, _ = self.make_case(floor=1200, plan=plan)
+        for offer, period in ((14400, "year"), (1200, "month")):
+            with self.subTest(offer=offer, period=period):
+                proc, out = self.gate(
+                    case_id,
+                    send_draft(offer=offer, period=period,
+                               template="counter"),
+                )
+                self.assertEqual(proc.returncode, 3, out)
+                self.assertIn("offer is at your limit", out["reasons"])
+
+    def test_send_offer_within_floor_tolerance_needs_approval(self):
+        case_id, _ = self.make_case(floor=1200)
+        proc, out = self.gate(
+            case_id, send_draft(offer=1200.004, template="counter")
+        )
+        self.assertEqual(proc.returncode, 3, out)
+        self.assertIn("offer is at your limit", out["reasons"])
+
+    def test_accept_sign_pay_at_floor_stay_allowed(self):
+        # Agreeing actions take a price already on the table, so an
+        # offer exactly on the floor stays in band: no at-limit hit,
+        # and an approved draft passes.
+        case_id, _ = self.make_case(floor=1200)
+        for action in ("accept", "sign", "pay"):
+            with self.subTest(action=action):
+                draft = send_draft(action=action, offer=1200,
+                                   template="let us proceed")
+                kw = {}
+                if action == "accept":
+                    kw["inbound"] = inbound_msg(offer=1200, text="x")
+                proc, out = self.gate(case_id, draft, **kw)
+                self.assertEqual(proc.returncode, 3, out)
+                self.assertNotIn(
+                    "offer is at your limit", out["reasons"]
+                )
+                proc, out = self.gate(
+                    case_id, draft, approved=True, **kw
+                )
+                self.assertEqual(proc.returncode, 0, out)
 
     def test_yaml11_booleans_in_lists_do_not_crash(self):
         # YAML 1.1 loads yes/no/on/off as booleans. A bool where a list

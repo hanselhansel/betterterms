@@ -132,14 +132,6 @@ def _date_parts(masked, toks, lower, years):
             parts[i] = True
         elif day and i > 0 and lower[i - 1] in wordlists.MONTH_WORDS:
             parts[i] = True
-        elif (
-            day
-            and i + 1 < len(toks)
-            and toks[i + 1][2].isdigit()
-            and years[i + 1]
-            and "," in masked[toks[i][1]:toks[i + 1][0]]
-        ):
-            parts[i] = True
     return parts
 
 

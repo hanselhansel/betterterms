@@ -215,8 +215,15 @@ def _resolve(tag, find, offer, offer_period, plan, plan_period, in_amounts):
                 find.fact_ids.add(arg)
                 # Hard blocks read the structured amount only; the
                 # fact text renders verbatim for the user and the
-                # review tier, never for a money parse.
+                # review tier, never for a money parse. An amount that
+                # is set but not a usable number is a blocking error,
+                # never a null: check_plan_limits exits 2 first, and a
+                # direct render must not treat it as absent either.
                 v = cases.num(item.get("amount"))
+                if item.get("amount") is not None and v is None:
+                    find.errors.append(
+                        f"{{fact:{arg}}} amount is not a number")
+                    return "", ""
                 has_amount = v is not None and math.isfinite(v)
                 if has_amount:
                     period = str(item.get("period") or "once").lower()

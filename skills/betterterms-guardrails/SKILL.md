@@ -43,8 +43,9 @@ Exit codes and results:
   reason is generic; do not redraft toward a guessed limit, escalate
   to the user. On any other block, redraft without the blocked content.
 - 2: usage or file error. Fix the call.
-- 3, `needs_approval`: the action is irreversible, or coach mode,
-  autonomy level 1, or the review scan flagged the rendered text.
+- 3, `needs_approval`: the action is irreversible, coach mode,
+  autonomy level 1, a `send` offer at the user's limit, or the
+  review scan flagged the rendered text.
   Show the user the `rendered` text and the plain-word reasons, ask
   for an explicit yes, then re-run with `--approved`.
 
@@ -81,9 +82,10 @@ Hard blocks, in order:
    `accept` needs an in-band inbound offer equal to the draft offer,
    both read in the floor's period.
 7. Any rendered placeholder value equal to the floor: block, except
-   the in-band offer itself (an offer exactly at the floor is
-   allowed). A value equal only to the floor's x12 or /12 conversion
-   routes to the user instead: "amount matches a converted limit".
+   the in-band offer itself (an offer exactly at the floor is inside
+   the band, but on `send` it routes to the user). A value equal
+   only to the floor's x12 or /12 conversion routes to the user
+   instead: "amount matches a converted limit".
    A price value (target, ladder, price option, quote or fact amount
    not on `send`) worse than the floor blocks too. A fact's value is
    its structured `amount` (period-converted from its declared
@@ -130,11 +132,15 @@ that carries no numbers:
   characters stripped; numeric items match as whole numbers only.
 - A rendered non-offer value equal to the floor only after an x12 or
   /12 conversion.
+- A `send` draft offer equal to the floor after conversion to the
+  floor's period: "offer is at your limit". Sending it reveals the
+  walk-away number. `accept`, `sign` and `pay` may sit exactly on
+  the floor because they take a price already on the table.
 
 The word lists live in `scripts/btlib/wordlists.py`, the single
 module the runtime and this file share:
 
-number words: eight, eighteen, eighty, eleven, fifteen, fifty, five, forty, four, fourteen, nil, nine, nineteen, ninety, oh, one, ought, seven, seventeen, seventy, six, sixteen, sixty, ten, thirteen, thirty, three, twelve, twenty, two, zero
+number words: eight, eighteen, eighty, eleven, fifteen, fifty, five, forty, four, fourteen, nine, nineteen, ninety, one, seven, seventeen, seventy, six, sixteen, sixty, ten, thirteen, thirty, three, twelve, twenty, two, zero
 scale words: billion, billions, bn, hundred, hundreds, k, m, mil, million, millions, mm, thou, thousand, thousands, trillion, trillions
 currency codes: AED, AUD, BRL, CAD, CHF, CNH, CNY, CZK, DKK, EUR, GBP, HKD, HUF, IDR, ILS, INR, JPY, KRW, MXN, MYR, NOK, NZD, PHP, PLN, RUB, SAR, SEK, SGD, THB, TRY, TWD, USD, VND, ZAR
 currency words: aed, aud, brl, buck, bucks, chf, cnh, cny, czk, dkk, dollar, dollars, eur, euro, euros, gbp, grand, hkd, huf, idr, ils, inr, jpy, krw, mxn, myr, nok, nzd, php, pln, pound, pounds, quid, renminbi, sar, sek, sgd, thb, twd, usd, vnd, yen, yuan, zar
@@ -150,9 +156,11 @@ Gate and score exit 2 when the brief `direction` is not `pay` or
 `receive`, when `mode` is not `act` or `coach` (case-insensitive), when
 `autonomy` is not an integer 1 to 4, when the case id is not
 `[a-z0-9-]`, when the floor is missing or invalid (gate blocks
-instead), or when a plan `price` value in the floor's declared period
-sits outside the band ("plan conflicts with your limits"). Options
-with `kind` `bonus` or `fee` are not offers and skip the check.
+instead), when a fact `amount` is neither a number nor null or a
+fact `period` is outside `once|month|year`, or when a plan `price`
+value in the floor's declared period sits outside the band ("plan
+conflicts with your limits"). Options with `kind` `bonus` or `fee`
+are not offers and skip the check.
 
 The scorer (`bt.py score`) reports a band: `at_or_above_target`,
 `in_band`, `near_floor` (within 10% of the floor), `below_floor`, or

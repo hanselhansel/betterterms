@@ -22,7 +22,10 @@ A. Facts in `plan.yaml` carry `{id, text, source, amount, period}`.
    the floor in an agreeing context, which is any action but
    `send`) reads only the structured amount, converted from the
    fact's own period to the floor's. The gate never runs money
-   parsing on fact text.
+   parsing on fact text. A fact id in `claims` that no `{fact:id}`
+   placeholder renders is checked only for membership in
+   `plan.facts`; its `amount` joins no floor comparison because its
+   text is not sent.
 
 B. The review tier (`needs_approval`, never a silent pass) is
    stricter and simple, over the rendered text with non-fact
@@ -63,3 +66,16 @@ game of enumerating spellings stays over. The skills record
 `amount` and `period` on every fact that states money; a fact that
 states money without them still sends, but only after the user
 sees it.
+
+## Amendment (2026-10-04): a send offer at the floor routes to the user
+
+An offer exactly at the floor is inside the band, so it rendered
+like any other in-band price. On `send` the offer is the
+counter-offer on the table, though: sending it hands the
+counterparty the user's walk-away number. A `send` draft whose
+offer equals the floor, compared in the floor's declared period
+within the comparison tolerance, is now `needs_approval` with the
+number-free reason "offer is at your limit"; an explicit
+`--approved` still sends it. `accept`, `sign` and `pay` are
+unchanged: they may sit exactly on the floor because they take a
+price already on the table.

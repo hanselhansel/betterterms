@@ -20,7 +20,7 @@ in the open Agent Skills format; promptfoo 0.123 for evals; Node only for the mo
 
 **Spec:** `docs/specs/2026-10-03-betterterms-design.md`,
 `docs/specs/2026-10-03-betterterms-negotiation-procedure.md`. Deviations are recorded in
-`docs/decisions/` (0001 to 0009) and summarized at the end of this plan.
+`docs/decisions/` (0001 to 0010) and summarized at the end of this plan.
 
 ## Global Constraints
 
