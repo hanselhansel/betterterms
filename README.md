@@ -4,3 +4,11 @@ betterterms is a cross-agent negotiation toolkit: skills that help your agent pr
 
 - [docs/specs/2026-10-03-betterterms-design.md](docs/specs/2026-10-03-betterterms-design.md)
 - [docs/specs/2026-10-03-betterterms-negotiation-procedure.md](docs/specs/2026-10-03-betterterms-negotiation-procedure.md)
+
+## Development
+
+Run the full local verify before every PR. It runs the unit tests and every repo check:
+
+```bash
+python3 scripts/verify
+```
