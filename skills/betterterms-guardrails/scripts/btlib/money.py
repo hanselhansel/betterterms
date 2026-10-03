@@ -1,10 +1,11 @@
 """Money amount extraction for the gate and scorer.
 
 ``amounts(text)`` returns every numeric amount mentioned: currency-marked
-(``$1,200``, ``USD 1200``, ``S$1,200``, ``1200 dollars``), suffixed
-(``1.2k``, ``5m``), bare numbers (``1200.00``) and spelled-out numbers up
-to the billions (``twelve hundred``, ``one thousand two hundred``,
-``two million``).
+(``$1,200``, ``USD 1200``, ``S$1,200``, ``1200 dollars``, ``1200 EUR``),
+suffixed (``1.2k``, ``5m``, ``5mm``, ``2bn``), digits plus a scale word
+(``1.5 thousand``, ``12 hundred``, ``$1.2 million``), bare numbers
+(``1200.00``) and spelled-out numbers up to the billions
+(``twelve hundred``, ``one thousand two hundred``, ``two million``).
 
 ``find(text)`` returns :class:`Amount` records with a ``marked`` flag.
 Marked means the amount looked like money (currency prefix or suffix,
@@ -22,22 +23,6 @@ _NUM = r"\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?"
 _CODES = r"USD|EUR|GBP|JPY|CHF|SGD|AUD|CAD|HKD|NZD|INR|ZAR|SEK|NOK|DKK"
 _PREFIX = rf"(?:[A-Za-z]{{1,3}}\$|[$€£₹¥]|{_CODES})\s*"
 _SUFFIX = rf"(?:{_CODES}|dollars?|bucks|quid)\b"
-_MULT = {"k": 1e3, "m": 1e6, "b": 1e9, "bn": 1e9}
-
-_MARKED = re.compile(
-    rf"(?<![\w.]){_PREFIX}(?P<num>{_NUM})(?P<mult>k|m|b|bn)?\b(?:\s*{_SUFFIX})?",
-    re.IGNORECASE,
-)
-_SUFFIXED = re.compile(
-    rf"(?<![\w.])(?P<num>{_NUM})(?P<mult>k|m|b|bn)\b(?:\s*{_SUFFIX})?"
-    rf"|(?<![\w.])(?P<num2>{_NUM})\s*{_SUFFIX}",
-    re.IGNORECASE,
-)
-_DIGIT_SCALE = re.compile(
-    rf"(?<![\w.])(?P<num>{_NUM})\s*(?P<scale>thousand|million|billion)\b",
-    re.IGNORECASE,
-)
-_BARE = re.compile(rf"(?<![\w.,])(?:{_NUM})(?![\w])")
 
 _UNITS = {
     "zero": 0, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
@@ -50,6 +35,29 @@ _TENS = {
     "sixty": 60, "seventy": 70, "eighty": 80, "ninety": 90,
 }
 _SCALES = {"hundred": 100, "thousand": 1000, "million": 10**6, "billion": 10**9}
+# Multipliers after a number: the scale words plus the compact suffixes,
+# so "5mm", "2bn" and "$1.2 million" all scale the number they follow.
+_MULT = {**_SCALES, "k": 1e3, "m": 1e6, "mm": 1e6, "b": 1e9, "bn": 1e9}
+_MULT_RE = "|".join(sorted(_MULT, key=len, reverse=True))
+_SCALE_RE = "|".join(sorted(_SCALES, key=len, reverse=True))
+
+# A currency-marked number may carry a multiplier after it: "$1.2
+# million" is one marked 1,200,000, never a stray 1.2 next to a million.
+_MARKED = re.compile(
+    rf"(?<![\w.]){_PREFIX}(?P<num>{_NUM})(?:\s*(?P<mult>{_MULT_RE}))?\b"
+    rf"(?:\s*{_SUFFIX})?",
+    re.IGNORECASE,
+)
+_SUFFIXED = re.compile(
+    rf"(?<![\w.])(?P<num>{_NUM})(?P<mult>{_MULT_RE})\b(?:\s*{_SUFFIX})?"
+    rf"|(?<![\w.])(?P<num2>{_NUM})\s*{_SUFFIX}",
+    re.IGNORECASE,
+)
+_DIGIT_SCALE = re.compile(
+    rf"(?<![\w.])(?P<num>{_NUM})\s*(?P<scale>{_SCALE_RE})\b",
+    re.IGNORECASE,
+)
+_BARE = re.compile(rf"(?<![\w.,])(?:{_NUM})(?![\w])")
 _WORD = "|".join(sorted(set(_UNITS) | set(_TENS) | set(_SCALES) | {"a", "an", "and"}, key=len, reverse=True))
 _SPELLED = re.compile(rf"\b(?:{_WORD})(?:[\s-]+(?:{_WORD}))*", re.IGNORECASE)
 _AFTER_CURRENCY_WORD = re.compile(rf"\s*{_SUFFIX}", re.IGNORECASE)

@@ -2,7 +2,7 @@
 
 ## Dev tooling (scripts/)
 
-Deferred from the step 1 ship (owner decision pending), to fix first in step 2.
+Deferred from the step 1 ship (owner approved 2026-10-03), to fix first in step 2.
 
 ## Completed
 

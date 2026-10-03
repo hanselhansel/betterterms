@@ -27,8 +27,9 @@ The full turn procedure is in `references/turn-procedure.md`. Follow it.
 - `inbound.yaml` in the case folder: `{offer, text}` for this turn, where
   `offer` is a number or null.
 - `draft.yaml`: `{action, offer, text, claims}`, where `action` is one of
-  `send`, `accept`, `cancel`, `pay`, `sign`, `dispute` and `claims` lists
-  fact ids from `plan.yaml`.
+  `send`, `accept`, `cancel`, `pay`, `sign`, `dispute`, `offer` is a
+  plain number or null (never a string like "$1,250"), and `claims`
+  lists fact ids from `plan.yaml`.
 - One appended entry per message in `thread.md`, stamped `in` or `out`
   with ISO time and `approved_by_user: yes|no`.
 

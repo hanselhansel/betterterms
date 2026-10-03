@@ -124,7 +124,8 @@ def create_case(pack, mode="act", direction="pay"):
 
 def parse_number(text):
     """Parse a single amount from text like ``1200``, ``$1,200.00``,
-    ``USD 1200``. Raises BtError unless exactly one number is present."""
+    ``USD 1200``. Raises BtError unless exactly one number is present.
+    The rejected input is never echoed: it may hold the floor."""
     s = text.strip()
     try:
         return float(s.replace(",", ""))
@@ -133,7 +134,7 @@ def parse_number(text):
     found = money.amounts(s)
     if len(found) == 1:
         return found[0]
-    raise BtError(f"expected a single number, got {s!r}")
+    raise BtError("floor must be a single number")
 
 
 def as_list(value):

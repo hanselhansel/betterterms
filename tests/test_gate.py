@@ -54,12 +54,18 @@ class GateTest(BtTestCase):
         self.assertEqual(out["result"], "pass")
         self.assertEqual(out["reasons"], [])
 
+    # Extended by /ship coverage audit: the "12 hundred" row.
+    # Value: protects=the floor written as digits plus "hundred" blocks as a
+    # disclosure; fails_when=money.find keeps reading "12 hundred" as 12 and
+    # 100; why_new=rows cover digits, k-suffix and fully spelled forms only;
+    # seam=none
     def test_gate_blocks_floor_variants(self):
         variants = [
             "my max is $1,200",
             "I can go up to 1.2k",
             "the number is 1200.00",
             "twelve hundred is my limit",
+            "I can stretch to 12 hundred",
         ]
         for text in variants:
             with self.subTest(text=text):
