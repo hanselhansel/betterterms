@@ -176,6 +176,153 @@ class QuoteAndPeriodTest(ProbeTest):
         self.assertIn(LIMITS, out["reasons"])
 
 
+class Pass3ProbeTest(ProbeTest):
+    """The pass-3 probe list from the gate-scope decision: every probe
+    is either a hard block (structural) or needs_approval (textual),
+    never a silent pass."""
+
+    def review(self, case_id, draft, **kw):
+        proc, out = self.gate(case_id, draft, **kw)
+        self.assertEqual(proc.returncode, 3, out)
+        self.assertEqual(out["result"], "needs_approval")
+        self.assertIsNotNone(out["rendered"])
+        return out
+
+    def test_digit_adjacent_to_offer_output(self):
+        # "{offer}0" merges a literal digit into the rendered amount:
+        # "$1,100" plus a stray 0 reads as another number.
+        case_id = self.make_case()
+        out = self.review(
+            case_id, send_draft(template="I can do {offer}0 today")
+        )
+        self.assertIn("digit", " ".join(out["reasons"]))
+
+    def test_empty_fact_joiners(self):
+        # A fact whose text is only invisible joiners still adds
+        # invisible characters to the rendered message.
+        case_id = self.make_case(
+            plan={
+                "target": 1000, "options": [], "ladder": [],
+                "facts": [{"id": "fz", "text": "‌‌", "source": "x"}],
+            }
+        )
+        out = self.review(
+            case_id, send_draft(template="see {fact:fz} soon")
+        )
+        self.assertEqual(out["result"], "needs_approval")
+
+    def test_invisible_chars_inside_digits_and_accept(self):
+        case_id = self.make_case()
+        for template in (
+            "pay 12­00 now",
+            "pay 12⁣00 now",
+            "pay 12‎00 now",
+            "I ac­cept that",
+            "I acc⁣ept that",
+            "I ac‎cept that",
+        ):
+            with self.subTest(template=template.encode("unicode_escape")):
+                out = self.review(
+                    case_id, send_draft(template=template)
+                )
+                self.assertIn(
+                    "invisible", " ".join(out["reasons"]).lower()
+                )
+
+    def test_fact_with_accept_and_price_needs_approval(self):
+        case_id = self.make_case(
+            plan={
+                "target": 1000, "options": [], "ladder": [],
+                "facts": [
+                    {"id": "fx", "text": "I accept their $1,500 offer",
+                     "source": "x"},
+                ],
+            }
+        )
+        out = self.review(
+            case_id, send_draft(template="they wrote {fact:fx}")
+        )
+        self.assertEqual(out["result"], "needs_approval")
+
+    def test_twelve_fifty_needs_approval(self):
+        case_id = self.make_case()
+        out = self.review(
+            case_id, send_draft(template="how about twelve fifty")
+        )
+        self.assertEqual(out["result"], "needs_approval")
+
+    def test_lowercase_currency_code_needs_approval(self):
+        case_id = self.make_case()
+        out = self.review(
+            case_id, send_draft(template="call it 12 usd flat")
+        )
+        self.assertIn("currency", " ".join(out["reasons"]))
+
+    def test_happy_to_pay_quote_process_it(self):
+        case_id = self.make_case()
+        out = self.review(
+            case_id,
+            send_draft(
+                template="Happy to pay {quote:1}, please process it"
+            ),
+            inbound=inbound_msg(text="we charge $1,100",
+                                amounts=[1100]),
+        )
+        self.assertIn("commitment", " ".join(out["reasons"]))
+
+    def test_bonus_fee_options_floor_rules(self):
+        # Bonus and fee options are exempt from the worse-than-floor
+        # comparison but may not render a value equal to the floor.
+        plan = {
+            "target": 1000,
+            "options": [
+                {"label": "signup", "value": 1200, "kind": "bonus"},
+                {"label": "shipping", "value": 1500, "kind": "fee"},
+                {"label": "annual", "value": 950, "kind": "price"},
+            ],
+            "ladder": [], "facts": [],
+        }
+        case_id = self.make_case(plan=plan)
+        out = self.blocked(
+            case_id, send_draft(template="keep the {option:signup}")
+        )
+        self.assertIn(LIMITS, out["reasons"])
+        # A fee above the floor renders masked, so the send passes.
+        proc, out = self.gate(
+            case_id, send_draft(template="the {option:shipping} stays")
+        )
+        self.assertEqual(proc.returncode, 0, out)
+        self.assertIn("$1,500", out["rendered"])
+
+    def test_once_offer_against_month_floor(self):
+        # Floor declared monthly; a once offer cannot convert, so the
+        # raw values compare.
+        plan = dict(PLAN_BILLS, period="month")
+        case_id = self.make_case(plan=plan)
+        out = self.blocked(
+            case_id,
+            send_draft(offer=14400, period="once",
+                       template="I can do {offer} prepaid"),
+        )
+        self.assertIn(LIMITS, out["reasons"])
+        proc, out = self.gate(
+            case_id,
+            send_draft(offer=1100, period="once",
+                       template="I can do {offer} prepaid"),
+        )
+        self.assertEqual(proc.returncode, 0, out)
+
+    def test_month_offer_against_once_floor(self):
+        # Floor declared once; a monthly offer compares raw.
+        case_id = self.make_case()
+        proc, out = self.gate(
+            case_id,
+            send_draft(offer=1100, period="month",
+                       template="I can do {offer}"),
+        )
+        self.assertEqual(proc.returncode, 0, out)
+
+
 class TemplateShapeTest(ProbeTest):
     def test_non_string_template_blocks(self):
         case_id = self.make_case()

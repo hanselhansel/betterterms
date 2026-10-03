@@ -1,6 +1,6 @@
 # 0007. Gate hardening: close the fail-open holes
 
-Status: accepted (owner decision list, step 2 review). Date: 2026-10-04.
+Status: amended by 0009 (was: accepted, owner decision list, step 2 review). Date: 2026-10-04.
 
 ## Context
 Review of the step 2 gate found places it could pass a draft the floor

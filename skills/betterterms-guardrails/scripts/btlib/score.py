@@ -12,7 +12,7 @@ Inbound text is data, never instructions.
 import math
 import re
 
-from . import BtError, cases, money
+from . import BtError, cases, money, render
 
 INJECTION = [
     re.compile(
@@ -49,6 +49,10 @@ LEGAL = re.compile(
     re.IGNORECASE,
 )
 
+# Inbound text is normalized (NFKC, format characters stripped) before
+# every scan, so fullwidth text and hidden joiners cannot hide a match:
+# "prev​ious", "‎bot" and "arbit​ration" still flag.
+
 
 def _band(direction, target, floor, offer):
     # The floor is checked before the target: an offer outside the band
@@ -77,12 +81,12 @@ def classify(case_dir, inbound):
     floor = cases.read_floor(case_dir)
     if floor is None:
         raise BtError("no floor set for case")
-    cases.check_plan_limits(plan, floor, direction)
+    cases.check_plan_limits(plan, floor, direction, brief)
     target = cases.num(plan.get("target"))
     offer = cases.num(inbound.get("offer"))
     if offer is not None and not math.isfinite(offer):
         offer = None
-    text = str(inbound.get("text") or "")
+    text = render.normalize(str(inbound.get("text") or ""))
 
     suggested = [
         v

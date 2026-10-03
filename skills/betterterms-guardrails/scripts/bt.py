@@ -116,7 +116,7 @@ def build_parser():
     p_gate.add_argument("case_id")
     p_gate.add_argument("--draft", required=True, help="path to draft.yaml")
     p_gate.add_argument("--approved", action="store_true")
-    p_gate.add_argument("--inbound", help="path to inbound.yaml this draft answers; amounts in it count as traced")
+    p_gate.add_argument("--inbound", help="path to inbound.yaml this draft answers; {quote:n} placeholders and accept checks read it")
     p_gate.set_defaults(fn=cmd_gate)
 
     p_score = sub.add_parser("score", help="score an inbound message")

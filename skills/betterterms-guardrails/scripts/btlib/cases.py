@@ -243,6 +243,16 @@ def plan_period(plan):
     return p
 
 
+def floor_period(plan, brief):
+    """The period the floor is expressed in: the plan's ``period``,
+    else the brief's, default ``once``. A plan value without its own
+    ``period`` is read in this period as well."""
+    for doc in (plan, brief):
+        if isinstance(doc, dict) and doc.get("period") is not None:
+            return plan_period(doc)
+    return "once"
+
+
 def option_kind(item):
     """An option's ``kind``: bonus, fee or price. Only ``price`` options
     are offers checked against the floor."""
@@ -254,17 +264,18 @@ def option_kind(item):
     return k
 
 
-def check_plan_limits(plan, floor, direction):
+def check_plan_limits(plan, floor, direction, brief=None):
     """A plan value worse than the floor was built against a different
-    limit and must not be negotiated. Only values expressed in the plan
-    period conflict: a yearly option next to a monthly floor is a
-    different unit, not a violation. Options with ``kind`` bonus or fee
-    are not offers and skip the check entirely. Raises BtError with a
-    message that carries no numbers. Skipped when no valid floor
-    exists; that failure is reported by the caller's own floor rule."""
+    limit and must not be negotiated. Only values expressed in the
+    floor's declared period conflict: a yearly option next to a
+    monthly floor is a different unit, not a violation. Options with
+    ``kind`` bonus or fee are not offers and skip the check entirely.
+    Raises BtError with a message that carries no numbers. Skipped
+    when no valid floor exists; that failure is reported by the
+    caller's own floor rule."""
     if floor is None:
         return
-    period = plan_period(plan)
+    period = floor_period(plan, brief)
     values = [num(plan.get("target"))]
     for item in as_list(plan.get("options")):
         if isinstance(item, dict) and option_kind(item) == "price":

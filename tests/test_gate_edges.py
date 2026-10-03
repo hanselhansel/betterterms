@@ -182,7 +182,7 @@ class GateEdgeTest(BtTestCase):
         proc, out = self.gate(
             case_id, send_draft(template="not $55, I said not $55"),
         )
-        self.assertEqual(proc.returncode, 1, out)
+        self.assertEqual(proc.returncode, 3, out)
         money_reasons = [
             r for r in out["reasons"] if "currency" in r or "money" in r
         ]

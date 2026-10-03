@@ -1,6 +1,6 @@
 # 0008. Structured amounts: drafts render placeholders, not free-text money
 
-Status: accepted (owner decision, step 2 rework). Date: 2026-10-05.
+Status: amended by 0009 (was: accepted, owner decision, step 2 rework). Date: 2026-10-05.
 
 ## Context
 ADR 0007 hardened the gate around a free-text `draft.text`: money

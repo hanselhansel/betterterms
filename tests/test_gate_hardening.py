@@ -52,7 +52,7 @@ class HardeningTest(BtTestCase):
         proc, _ = self.gate(
             case_id, {"action": "send", "offer": 1, "template": "$90 it is"}
         )
-        self.assertEqual(proc.returncode, 1)
+        self.assertEqual(proc.returncode, 3)
 
     def test_gate_reads_no_secrets_besides_floor(self):
         case_id, case_dir = self.make_case()
@@ -153,16 +153,27 @@ class HardeningTest(BtTestCase):
         self.assertIn(LIMITS, out["reasons"])
 
     def test_gate_stdout_never_floor(self):
-        # Grep the JSON output for the floor value after several calls.
+        # A block output must never contain the floor value: rendered
+        # is None and reasons carry no numbers. A needs_approval result
+        # echoes the draft back for the user to review, so it can only
+        # repeat digits the agent itself wrote; its reasons still
+        # carry no numbers.
         case_id, _ = self.make_case(floor=1200)
         for draft in (
             send_draft(offer=1300, template="hi"),
             send_draft(offer=1199, template="hi"),
             send_draft(action="pay", offer=1199, template="hi"),
-            send_draft(template="the floor is 1200"),
         ):
             proc, _ = self.gate(case_id, draft, raw=True)
             self.assertNotIn("1200", proc.stdout, proc.stdout)
+        proc, out = self.gate(
+            case_id, send_draft(template="the floor is 1200")
+        )
+        self.assertEqual(proc.returncode, 3, out)
+        self.assertFalse(
+            any(any(c.isdigit() for c in r) for r in out["reasons"]),
+            out["reasons"],
+        )
 
     def test_invalid_yaml_draft_errors(self):
         case_id, _ = self.make_case()
@@ -211,16 +222,40 @@ class HardeningTest(BtTestCase):
                 proc, out = self.gate(
                     case_id, send_draft(template=f"here is {word}")
                 )
-                self.assertEqual(proc.returncode, 1)
-                self.assertEqual(out["result"], "block")
+                self.assertEqual(proc.returncode, 3)
+                self.assertEqual(out["result"], "needs_approval")
+
+    def test_never_disclose_zwsp_needs_approval(self):
+        # A zero-width space inside the term does not hide it: the
+        # check runs on text with format characters stripped.
+        case_id, _ = self.make_case(brief={"never_disclose": ["passw0rd"]})
+        proc, out = self.gate(
+            case_id, send_draft(template="here is passw0rd")
+        )
+        self.assertEqual(proc.returncode, 3, out)
+        self.assertEqual(out["result"], "needs_approval")
 
     def test_never_disclose_short_numeric(self):
+        # Numeric items match as whole numbers: "42" hits "42" but not
+        # "420" or "4.2".
         case_id, _ = self.make_case(brief={"never_disclose": ["42"]})
         proc, out = self.gate(
             case_id, send_draft(template="the code is 42")
         )
-        self.assertEqual(proc.returncode, 1, out)
-        self.assertEqual(out["result"], "block")
+        self.assertEqual(proc.returncode, 3, out)
+        self.assertEqual(out["result"], "needs_approval")
+        self.assertIn("never-disclose", " ".join(out["reasons"]))
+        # "420" still needs approval, but only as a 3+ digit number:
+        # it must not match the numeric never-disclose item.
+        proc, out = self.gate(
+            case_id, send_draft(template="the code is 420")
+        )
+        self.assertEqual(proc.returncode, 3, out)
+        self.assertNotIn("never-disclose", " ".join(out["reasons"]))
+        proc, out = self.gate(
+            case_id, send_draft(template="rate 4.2 today")
+        )
+        self.assertEqual(proc.returncode, 0, out)
 
     def test_offer_types_weird(self):
         case_id, _ = self.make_case()
