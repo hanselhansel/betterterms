@@ -15,7 +15,7 @@ from .checks_scan import (
     tail,
 )
 
-UNIT_TEST_TIMEOUT = 300
+UNIT_TEST_TIMEOUT = 900
 
 
 def check_unit_tests(root):

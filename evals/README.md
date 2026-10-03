@@ -48,8 +48,8 @@ and after every prompt change and record the pass rate in the PR.
 
 The holdout suite never lives in the repo. A separate agent writes its
 cases and config outside the tree at `$BETTERTERMS_HOLDOUT` (default
-`~/.betterterms-holdout/`, symlinked from `evals/holdout/` if wanted)
-and reports only a pass rate. Holdout cases exist so dev cases cannot
+`~/.betterterms-holdout/`; `evals/holdout` is gitignored so a stray
+copy never ships) and reports only a pass rate. Holdout cases exist so dev cases cannot
 overfit: a prompt change that lifts dev but sinks holdout is not a win.
 
 ## How to run
