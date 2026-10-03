@@ -3,12 +3,11 @@
 import re
 
 from .checks_scan import (
-    BinaryFileError,
     file_list,
     is_internal_doc,
     is_vendor,
     join,
-    read_text,
+    texts,
 )
 
 MAX_SOURCE_LINES = 400
@@ -23,27 +22,6 @@ LOCAL_PATH = re.compile(
     r"|~/[A-Za-z0-9_]"
     r"|(?i:[A-Za-z]:[/\\]Users[/\\])"
 )
-
-
-def texts(root, bad, skip):
-    """Yield (rel, text) for every scanned file that skip(rel) accepts
-    and that decodes as UTF-8 text. Unreadable and binary files yield
-    nothing; a file that fails UTF-8 decoding, or that holds binary
-    bytes under a text name, appends '{rel}: ...' to bad instead."""
-    for p in file_list(root):
-        rel = p.relative_to(root)
-        if skip(rel):
-            continue
-        try:
-            text = read_text(p, rel)
-        except BinaryFileError:
-            bad.append(f"{rel}: binary content in a text file")
-            continue
-        except UnicodeDecodeError:
-            bad.append(f"{rel}: not valid UTF-8")
-            continue
-        if text is not None:
-            yield rel, text
 
 
 def check_no_bin(root):

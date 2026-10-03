@@ -4,12 +4,12 @@ import json
 import re
 
 from . import miniyaml
-from .checks_files import texts
 from .checks_scan import (
     file_list,
     is_internal_doc,
     is_vendor,
     join,
+    texts,
 )
 
 # "leverag\w*" bans every form of "leverage": the noun as well as the

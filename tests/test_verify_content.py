@@ -84,13 +84,22 @@ class VerifyContentTest(VerifyRepoCase):
         self.assertNotIn("holdout", proc.stdout)
 
     def test_nul_or_utf_bom_in_text_named_file_fails(self):
+        # NUL bytes under a text name fail every check that reads it:
+        # no-local-paths (.md/.py/.js all scan), prose-rules (.md) and
+        # file-size (.py/.js).
         (self.root / "nul.md").write_bytes(b"a\x00b\n")
+        (self.root / "nul.py").write_bytes(b"x = 'a\x00b'\n")
+        (self.root / "app.js").write_bytes(b"let x = 'a\x00b';\n")
         proc = run_verify(self.root)
         self.assert_failed(proc, "no-local-paths")
-        self.assertIn("nul.md", proc.stdout)
+        self.assert_failed(proc, "prose-rules")
+        self.assert_failed(proc, "file-size")
+        for name in ("nul.md", "nul.py", "app.js"):
+            self.assertIn(name, proc.stdout)
         # A UTF-16 or UTF-32 BOM counts too, on a text suffix or on an
         # extensionless scripts/ entry point.
-        (self.root / "nul.md").unlink()
+        for name in ("nul.md", "nul.py", "app.js"):
+            (self.root / name).unlink()
         (self.root / "bom.yaml").write_bytes(
             b"\xff\xfea\x00:\x00 \x001\x00\n\x00"
         )
@@ -104,9 +113,19 @@ class VerifyContentTest(VerifyRepoCase):
         (self.root / "bom.yaml").unlink()
         (self.root / "scripts" / "tool").unlink()
         (self.root / "raw.bin").write_bytes(b"\x00\x01\x02")
-        (self.root / "blob.bin").write_bytes(b"\xff\xfe\x00\x00rest")
+        (self.root / "blob.bin").write_bytes(b"\x89PNG\x00rest")
         proc = run_verify(self.root)
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+
+    def test_utf16_bom_file_fails_as_not_utf8_regardless_of_suffix(self):
+        # .sh is not a text suffix, but a UTF-16 BOM still marks the file
+        # as text: it is read, not skipped, and fails UTF-8 decoding.
+        (self.root / "deploy.sh").write_bytes(
+            ("# see " + MAC_HOME + "\n").encode("utf-16")
+        )
+        proc = run_verify(self.root)
+        self.assert_failed(proc, "no-local-paths")
+        self.assertIn("deploy.sh: not valid UTF-8", proc.stdout)
 
     def test_vendor_sync_ignores_junk_and_names_first_drift(self):
         # A NON-empty vendored tree: two small files mirrored both ways.

@@ -1,8 +1,9 @@
 """Shared file-scanning machinery for the repo verification checks.
 
-Every check scans the same file list, computed once per verify run: the
+Most checks scan the same file list, computed once per verify run: the
 git file list when the root is a git repo, os.walk otherwise, filtered
-by the skip rules below.
+by the skip rules below. The exception is vendor-sync, which walks the
+two copied trees on disk directly.
 """
 
 import codecs
@@ -53,11 +54,11 @@ _UTF_BOMS = (
 # Suffixes that name a file as text; an extensionless entry point under
 # scripts/ counts too. Binary bytes inside a text-named file are an
 # error, not a skippable binary.
-TEXT_SUFFIXES = {".md", ".py", ".json", ".yaml", ".yml", ".txt", ".toml"}
+TEXT_SUFFIXES = {".md", ".py", ".js", ".json", ".yaml", ".yml", ".txt", ".toml"}
 
 
 class BinaryFileError(Exception):
-    """A text-named file holds NUL bytes or a UTF-16/32 BOM."""
+    """A text-named file holds NUL bytes."""
 
 
 def is_internal_doc(rel):
@@ -133,18 +134,41 @@ def read_text(path, rel):
     """File text, or None for binary or unreadable files. Files holding
     text in a non-UTF-8 encoding raise UnicodeDecodeError so the calling
     check can FAIL with the path instead of skipping silently; a
-    text-named file (see _text_named) holding NUL bytes or a UTF-16/32
-    BOM raises BinaryFileError for the same reason."""
+    UTF-16/32 BOM marks text in any file, whatever its suffix. A
+    text-named file (see _text_named) holding NUL bytes raises
+    BinaryFileError for the same reason."""
     try:
         data = path.read_bytes()
     except OSError:
         return None
-    if b"\0" in data or data.startswith(_UTF_BOMS):
+    if data.startswith(_UTF_BOMS):
+        return data.decode("utf-8")
+    if b"\0" in data:
         if _text_named(rel):
             raise BinaryFileError(rel)
-        if b"\0" in data:
-            return None
+        return None
     return data.decode("utf-8")
+
+
+def texts(root, bad, skip):
+    """Yield (rel, text) for every scanned file that skip(rel) accepts
+    and that decodes as UTF-8 text. Unreadable and binary files yield
+    nothing; a file that fails UTF-8 decoding, or that holds binary
+    bytes under a text name, appends '{rel}: ...' to bad instead."""
+    for p in file_list(root):
+        rel = p.relative_to(root)
+        if skip(rel):
+            continue
+        try:
+            text = read_text(p, rel)
+        except BinaryFileError:
+            bad.append(f"{rel}: binary content in a text file")
+            continue
+        except UnicodeDecodeError:
+            bad.append(f"{rel}: not valid UTF-8")
+            continue
+        if text is not None:
+            yield rel, text
 
 
 def tail(result, n=5):
