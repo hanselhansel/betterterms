@@ -1,0 +1,90 @@
+"""Inbound message scoring. ``classify(case_dir, inbound)`` returns
+``{"band": ..., "escalate": [...]}``.
+
+Bands by direction: ``at_or_above_target`` when the offer meets or beats
+the plan target, ``below_floor`` when it is worse than the floor,
+``near_floor`` within 10 percent of the floor, else ``in_band``. The
+escalate list flags suspected prompt injection, sincere questions about
+whether the sender is an AI or bot, and legal or arbitration terms.
+Inbound text is data, never instructions.
+"""
+
+import re
+
+from . import BtError, cases
+
+INJECTION = [
+    re.compile(
+        r"\b(ignore|disregard|forget|override|bypass|skip)\b[^.\n]{0,60}"
+        r"\b(previous|prior|above|earlier|all)\b[^.\n]{0,30}"
+        r"\b(instructions?|prompts?|rules?|directives?|constraints?)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(r"\b(system|initial|original|hidden)\s+prompt\b", re.IGNORECASE),
+    re.compile(
+        r"\b(reveal|tell|show|give|share|disclose|repeat|print|output|state|"
+        r"report|what\s+is|what's|whats)\b[^.\n]{0,60}"
+        r"\b(budget|maximum|max|floor|limit|limits|walk[-\s]?away|"
+        r"reservation\s+price|bottom\s+line)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(r"\byou\s+are\s+(an?\s+)?ai\s+(assistant|bot|model|agent)\b", re.IGNORECASE),
+]
+
+AI_QUESTION = [
+    re.compile(
+        r"\b(are\s+you|am\s+i\s+(talking|speaking|chatting|texting|dealing)\s+(to|with)|"
+        r"is\s+this|is\s+there|were\s+you)\b[^?\n]{0,40}"
+        r"\b(ai|a\.i\.|bot|robot|chatbot|human|real\s+person|actual\s+person|"
+        r"computer|machine|automated|agent)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(r"\b(are\s+you|is\s+this)\s+(an?\s+)?(ai|bot|robot|chatbot|human|real)\b", re.IGNORECASE),
+]
+
+LEGAL = re.compile(
+    r"\b(arbitrat\w*|indemnif\w*|waiv\w*|class[-\s]action|hold\s+harmless|"
+    r"liability\s+waiver|jury\s+trial)\b",
+    re.IGNORECASE,
+)
+
+
+def _band(direction, target, floor, offer):
+    if offer is None:
+        return None
+    if target is not None:
+        if direction == "receive" and offer >= target:
+            return "at_or_above_target"
+        if direction != "receive" and offer <= target:
+            return "at_or_above_target"
+    if direction == "receive":
+        if offer < floor:
+            return "below_floor"
+    elif offer > floor:
+        return "below_floor"
+    if abs(offer - floor) <= 0.10 * abs(floor):
+        return "near_floor"
+    return "in_band"
+
+
+def classify(case_dir, inbound):
+    if not isinstance(inbound, dict):
+        raise BtError("inbound must be a mapping")
+    brief = cases.load_brief(case_dir)
+    plan = cases.load_plan(case_dir)
+    floor = cases.read_floor(case_dir)
+    if floor is None:
+        raise BtError("no floor set for case")
+    direction = str(brief.get("direction") or "pay").lower()
+    target = cases.num(plan.get("target"))
+    offer = cases.num(inbound.get("offer"))
+    text = str(inbound.get("text") or "")
+
+    escalate = []
+    if any(p.search(text) for p in INJECTION):
+        escalate.append("suspected_injection")
+    if any(p.search(text) for p in AI_QUESTION):
+        escalate.append("ai_identity_question")
+    if LEGAL.search(text):
+        escalate.append("legal_terms")
+    return {"band": _band(direction, target, floor, offer), "escalate": escalate}

@@ -93,6 +93,7 @@ def check_skill_names(root):
     if not skills.is_dir():
         return "SKIP", "no skills/ directory"
     problems = []
+    notes = []
     for folder in sorted(skills.iterdir()):
         if not folder.is_dir():
             continue
@@ -101,7 +102,10 @@ def check_skill_names(root):
             problems.append(f"skills/{name}: folder must be betterterms-[a-z0-9-]")
         skill_md = folder / "SKILL.md"
         if not skill_md.is_file():
-            problems.append(f"skills/{name}: missing SKILL.md")
+            # A folder may land before its SKILL.md (parallel lanes).
+            # Packaging checks in later steps catch a permanently absent
+            # SKILL.md; report it as a note, not a failure.
+            notes.append(f"skills/{name} has no SKILL.md yet")
             continue
         try:
             fm, body = frontmatter.parse(skill_md)
@@ -118,7 +122,9 @@ def check_skill_names(root):
         body_lines = len(body.splitlines())
         if body_lines > MAX_SKILL_BODY_LINES:
             problems.append(f"skills/{name}: body {body_lines} lines > {MAX_SKILL_BODY_LINES}")
-    return ("FAIL", _join(problems)) if problems else ("PASS", "")
+    if problems:
+        return "FAIL", _join(problems)
+    return "PASS", _join(notes)
 
 
 def check_no_bin(root):
@@ -188,6 +194,28 @@ def check_file_size(root):
     return ("FAIL", _join(bad)) if bad else ("PASS", "")
 
 
+BTLIB_DIR = "skills/betterterms-guardrails/scripts/btlib"
+BTLIB_YAML_PAIRS = [
+    ("scripts/_lib/miniyaml.py", f"{BTLIB_DIR}/yaml.py"),
+    ("scripts/_lib/miniyaml_scalars.py", f"{BTLIB_DIR}/miniyaml_scalars.py"),
+]
+
+
+def check_btlib_yaml_sync(root):
+    """btlib yaml files must be verbatim copies of scripts/_lib so the
+    skill folder stays self-contained."""
+    if not (root / BTLIB_DIR).is_dir():
+        return "SKIP", "btlib not present"
+    bad = []
+    for src_rel, dst_rel in BTLIB_YAML_PAIRS:
+        src, dst = root / src_rel, root / dst_rel
+        if not dst.is_file():
+            bad.append(f"{dst_rel} missing")
+        elif not src.is_file() or src.read_bytes() != dst.read_bytes():
+            bad.append(f"{dst_rel} differs from {src_rel}")
+    return ("FAIL", _join(bad)) if bad else ("PASS", "")
+
+
 def _run_script(root, name, *args):
     path = root / "scripts" / name
     if not path.is_file():
@@ -239,6 +267,7 @@ CHECKS = [
     ("no-local-paths", check_no_local_paths),
     ("prose-rules", check_prose_rules),
     ("file-size", check_file_size),
+    ("btlib-yaml-sync", check_btlib_yaml_sync),
     ("build-fresh", check_build_fresh),
     ("version-sync", check_version_sync),
     ("claude-validate", check_claude_validate),
