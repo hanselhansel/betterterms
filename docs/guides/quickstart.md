@@ -23,7 +23,8 @@ walk-away number you type in your own terminal.
    in a file only the gate and scorer read. The model never sees it.
 4. Discovery says what it wants to read (receipts, renewal notices, price-change
    mail, any statements you drop in) and asks permission per source. It returns
-   a target list: counterparty, amount, cadence, renewal date, evidence.
+   a target list: counterparty, amount, period, renewal date, evidence,
+   usage signal.
 5. Pick the targets. Research reads each vendor's cancellation, refund, and
    pricing policy, current promotions, recent first-hand reports, and your
    rights. Every fact lands in a source record with a URL and the date read.

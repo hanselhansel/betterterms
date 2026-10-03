@@ -26,12 +26,13 @@ exact rendered text to send.
   worse than your number after period conversion, `accept`/`sign`/`pay`
   without a numeric in-band offer, an `accept` that does not match an in-band
   inbound offer, unknown placeholders, claim ids with no matching fact, a
-  `never_disclose` term in the rendered text, a message over 64 KB.
+  rendered placeholder value equal to your number, a message over 64 KB.
 - Drafts carry no typed prices. Money reaches a message only through
   placeholders the gate renders itself.
-- Free text that looks like money, commitment wording, or unusual characters
-  routes to you as `needs_approval`. Unusual text gets a human read instead
-  of a silent pass.
+- Free text that looks like money, any digit in the free text, commitment
+  wording, a `never_disclose` term, or unusual characters routes to you as
+  `needs_approval`. Unusual text gets a human read instead of a silent
+  pass.
 - `accept`, `cancel`, `pay`, `sign`, and `dispute` need your explicit yes at
   every autonomy level. The `--approved` flag is honest only after a yes in
   the current conversation, quoted in the case's `thread.md`.

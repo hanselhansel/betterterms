@@ -23,14 +23,15 @@ Detail: [decision 0001](../decisions/0001-floor-in-separate-file.md).
 invalid floor file blocks. An offer worse than your number blocks. `accept`,
 `sign`, and `pay` block without a numeric in-band offer, and `accept` blocks
 unless it matches an in-band inbound offer. Unknown placeholders, unknown
-claim ids, a `never_disclose` term in the rendered text, and a message over
-64 KB all block. A block returns reasons and no rendered text, so nothing can
-leave "as drafted".
+claim ids, a rendered placeholder value equal to your number, and a
+message over 64 KB all block. A block returns reasons and no rendered
+text, so nothing can leave "as drafted".
 
 **Tier 2: review.** The gate renders the draft, masks the placeholder outputs,
-and scans the remaining free text. Money-shaped text, commitment wording
-("deal", "works for me", "sign me up"), non-English characters, and anything
-else unusual route the draft to you as `needs_approval`. Tier 2 does not try
+and scans the remaining free text. Money-shaped text, any digit in the
+free text, commitment wording ("deal", "works for me", "sign me up"), a
+`never_disclose` term, non-English characters, and anything else
+unusual route the draft to you as `needs_approval`. Tier 2 does not try
 to prove the text is clean. It fails closed on anything it cannot classify,
 so a human reads the odd cases.
 

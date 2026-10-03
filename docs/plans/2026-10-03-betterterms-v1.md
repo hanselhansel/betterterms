@@ -20,7 +20,7 @@ in the open Agent Skills format; promptfoo 0.123 for evals; Node only for the mo
 
 **Spec:** `docs/specs/2026-10-03-betterterms-design.md`,
 `docs/specs/2026-10-03-betterterms-negotiation-procedure.md`. Deviations are recorded in
-`docs/decisions/` (0001 to 0010) and summarized at the end of this plan.
+`docs/decisions/` (0001 to 0011) and summarized at the end of this plan.
 
 ## Global Constraints
 
@@ -77,9 +77,9 @@ in the open Agent Skills format; promptfoo 0.123 for evals; Node only for the mo
 Case files (`$BETTERTERMS_HOME/cases/<case_id>/`):
 
 - `brief.yaml`: `pack, mode, direction, goals, priorities (ranked list), ranking_check (passed: bool, samples), autonomy (1-4), never_disclose (list of strings), deadline`.
-- `plan.yaml`: `target, currency, period (once|month|year, the floor's period; the brief may declare it instead, default once; options and ladder entries may carry their own), options (list of {label, value, terms, kind: bonus|fee|price}), ladder (list of {value, reason}), patience ({rounds, days}), timing, channel, facts (list of {id, text, source, amount (number or null), period (once|month|year, default once)})`. No floor.
+- `plan.yaml`: `target, currency, floor_period (once|month|year, the floor's period, declared explicitly; falls back to plan period, else brief period, default once; options and ladder entries may carry their own), options (list of {label, value, terms, kind: bonus|fee|price}), ladder (list of {value, reason}), patience ({rounds, days}), timing, channel, facts (list of {id, text, source, amount (number or null), period (once|month|year, default once)})`. No floor.
 - `.floor`: single number, file mode 0600. Read only by `gate` and `score`.
-- `sources/<n>.yaml`: `url, read_at, quote, trust (official|regulator|press|forum), used_for`.
+- `sources/<n>.yaml`: `url, read_at, quote, trust (official|regulator|press|forum), used_for`, plus optional `amount` (number or null) and `period` (once|month|year) when the finding states money.
 - `thread.md`: append-only log, each turn stamped `in|out`, ISO time, `approved_by_user: yes|no`.
 - Draft (`draft.yaml`): `action (send|accept|cancel|pay|sign|dispute), offer (number or null), period (once|month|year, default once; applies to offer), template (message text with placeholders), claims (list of fact ids)`. A `text` key blocks ("use template, not text"); unknown keys block.
 - Inbound (`inbound.yaml`): `offer (number or null), period (once|month|year, the period the counterparty's offer is per), text, amounts (list of the numbers the counterparty stated, extracted by the agent)`.
@@ -182,7 +182,7 @@ Moved ahead of packaging so every later prompt change has a baseline (decision 0
 
 **Files:** Modify `skills/betterterms-discovery/SKILL.md`, `skills/betterterms-research/SKILL.md`. Create `skills/betterterms-discovery/references/{sources.md,target-record.md}`, `skills/betterterms-research/references/{source-record.md,trust-levels.md,query-hygiene.md}`, `btlib/sources.py` + `bt.py source add|list|stale` + `tests/test_sources.py`.
 
-**Interfaces:** `bt.py source add <case_id>` reads a source record on stdin, validates fields and trust enum, writes `sources/<n>.yaml`. `bt.py source stale <case_id> --days 90` lists records older than 90 days. Target record fields: `counterparty, amount, cadence, renewal_date, evidence, usage_signal`.
+**Interfaces:** `bt.py source add <case_id>` reads a source record on stdin, validates fields and trust enum, writes `sources/<n>.yaml`. `bt.py source stale <case_id> --days 90` lists records older than 90 days. Target record fields: `counterparty, amount, period, renewal_date, evidence, usage_signal`.
 
 - [ ] Discovery states what it will read and asks permission per source before reading; falls back to file drop (CSV, PDF).
 - [ ] Research: official policy first; forum posts guide tactics, never stated as fact; re-check older than 90 days; on contradiction quote the policy back; `query-hygiene.md` lists what must never appear in a query (names, account numbers, addresses, employer).
@@ -218,7 +218,7 @@ Same file layout as step 6, `mode: coach`, `direction: receive`. Coach skill flo
 **Files:** `scripts/_lib/gen_{gemini,cursor,muse,agent_plugins}.py`; generated `gemini-extension.json`, `GEMINI.md`, `.cursor-plugin/plugin.json`, `.muse-plugin/plugin.json` (`schemaVersion: 1`), root `plugin.json` (Agent Plugins 1.0: `skills/`). Tests in `tests/test_build.py`.
 
 - [ ] `gemini extensions validate .` passes (verify check). Others validated against a JSON shape in tests. Not install-tested (decision per user: Claude Code and Codex are the test hosts).
-- [ ] Orchestrator checks open question 7 (does Claude Code read root `plugin.json`, which wins) by installing with both present; record in decision 0006.
+- [ ] Orchestrator checks open question 7 (does Claude Code read root `plugin.json`, which wins) by installing with both present; record in decision 0011.
 
 ## Step 9: Mod plugin (PR 9, 0.9.0)
 
@@ -247,8 +247,9 @@ Same file layout as step 6, `mode: coach`, `direction: receive`. Coach skill flo
 - 0003: Open decisions resolved: cloud cases are short-lived; response sharing off; `ai-api` covers pricing only; comp data user-supplied plus cited public sources.
 - 0004: Evals move from step 7 to step 3 so pack prompt changes have baselines.
 - 0005: The YAML layer is vendored pure-Python PyYAML 6.0.3 behind a `miniyaml` wrapper, replacing a hand-written subset that kept diverging from real YAML.
-- 0006: Recorded on the step-8 branch, not in this tree. Resolves open question 7: whether Claude Code reads the root `plugin.json`, and which manifest wins.
+- 0006: Claude-only fields: `metadata: {disable-model-invocation}` stays in the SKILL.md source as the only portable spelling of the intent, even though Claude Code 2.1.288 reads the flag only from frontmatter top level and never from `metadata`. No Claude-specific SKILL.md variant is generated; the coded gate remains the safety boundary.
 - 0007: Gate hardening: user-typed floor entry, strict plain-number floor parsing, an every-amount floor rule, oracle-free block reasons, plan and direction validation, a 64 KB text cap, and ledger guards. Its text-scanning parts were amended by 0009.
 - 0008: Structured amounts: the draft is `action`, `offer`, `period`, `template` and `claims`; every price in a message renders through a `{placeholder}` the gate controls, so the only money in a send comes from values the gate renders itself. Its free-text money ban was amended by 0009.
 - 0009: Gate scope split into two tiers. Structural rules (placeholders, floor comparisons, period declarations, the 64 KB cap) hard-block and fail closed; the old prove-it-clean text scan became a review tier that routes anything suspicious to `needs_approval` with plain-word, number-free reasons.
-- 0010: Structural amounts only. Hard blocks never parse free text: fact floor rules read the structured `amount` and `period` fields, and `money.py` serves `score` alone. The review tier is stricter: any spelled number word, decimal, separator-joined or non-isolated digit token, currency or scale word or abbreviation, and any fact whose text states a number its `amount` does not carry routes to the user; only isolated 1-2 digit integers and month-name dates pass.
+- 0010: Structural amounts only. Hard blocks never parse free text: fact floor rules read the structured `amount` and `period` fields, and `money.py` serves `score` alone. The review tier is stricter: any spelled number word, decimal, separator-joined or non-isolated digit token, currency or scale word or abbreviation, and any fact whose text states a number its `amount` does not carry routes to the user; later amendments make every digit and every spelled number word route to the user, match number and scale words inside letter runs, and fail closed on unconvertible periods.
+- 0011: Host manifests: generated manifests for Gemini CLI (`gemini-extension.json` + `GEMINI.md`), Cursor (`.cursor-plugin/plugin.json`), Muse (`.muse-plugin/plugin.json`, undocumented schema modeled on superpowers) and Agent Plugins 1.0 (root `plugin.json`). Resolves open question 7: Claude Code ignores the root `plugin.json` and `.claude-plugin/` wins when both exist, so shipping both is safe; only Claude Code and Codex are install-tested.

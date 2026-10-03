@@ -11,6 +11,18 @@
   "capabilities": {
     "skills": [
       {
+        "id": "betterterms-ai-api",
+        "path": "skills/betterterms-ai-api/SKILL.md"
+      },
+      {
+        "id": "betterterms-bills",
+        "path": "skills/betterterms-bills/SKILL.md"
+      },
+      {
+        "id": "betterterms-cancellations",
+        "path": "skills/betterterms-cancellations/SKILL.md"
+      },
+      {
         "id": "betterterms-coach",
         "path": "skills/betterterms-coach/SKILL.md"
       },
@@ -31,6 +43,10 @@
         "path": "skills/betterterms-intake/SKILL.md"
       },
       {
+        "id": "betterterms-job-offer",
+        "path": "skills/betterterms-job-offer/SKILL.md"
+      },
+      {
         "id": "betterterms-ledger",
         "path": "skills/betterterms-ledger/SKILL.md"
       },
@@ -39,12 +55,24 @@
         "path": "skills/betterterms-plan/SKILL.md"
       },
       {
+        "id": "betterterms-promotion",
+        "path": "skills/betterterms-promotion/SKILL.md"
+      },
+      {
+        "id": "betterterms-refunds",
+        "path": "skills/betterterms-refunds/SKILL.md"
+      },
+      {
         "id": "betterterms-research",
         "path": "skills/betterterms-research/SKILL.md"
       },
       {
         "id": "betterterms-start",
         "path": "skills/betterterms-start/SKILL.md"
+      },
+      {
+        "id": "betterterms-subscriptions",
+        "path": "skills/betterterms-subscriptions/SKILL.md"
       }
     ],
     "commands": [],
