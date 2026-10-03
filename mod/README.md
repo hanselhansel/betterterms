@@ -18,12 +18,13 @@ runs in place from the repository.
   stage (`found`, `researched`, `in exchange`, `waiting`, `closed`) and
   next action, plus the ledger's `saved_per_year` total. Opens itself at
   session start when cases exist; `/betterterms-cases` reopens it.
-- **AbovePrompt band**: `N drafts waiting for approval` while any case
-  has an unsent draft whose approval the autonomy level requires.
+- **AbovePrompt band**: `N drafts waiting to send` while any open case
+  holds a draft whose last `gate.json` verdict is `pass` or
+  `needs_approval` and whose send is not yet logged in `thread.md`.
 - **Toast**: `New reply in <case>.` when `thread.md` gains an inbound
   entry; polled every 3 s.
 - **Pre-send guard**: a `tool.call` hook. When a call's arguments carry
-  a case's `draft.yaml` text, the mod runs
+  an open case's last `gate.json` `rendered` text, the mod runs
   `python3 <core plugin>/skills/betterterms-guardrails/scripts/bt.py gate`
   and enforces the verdict: `block` or a gate error denies the call,
   `needs_approval` always asks and re-gates with `--approved`, `pass`
@@ -33,25 +34,27 @@ runs in place from the repository.
 
 Only `$BETTERTERMS_HOME` (default `~/.betterterms`): `cases/<id>/` names
 matching `[a-z0-9-]+` (linked dirs skipped), `brief.yaml`, `thread.md`,
-`draft.yaml`, `inbound.yaml` existence for the gate's `--inbound` flag,
-`sources/` listing for the researched stage, and `ledger.jsonl`.
-`plan.yaml` and `.floor` are never read: the floor stays inside the
-gate. The only other filesystem touch is a `stat` resolve on a tool
-call's own `file_path` when one is present, to tell a bookkeeping write
-inside a case dir apart from a send. Nothing is written; inbound
-baseline state lives in module memory for the session.
+`draft.yaml`, `gate.json` (the last verdict the exchange skill saved),
+`inbound.yaml` existence for the gate's `--inbound` flag, `sources/`
+listing for the researched stage, and `ledger.jsonl`. `plan.yaml` and
+`.floor` are never read: the floor stays inside the gate. The only
+other filesystem touch is a `stat` resolve on a tool call's own
+`file_path` when one is present, to tell a bookkeeping write inside a
+case dir apart from a send. Nothing is written; inbound baseline state
+lives in module memory for the session.
 
 ## What "send" means
 
-There is no dedicated send tool; the mod treats a call as a send from a
-case when a normalized copy of the case's `draft.text` appears inside
-one of its string arguments (for drafts under 24 chars the call must
-also name the case id). It covers `Bash` commands, MCP tool arguments
-and agent prompts alike. Writes whose target resolves inside the case
-dir (`draft.yaml`, `inbound.yaml`, `thread.md` bookkeeping) are
-excluded. Known holes, by design at v1: a send that reads the draft
-indirectly (`cat draft.yaml | mail ...`) carries no text to match, and
-a paraphrased draft is not the draft. The guard protects the normal
+There is no dedicated send tool; the mod treats a call as a send from
+an open case when a normalized copy of the `rendered` text in the
+case's `gate.json` appears inside one of its string arguments (for
+renders under 24 chars the call must also name the case id). It covers
+`Bash` commands, MCP tool arguments and agent prompts alike. Writes
+whose target resolves inside the case dir (`draft.yaml`,
+`inbound.yaml`, `gate.json`, `thread.md` bookkeeping) are excluded.
+Known holes, by design at v1: a send that reads the rendered text
+indirectly (`cat gate.json | mail ...`) carries no text to match, and
+a paraphrased render is not the render. The guard protects the normal
 flow; it is not a sandbox.
 
 ## The mod API this relies on

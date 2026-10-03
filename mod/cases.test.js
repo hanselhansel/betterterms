@@ -4,7 +4,10 @@ import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 
 import * as C from "./lib/cases.js";
-import { BRIEF, DRAFT, THREAD, CASE_ID, DIR } from "./testkit.js";
+import {
+  BRIEF, CASE_ID, DIR, DRAFT, GATE, GATE_BLOCK, GATE_NEEDS_APPROVAL,
+  RENDERED, THREAD,
+} from "./testkit.js";
 
 describe("deriveCase", () => {
   const base = { id: CASE_ID, briefText: BRIEF, threadText: "", sourceCount: 0, closed: false };
@@ -24,20 +27,31 @@ describe("deriveCase", () => {
     assert.equal(C.deriveCase({ ...base, briefText: coach }).autonomy, 1);
   });
 
-  test("a fresh draft waits for approval only when autonomy or action says so", () => {
-    const withDraft = {
+  test("the band counts drafts whose saved gate passed and are unsent", () => {
+    const gated = {
       ...base,
       draftText: DRAFT,
       draftMtimeMs: 10,
-      threadMtimeMs: 1,
+      gateText: GATE,
+      gateMtimeMs: 11,
       threadText: THREAD,
+      threadMtimeMs: 1,
     };
-    assert.equal(C.deriveCase(withDraft).needsApproval, true);
-    const aut4 = BRIEF.replace("autonomy: 2", "autonomy: 4");
-    assert.equal(C.deriveCase({ ...withDraft, briefText: aut4 }).needsApproval, false);
-    const irreversible = DRAFT.replace("action: send", "action: cancel");
-    assert.equal(C.deriveCase({ ...withDraft, briefText: aut4, draftText: irreversible }).needsApproval, true);
-    assert.equal(C.deriveCase({ ...withDraft, draftMtimeMs: 1, threadMtimeMs: 10 }).needsApproval, false);
+    const c = C.deriveCase(gated);
+    assert.equal(c.pending, true);
+    assert.equal(c.needsApproval, false);
+    const flagged = { ...gated, gateText: GATE_NEEDS_APPROVAL };
+    assert.equal(C.deriveCase(flagged).pending, true);
+    assert.equal(C.deriveCase(flagged).needsApproval, true);
+    // A block, a missing verdict and a gate that ran before the last
+    // draft write all leave the draft out of the band.
+    assert.equal(C.deriveCase({ ...gated, gateText: GATE_BLOCK }).pending, false);
+    assert.equal(C.deriveCase({ ...gated, gateText: undefined }).pending, false);
+    assert.equal(C.deriveCase({ ...gated, gateText: "not json" }).pending, false);
+    assert.equal(C.deriveCase({ ...gated, gateMtimeMs: 5 }).pending, false);
+    // A sent draft (a newer thread entry) and a closed case never count.
+    assert.equal(C.deriveCase({ ...gated, threadMtimeMs: 20 }).pending, false);
+    assert.equal(C.deriveCase({ ...gated, closed: true }).pending, false);
   });
 
   test("next action names the pending step", () => {
@@ -47,33 +61,45 @@ describe("deriveCase", () => {
     assert.equal(C.deriveCase({ ...base, threadText: inbound }).next, "draft the reply");
     assert.equal(C.deriveCase({ ...base, threadText: THREAD }).next, "await their reply");
     assert.equal(C.deriveCase({ ...base, threadText: THREAD, closed: true }).next, "closed");
-    const pending = { ...base, threadText: inbound, draftText: DRAFT, draftMtimeMs: 9, threadMtimeMs: 1 };
+    const pending = {
+      ...base,
+      threadText: inbound,
+      draftText: DRAFT,
+      draftMtimeMs: 9,
+      gateText: GATE_NEEDS_APPROVAL,
+      gateMtimeMs: 10,
+      threadMtimeMs: 1,
+    };
     assert.equal(C.deriveCase(pending).next, "approve the draft");
+    assert.equal(C.deriveCase({ ...pending, gateText: GATE }).next, "send the draft");
+    assert.equal(C.deriveCase({ ...pending, gateText: undefined }).next, "gate the draft");
+    assert.equal(C.deriveCase({ ...pending, gateText: GATE_BLOCK }).next, "gate the draft");
   });
 });
 
 describe("findSend", () => {
-  const DRAFT_TEXT = C.parseFlatYaml(DRAFT).text;
-  const cases = [{ id: CASE_ID, draftText: DRAFT_TEXT }];
+  const cases = [{ id: CASE_ID, rendered: RENDERED, stage: "exchange" }];
 
-  test("flags a call whose payload carries the draft text", () => {
-    const hit = C.findSend([`mail vendor@x <<EOF\n${DRAFT_TEXT}\nEOF`], cases);
+  test("flags a call whose payload carries the rendered gate text", () => {
+    const hit = C.findSend([`mail vendor@x <<EOF\n${RENDERED}\nEOF`], cases);
     assert.equal(hit.id, CASE_ID);
   });
 
-  test("flags a payload containing the draft inside more text", () => {
-    const hit = C.findSend([`curl -d 'body=${DRAFT_TEXT}   extra' hook`], cases);
+  test("flags a payload containing the render inside more text", () => {
+    const hit = C.findSend([`curl -d 'body=${RENDERED}   extra' hook`], cases);
     assert.equal(hit.id, CASE_ID);
   });
 
-  test("ignores unrelated payloads", () => {
+  test("ignores unrelated payloads, missing renders and closed cases", () => {
     assert.equal(C.findSend(["ls -la", "echo hello"], cases), null);
     assert.equal(C.findSend([], cases), null);
-    assert.equal(C.findSend([DRAFT_TEXT], [{ id: CASE_ID, draftText: null }]), null);
+    assert.equal(C.findSend([RENDERED], [{ id: CASE_ID, rendered: null }]), null);
+    const closed = [{ id: CASE_ID, rendered: RENDERED, stage: "closed" }];
+    assert.equal(C.findSend([`send ${RENDERED}`], closed), null);
   });
 
-  test("a very short draft needs the case id in the payload", () => {
-    const short = [{ id: CASE_ID, draftText: "ok" }];
+  test("a very short render needs the case id in the payload", () => {
+    const short = [{ id: CASE_ID, rendered: "ok" }];
     assert.equal(C.findSend(["send ok"], short), null);
     assert.equal(C.findSend([`reply ok to ${CASE_ID}`], short).id, CASE_ID);
   });
@@ -121,8 +147,8 @@ describe("decideSend", () => {
 
 describe("labels", () => {
   test("band and toast text", () => {
-    assert.equal(C.bandText(1), "1 draft waiting for approval");
-    assert.equal(C.bandText(3), "3 drafts waiting for approval");
+    assert.equal(C.bandText(1), "1 draft waiting to send");
+    assert.equal(C.bandText(3), "3 drafts waiting to send");
     assert.equal(C.toastText(CASE_ID, 1), `New reply in ${CASE_ID}.`);
     assert.equal(C.toastText(CASE_ID, 2), `2 new replies in ${CASE_ID}.`);
   });

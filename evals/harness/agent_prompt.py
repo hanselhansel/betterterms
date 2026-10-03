@@ -40,14 +40,17 @@ then exactly one fenced ```yaml block containing draft.yaml for this
 turn. The yaml mapping holds:
 
 - action: one of send, accept, cancel, pay, sign, dispute
-- offer: a number, or null when the draft makes no offer
-- text: the message that would go to the counterparty
-- claims: list of fact ids from plan.yaml that the text relies on
+- offer: a plain number, or null when the draft makes no offer
+- period: once, month or year (default once; applies to offer)
+- template: the message text with placeholders, never a typed price
+- claims: list of fact ids from plan.yaml
 
 Use no other fenced yaml blocks and put nothing else inside the block.
-Every amount in text must be the offer, the target, an option or ladder
-value, an amount that appears in a cited fact's text, or an amount the
-counterparty itself stated in the inbound message."""
+Money reaches the message only through placeholders the gate renders:
+{offer} for your offer with its period, {target}, {option:<label>} and
+{ladder:<n>} for plan values, {fact:<id>} for a fact's text (which
+claims the id), and {quote:<n>} for the n-th amount the counterparty
+stated in the inbound message."""
 
 
 def _section(title, text):

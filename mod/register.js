@@ -7,18 +7,21 @@
 //   session.start: registers /betterterms-cases, opens the pipeline pane
 //     when cases exist, baselines inbound thread entries, starts a 3s
 //     poll that toasts on new inbound turns.
-//   tool.call: the pre-send guard. A call whose arguments carry a case's
-//     draft text is treated as a send from that case and gated through
-//     `python3 bt.py gate`. Block -> { deny }. Pass -> the autonomy in
-//     brief.yaml decides: 1 refuses (the user sends), 2 asks each time,
-//     3 and 4 send inside the approved plan. needs_approval (an
-//     irreversible action) always asks, then re-gates with --approved.
+//   tool.call: the pre-send guard. A call whose arguments carry an open
+//     case's last `rendered` text (from the gate.json verdict the
+//     exchange skill saves to the case folder) is treated as a send
+//     from that case and re-gated through `python3 bt.py gate`. Block
+//     -> { deny }. Pass -> the autonomy in brief.yaml decides: 1
+//     refuses (the user sends), 2 asks each time, 3 and 4 send inside
+//     the approved plan. needs_approval (an irreversible action, coach
+//     mode, autonomy 1 or review-flagged text) always asks, then
+//     re-gates with --approved.
 //   ui.render: a Pane with the case pipeline and an AbovePrompt band
-//     counting drafts waiting for approval.
+//     counting gated drafts not yet sent.
 //   command.run: /betterterms-cases reopens the pane.
 //
 // The mod reads only $BETTERTERMS_HOME/cases/<id>/{brief.yaml,thread.md,
-// draft.yaml,inbound.yaml existence}, sources/ listings, and
+// draft.yaml,gate.json,inbound.yaml existence}, sources/ listings, and
 // ledger.jsonl. It writes nothing and stores nothing off the session.
 //
 // `seen` and `lastPrint` are module scope because the loader requires $
@@ -69,20 +72,25 @@ async function scanCases($) {
   for (const ent of await listIf($, root)) {
     if (ent.kind !== "dir" || ent.isLink || !C.safeCaseId(ent.name)) continue;
     const dir = `${root}/${ent.name}`;
-    const [briefText, threadText, draftText, draftSt, threadSt, sources] = await Promise.all([
-      readIf($, `${dir}/brief.yaml`),
-      readIf($, `${dir}/thread.md`),
-      readIf($, `${dir}/draft.yaml`),
-      statIf($, `${dir}/draft.yaml`),
-      statIf($, `${dir}/thread.md`),
-      listIf($, `${dir}/sources`),
-    ]);
+    const [briefText, threadText, draftText, gateText, draftSt, gateSt, threadSt, sources] =
+      await Promise.all([
+        readIf($, `${dir}/brief.yaml`),
+        readIf($, `${dir}/thread.md`),
+        readIf($, `${dir}/draft.yaml`),
+        readIf($, `${dir}/gate.json`),
+        statIf($, `${dir}/draft.yaml`),
+        statIf($, `${dir}/gate.json`),
+        statIf($, `${dir}/thread.md`),
+        listIf($, `${dir}/sources`),
+      ]);
     cases.push(C.deriveCase({
       id: ent.name,
       briefText,
       threadText,
       draftText,
+      gateText,
       draftMtimeMs: draftSt?.mtimeMs ?? 0,
+      gateMtimeMs: gateSt?.mtimeMs ?? 0,
       threadMtimeMs: threadSt?.mtimeMs ?? 0,
       sourceCount: sources.length,
       closed: ledger.closed.has(ent.name),
@@ -172,7 +180,7 @@ async function tick($) {
       $.ui.toast(C.toastText(c.id, fresh.length));
     }
   }
-  const print = JSON.stringify(snap.cases.map((c) => [c.id, c.stage, c.needsApproval]));
+  const print = JSON.stringify(snap.cases.map((c) => [c.id, c.stage, c.pending, c.needsApproval]));
   if (print !== lastPrint) {
     lastPrint = print;
     $.ui.invalidate("ui.render");

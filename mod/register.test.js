@@ -8,11 +8,10 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import * as C from "./lib/cases.js";
 import { register } from "./register.js";
 import {
-  BT, BRIEF, CASE_ID, DIR, DRAFT, THREAD,
-  caseDirs, caseFiles, fakeDollar, fakeOn, fired,
+  BT, BRIEF, CASE_ID, DIR, DRAFT, GATE, GATE_NEEDS_APPROVAL, RENDERED,
+  THREAD, caseDirs, caseFiles, fakeDollar, fakeOn, fired,
 } from "./testkit.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -25,18 +24,17 @@ describe("register", () => {
     readFileSync(join(HERE, "hooks", hooks.modules[0]), "utf8");
   });
 
-  test("a send carrying the draft is denied when the gate blocks", async () => {
-    const files = caseFiles({ [`${DIR}/draft.yaml`]: DRAFT });
+  test("a send carrying the rendered text is denied when the gate blocks", async () => {
+    const files = caseFiles({ [`${DIR}/draft.yaml`]: DRAFT, [`${DIR}/gate.json`]: GATE });
     const { $, calls } = fakeDollar({
       files, dirs: caseDirs(),
       gate: { exitCode: 1, stdout: '{"result":"block","reasons":["floor disclosed in draft text"]}', stderr: "" },
     });
     const on = fakeOn();
     register(on.on);
-    const draftText = C.parseFlatYaml(DRAFT).text;
     const { next, calls: went } = fired();
     const out = await on.get("tool.call")($, {
-      tool: "Bash", tool_use_id: "t1", command: `mail x <<EOF\n${draftText}\nEOF`,
+      tool: "Bash", tool_use_id: "t1", command: `mail x <<EOF\n${RENDERED}\nEOF`,
     }, next);
     assert.equal(went.length, 0);
     assert.match(out.deny, /betterterms/);
@@ -48,7 +46,7 @@ describe("register", () => {
   });
 
   test("unrelated tool calls pass through untouched", async () => {
-    const files = caseFiles({ [`${DIR}/draft.yaml`]: DRAFT });
+    const files = caseFiles({ [`${DIR}/draft.yaml`]: DRAFT, [`${DIR}/gate.json`]: GATE });
     const { $, calls } = fakeDollar({ files, dirs: caseDirs() });
     const on = fakeOn();
     register(on.on);
@@ -59,28 +57,28 @@ describe("register", () => {
   });
 
   test("writes into the case dir are bookkeeping, not sends", async () => {
-    const files = caseFiles({ [`${DIR}/draft.yaml`]: DRAFT });
+    const files = caseFiles({ [`${DIR}/draft.yaml`]: DRAFT, [`${DIR}/gate.json`]: GATE });
     const { $, calls } = fakeDollar({ files, dirs: caseDirs() });
     const on = fakeOn();
     register(on.on);
-    const draftText = C.parseFlatYaml(DRAFT).text;
     const { next, marker } = fired();
+    // gate.json holds the rendered text, so a bookkeeping write of the
+    // verdict itself would trip the matcher without the case-dir check.
     const out = await on.get("tool.call")($, {
-      tool: "Write", tool_use_id: "t2", file_path: `${DIR}/draft.yaml`, content: draftText,
+      tool: "Write", tool_use_id: "t2", file_path: `${DIR}/gate.json`, content: GATE,
     }, next);
     assert.equal(out, marker);
     assert.equal(calls.run.length, 0);
   });
 
   test("autonomy 2: a passing gate still asks the user first", async () => {
-    const files = caseFiles({ [`${DIR}/draft.yaml`]: DRAFT });
+    const files = caseFiles({ [`${DIR}/draft.yaml`]: DRAFT, [`${DIR}/gate.json`]: GATE });
     const { $, calls } = fakeDollar({ files, dirs: caseDirs(), answer: "Send" });
     const on = fakeOn();
     register(on.on);
-    const draftText = C.parseFlatYaml(DRAFT).text;
     const { next, calls: went, marker } = fired();
     const out = await on.get("tool.call")($, {
-      tool: "Bash", tool_use_id: "t3", command: `send ${draftText}`,
+      tool: "Bash", tool_use_id: "t3", command: `send ${RENDERED}`,
     }, next);
     assert.equal(calls.ask.length, 1);
     assert.equal(out, marker);
@@ -88,14 +86,13 @@ describe("register", () => {
   });
 
   test("a refused approval denies the send", async () => {
-    const files = caseFiles({ [`${DIR}/draft.yaml`]: DRAFT });
+    const files = caseFiles({ [`${DIR}/draft.yaml`]: DRAFT, [`${DIR}/gate.json`]: GATE });
     const { $, calls } = fakeDollar({ files, dirs: caseDirs(), answer: "Hold" });
     const on = fakeOn();
     register(on.on);
-    const draftText = C.parseFlatYaml(DRAFT).text;
     const { next, calls: went } = fired();
     const out = await on.get("tool.call")($, {
-      tool: "Bash", tool_use_id: "t4", command: `send ${draftText}`,
+      tool: "Bash", tool_use_id: "t4", command: `send ${RENDERED}`,
     }, next);
     assert.equal(went.length, 0);
     assert.match(out.deny, /betterterms/);
@@ -105,7 +102,11 @@ describe("register", () => {
   test("irreversible at high autonomy: ask, then re-gate with --approved", async () => {
     const cancelDraft = DRAFT.replace("action: send", "action: cancel");
     const aut4 = BRIEF.replace("autonomy: 2", "autonomy: 4");
-    const files = caseFiles({ [`${DIR}/draft.yaml`]: cancelDraft, [`${DIR}/brief.yaml`]: aut4 });
+    const files = caseFiles({
+      [`${DIR}/draft.yaml`]: cancelDraft,
+      [`${DIR}/brief.yaml`]: aut4,
+      [`${DIR}/gate.json`]: GATE_NEEDS_APPROVAL,
+    });
     const gates = [
       { exitCode: 3, stdout: '{"result":"needs_approval","reasons":["action \'cancel\' requires --approved"]}', stderr: "" },
       { exitCode: 0, stdout: '{"result":"pass","reasons":[]}', stderr: "" },
@@ -115,10 +116,9 @@ describe("register", () => {
     $.process.run = async (argv) => { calls.run.push({ argv }); return gates[Math.min(i++, gates.length - 1)]; };
     const on = fakeOn();
     register(on.on);
-    const draftText = C.parseFlatYaml(cancelDraft).text;
     const { next, marker } = fired();
     const out = await on.get("tool.call")($, {
-      tool: "Bash", tool_use_id: "t5", command: `cancel: ${draftText}`,
+      tool: "Bash", tool_use_id: "t5", command: `cancel: ${RENDERED}`,
     }, next);
     assert.equal(out, marker);
     assert.equal(calls.run.length, 2);
@@ -153,10 +153,14 @@ describe("register", () => {
     assert.equal(calls.toast.length, 1);
   });
 
-  test("AbovePrompt counts pending drafts, defers when none", async () => {
-    const files = caseFiles({ [`${DIR}/draft.yaml`]: DRAFT });
+  test("AbovePrompt counts gated unsent drafts, defers when none", async () => {
+    const files = caseFiles({ [`${DIR}/draft.yaml`]: DRAFT, [`${DIR}/gate.json`]: GATE });
     const dirs = caseDirs();
-    const stats = { [`${DIR}/draft.yaml`]: { mtimeMs: 10 }, [`${DIR}/thread.md`]: { mtimeMs: 1 } };
+    const stats = {
+      [`${DIR}/draft.yaml`]: { mtimeMs: 10 },
+      [`${DIR}/gate.json`]: { mtimeMs: 11 },
+      [`${DIR}/thread.md`]: { mtimeMs: 1 },
+    };
     const { $ } = fakeDollar({ files, dirs, stats });
     const on = fakeOn();
     register(on.on);

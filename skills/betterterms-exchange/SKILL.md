@@ -36,6 +36,9 @@ The full turn procedure is in `references/turn-procedure.md`. Follow it.
   text with placeholders, never a bare price; `claims` lists fact ids
   from `plan.yaml`. The sent text is the `rendered` value the gate
   returns, verbatim.
+- `gate.json` in the case folder: the last gate response verbatim
+  (`{result, reasons, rendered}`), saved on every gate call, blocks
+  included.
 - One appended entry per message in `thread.md`, stamped `in` or `out`
   with ISO time and `approved_by_user: yes|no`.
 
@@ -71,6 +74,8 @@ or ask for their offer when it is not. Then gate, send, and log as below.
    `{quote:n}` placeholders resolve:
 
    `python3 ../betterterms-guardrails/scripts/bt.py gate <case_id> --draft <path>/draft.yaml --inbound <path>/inbound.yaml`
+
+   Save the JSON it prints to `gate.json` in the case folder.
 
    - Exit 0, `pass`: send the `rendered` text verbatim per the autonomy
      level.

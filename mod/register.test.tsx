@@ -11,14 +11,17 @@ import { test, expect } from 'claude-code/testing';
 const ID = 'bills-20261003-a1b2';
 const DIR = `/bt/cases/${ID}`;
 const BRIEF = 'pack: bills\nmode: act\nautonomy: 4\n';
-const DRAFT_TEXT = 'I can pay $1,000 a year for this plan.';
-const DRAFT = `action: send\noffer: 1000\ntext: '${DRAFT_TEXT}'\nclaims: []\n`;
+const RENDERED = 'I can pay $1,000 a year for this plan.';
+const DRAFT = `action: send\noffer: 1000\ntemplate: 'I can pay {offer} a year for this plan.'\nclaims: []\n`;
+// gate.json: the last verdict the exchange skill saved for the draft.
+const GATE = JSON.stringify({ result: 'pass', reasons: [], rendered: RENDERED });
 const THREAD = `# thread ${ID}\n## in 2026-10-03T15:04:05+00:00 approved_by_user: no\nhi\n`;
 
 const FILES: Record<string, string> = {
   [`${DIR}/brief.yaml`]: BRIEF,
   [`${DIR}/thread.md`]: THREAD,
   [`${DIR}/draft.yaml`]: DRAFT,
+  [`${DIR}/gate.json`]: GATE,
 };
 
 const DIRS: Record<string, unknown[]> = {
@@ -54,11 +57,11 @@ test('an unrelated call passes through to the tool', async ($, on) => {
   expect((out as { result: { ran: string } }).result.ran).toBe('Bash');
 });
 
-test('a send carrying the draft is denied on a gate block', async ($, on) => {
+test('a send carrying the rendered text is denied on a gate block', async ($, on) => {
   wire(on as OpHook, '{"result":"block","reasons":["floor disclosed in draft text"]}');
   const out = await $.tool.call({
     tool: 'Bash',
-    command: `mail vendor@x <<EOF\n${DRAFT_TEXT}\nEOF`,
+    command: `mail vendor@x <<EOF\n${RENDERED}\nEOF`,
   } as never);
   expect((out as { deny?: string }).deny).toMatch(/betterterms/);
 });
@@ -67,7 +70,7 @@ test('a send at autonomy 4 goes through on a gate pass', async ($, on) => {
   wire(on as OpHook, '{"result":"pass","reasons":[]}');
   const out = await $.tool.call({
     tool: 'Bash',
-    command: `send ${DRAFT_TEXT}`,
+    command: `send ${RENDERED}`,
   } as never);
   expect((out as { result: { ran: string } }).result.ran).toBe('Bash');
 });

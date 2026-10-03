@@ -23,9 +23,10 @@ describe("parseFlatYaml", () => {
     const draft = parseFlatYaml(DRAFT);
     assert.equal(draft.action, "send");
     assert.equal(draft.offer, 1000);
+    assert.equal(draft.period, "year");
     assert.equal(
-      draft.text,
-      "I can pay $1,000 a year for this plan.\nIf that works, say the word and I will set it up.",
+      draft.template,
+      "I can pay {offer} for this plan.\nIf that works, say the word and I will set it up.",
     );
     assert.deepEqual(draft.claims, ["f1"]);
   });

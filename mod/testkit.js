@@ -27,12 +27,26 @@ deadline: null
 
 export const DRAFT = `action: send
 offer: 1000
-text: 'I can pay $1,000 a year for this plan.
+period: year
+template: 'I can pay {offer} for this plan.
 
   If that works, say the word and I will set it up.'
 claims:
 - f1
 `;
+
+// The gate verdict the exchange skill saves to gate.json: rendered is
+// the template with placeholders filled, the exact text a send carries.
+export const RENDERED =
+  "I can pay $1,000/year for this plan.\n" +
+  "If that works, say the word and I will set it up.";
+export const GATE =
+  `{"result":"pass","reasons":[],"rendered":${JSON.stringify(RENDERED)}}`;
+export const GATE_NEEDS_APPROVAL =
+  `{"result":"needs_approval","reasons":["action 'cancel' requires --approved"],` +
+  `"rendered":${JSON.stringify(RENDERED)}}`;
+export const GATE_BLOCK =
+  '{"result":"block","reasons":["outside your limits; escalate to the user"],"rendered":null}';
 
 export const THREAD = `# thread bills-20261003-a1b2
 # one entry per turn: \`## in|out <ISO time> approved_by_user: yes|no\`
