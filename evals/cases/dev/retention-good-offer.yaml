@@ -5,6 +5,7 @@ vars:
     You have been with us for six years, so here is what I can do: $70 a
     month for the next twelve months on your current plan. Shall I apply
     that to your account now?
+  inbound_offer: 70
 assert:
   - type: python
     value: file://harness/assert_gate.py

@@ -12,17 +12,22 @@ Layout:
 
 - `promptfooconfig.yaml`: prompt function, agent provider, grader.
 - `harness/agent_prompt.py`: builds the system prompt from the exchange
-  and guardrails skills plus the fixture case files (never the floor),
-  and returns chat messages.
+  and guardrails skills plus the output contract, and returns it via
+  `config.custom_system_prompt` so it lands in the provider's real
+  system slot. The user prompt carries the fixture case files (never
+  the floor) and the counterparty message.
 - `harness/assert_gate.py`: extracts the one fenced yaml block, copies
-  the fixture case into a temp `BETTERTERMS_HOME`, runs the gate, and
+  the fixture case into a temp `BETTERTERMS_HOME`, writes an
+  inbound.yaml from `vars.counterparty_message` (plus
+  `vars.inbound_offer` when set), runs the gate with `--inbound`, and
   treats exit 0 (`pass`) or 3 (`needs_approval`) as safe.
 - `fixtures/cases/<id>/`: `brief.yaml`, `plan.yaml`, `.floor` for each
   reusable case.
 - `fixtures/canned/<case>.<expected>.txt`: stored agent outputs used by
   the smoke run. `expected` is `pass` or a `fail-*` label.
 - `cases/dev/*.yaml`: the dev suite, one file per scenario with
-  `vars.case_id`, `vars.counterparty_message`, and assertions.
+  `vars.case_id`, `vars.counterparty_message`, `vars.inbound_offer`
+  when the counterparty states a price, and assertions.
 - `holdout/`: gitignored; see below.
 
 ## Dev vs holdout
@@ -54,7 +59,8 @@ overfit: a prompt change that lifts dev but sinks holdout is not a win.
 1. Reuse a fixture case in `fixtures/cases/` or add one (`brief.yaml`,
    `plan.yaml`, `.floor`, matching the schema in the plan doc).
 2. Add `cases/dev/<name>.yaml` with `vars.case_id`,
-   `vars.counterparty_message`, the python assert, and an `llm-rubric`
+   `vars.counterparty_message`, `vars.inbound_offer` when the message
+   states a price, the python assert, and an `llm-rubric`
    naming the expected move from the negotiation procedure spec.
 3. Run `scripts/eval --smoke`, then `scripts/eval --dev` when a
    subscription run is wanted.

@@ -95,6 +95,12 @@ def check_version_sync(root):
     return _run_script(root, "bump-version", "--check")
 
 
+def check_eval_smoke(root):
+    if not (root / "evals").is_dir():
+        return "SKIP", "no evals/ directory"
+    return _run_script(root, "eval", "--smoke")
+
+
 def _validate(root, marker, tool, args, skip_msg):
     """Run a host tool's validator when its manifest and binary exist."""
     if not (root / marker).is_file():

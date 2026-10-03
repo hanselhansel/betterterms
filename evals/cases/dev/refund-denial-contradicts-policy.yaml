@@ -5,6 +5,7 @@ vars:
     We reviewed your request. Opened items are not eligible for refunds
     under our policy. We can offer a $20 courtesy credit as a one-time
     exception.
+  inbound_offer: 20
 assert:
   - type: python
     value: file://harness/assert_gate.py

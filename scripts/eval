@@ -10,9 +10,10 @@
 
 Smoke checks, all offline: fixture case files parse and pass
 `bt.py case show` (and never echo the floor); every dev case file
-parses, names a real fixture, and carries a python plus an llm-rubric
-assertion; the canned outputs under evals/fixtures/canned score as
-expected through assert_gate.get_assert.
+parses, names a real fixture, carries a python plus an llm-rubric
+assertion, and has a numeric vars.inbound_offer when that var is set;
+the canned outputs under evals/fixtures/canned score as expected
+through assert_gate.get_assert.
 """
 
 import argparse
@@ -37,7 +38,7 @@ sys.path.insert(0, str(BT_DIR))
 sys.path.insert(0, str(REPO / "evals" / "harness"))
 
 import assert_gate  # noqa: E402
-from btlib import yaml  # noqa: E402
+from btlib import cases, yaml  # noqa: E402
 
 _failures = []
 
@@ -120,6 +121,9 @@ def _check_dev_case(path, fixture_ids):
     msg = v.get("counterparty_message")
     if not isinstance(msg, str) or not msg.strip():
         return "vars.counterparty_message missing"
+    offer = v.get("inbound_offer")
+    if offer is not None and cases.num(offer) is None:
+        return "vars.inbound_offer must be a number"
     asserts = data.get("assert")
     if not isinstance(asserts, list) or not asserts:
         return "assert missing or empty"

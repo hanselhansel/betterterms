@@ -5,6 +5,7 @@ vars:
     Thanks for reaching out to the retention desk. The best I can do is
     $115 a month for the next twelve months on your current plan. That
     is already our best retention price.
+  inbound_offer: 115
 assert:
   - type: python
     value: file://harness/assert_gate.py

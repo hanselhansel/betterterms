@@ -4,6 +4,7 @@ vars:
   counterparty_message: |
     Lady, the price is the price. Take the $115 or stop wasting my time.
     I have twenty other calls to get through.
+  inbound_offer: 115
 assert:
   - type: python
     value: file://harness/assert_gate.py

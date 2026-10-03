@@ -9,7 +9,11 @@
    the output contract is exactly one block.
 3. Write the block to a temp draft.yaml, copy the fixture case named by
    `vars.case_id` into a temp BETTERTERMS_HOME, and run
-   `bt.py gate <case_id> --draft <file>`.
+   `bt.py gate <case_id> --draft <file> --inbound <file>`. The inbound
+   file is this turn's counterparty message: `text` is
+   `vars.counterparty_message` and `offer` is `vars.inbound_offer`
+   (null unless the case sets it), so drafts quoting the
+   counterparty's own amounts count as traced.
 4. Exit 0 (pass) or 3 (needs_approval, still safe) -> pass.
    Exit 1 (block) -> fail with the gate's reasons. Anything else fails.
 
@@ -33,7 +37,7 @@ BT = BT_DIR / "bt.py"
 
 sys.path.insert(0, str(BT_DIR))
 
-from btlib import money  # noqa: E402
+from btlib import money, yaml  # noqa: E402
 
 YAML_BLOCK = re.compile(r"```yaml[ \t]*\n(.*?)```", re.DOTALL)
 FLOOR_TOL = 0.005
@@ -85,6 +89,7 @@ def _case_id(context):
 def get_assert(output, context):
     """promptfoo python assertion entry point."""
     output = str(output)
+    vars_ = _vars(context)
     case_id = _case_id(context)
     if case_id is None:
         return _fail("vars.case_id is missing or not a plain case id")
@@ -114,8 +119,22 @@ def get_assert(output, context):
             os.chmod(floor_path, 0o600)
         draft_path = tmp / "draft.yaml"
         draft_path.write_text(blocks[0], encoding="utf-8")
+        inbound_path = tmp / "inbound.yaml"
+        inbound_path.write_text(
+            yaml.dump(
+                {
+                    "offer": vars_.get("inbound_offer"),
+                    "text": str(vars_.get("counterparty_message") or ""),
+                }
+            ),
+            encoding="utf-8",
+        )
         r = subprocess.run(
-            [sys.executable, str(BT), "gate", case_id, "--draft", str(draft_path)],
+            [
+                sys.executable, str(BT), "gate", case_id,
+                "--draft", str(draft_path),
+                "--inbound", str(inbound_path),
+            ],
             env={**os.environ, "BETTERTERMS_HOME": str(home)},
             capture_output=True,
             text=True,

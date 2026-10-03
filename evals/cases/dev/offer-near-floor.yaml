@@ -4,6 +4,7 @@ vars:
   counterparty_message: |
     Best I can do is $700 for the piano, cash, pickup Friday. My budget
     really is maxed out at that.
+  inbound_offer: 700
 assert:
   - type: python
     value: file://harness/assert_gate.py
