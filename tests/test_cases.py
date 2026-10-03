@@ -41,9 +41,16 @@ class CaseTest(BtTestCase):
         self.assertEqual(mode, 0o600, oct(mode))
         self.assertEqual(floor_path.read_text().strip(), "1200")
 
-    def test_set_floor_parses_currency_text(self):
+    def test_set_floor_rejects_currency_text(self):
+        # Strict parsing: only a plain number like 1200 or 1200.50. A
+        # currency string or a separator the user could mean two ways is
+        # refused instead of guessed.
         case_id, case_dir = new_case(self.home)
         proc, out = run_bt_json(self.home, "case", "set-floor", case_id, stdin="$1,200.00\n")
+        self.assertEqual(proc.returncode, 2, proc.stdout)
+        self.assertNotIn("1,200", proc.stdout)
+        self.assertFalse((case_dir / ".floor").exists())
+        proc, out = run_bt_json(self.home, "case", "set-floor", case_id, stdin="1200.00\n")
         self.assertEqual(proc.returncode, 0, proc.stdout)
         self.assertNotIn("1200", proc.stdout)
         self.assertEqual((case_dir / ".floor").read_text().strip(), "1200")
@@ -114,7 +121,10 @@ class CaseTest(BtTestCase):
             self.home, "case", "set-floor", case_id, stdin="$1,000 or $1,200\n"
         )
         self.assertEqual(proc.returncode, 2, out)
-        self.assertEqual(out["error"], "floor must be a single number")
+        self.assertEqual(
+            out["error"],
+            "floor must be a single plain number like 1200 or 1200.50",
+        )
         self.assertNotIn("1,000", proc.stdout)
         self.assertNotIn("1,200", proc.stdout)
         self.assertNotIn("1,000", proc.stderr)

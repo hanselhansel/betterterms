@@ -46,7 +46,10 @@ The full procedure is in `references/coach-procedure.md`. Follow it.
 ## Rules
 
 - Any message you draft for the user to send goes through `bt.py gate`
-  like any outbound turn.
+  like any outbound turn. Coach mode makes every send `needs_approval`,
+  and the gate enforces it.
+- Never ask for the floor in chat. The user restates or confirms limits
+  by running `bt.py case set-floor` in their own terminal.
 - Default autonomy is level 1 (draft only). The user always speaks or
   sends the final words.
 - If the counterparty sincerely asks whether an AI is involved, never

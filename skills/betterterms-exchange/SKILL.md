@@ -46,7 +46,11 @@ or ask for their offer when it is not. Then gate, send, and log as below.
 
    `python3 ../betterterms-guardrails/scripts/bt.py score <case_id> --inbound <path>/inbound.yaml`
 
-   Read the band and the escalate list.
+   Read the band and the escalate list:
+
+   - `unknown`, `near_floor`, `below_floor`: escalate to the user.
+   - `at_or_above_target`: ask the user to approve acceptance.
+   - `in_band`: negotiate per the plan.
 3. Verify new claims in the message ("lowest price", "expires today",
    rival quotes) against the fact list or a fresh source check.
 4. Pick one move per the turn procedure. Draft `draft.yaml`. Every id in
@@ -58,9 +62,12 @@ or ask for their offer when it is not. Then gate, send, and log as below.
 
    - Exit 0, `pass`: send per the autonomy level.
    - Exit 3, `needs_approval`: ask the user for an explicit yes, then
-     re-run with `--approved`.
-   - Exit 1, `block`: redraft once without the blocked content and
-     re-gate. A second block means escalate to the user.
+     re-run with `--approved`. `--approved` is honest only after that
+     yes, and the yes gets quoted in `thread.md`.
+   - Exit 1, `block`: when the reason is "outside your limits; escalate
+     to the user", escalate to the user and do not redraft toward a
+     guessed limit. On any other block, redraft once without the blocked
+     content and re-gate. A second block means escalate to the user.
    - Exit 2: usage or file error. Fix the call.
 6. Send per autonomy: level 1 hands the draft to the user; level 2 asks
    yes before each send; levels 3 and 4 send inside the approved plan.

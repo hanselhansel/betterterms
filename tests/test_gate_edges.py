@@ -8,10 +8,13 @@ from bt_helpers import (
     PLAN_BILLS,
     BtTestCase,
     new_case,
+    plan_for,
     run_bt_json,
     write_case_files,
     write_draft,
 )
+
+LIMITS = "outside your limits; escalate to the user"
 
 
 class GateEdgeTest(BtTestCase):
@@ -20,7 +23,7 @@ class GateEdgeTest(BtTestCase):
         write_case_files(
             case_dir,
             brief=dict(BRIEF_PAY, direction=direction),
-            plan=PLAN_BILLS if plan is None else plan,
+            plan=plan_for(direction, floor) if plan is None else plan,
             floor=floor,
         )
         return case_id
@@ -44,12 +47,12 @@ class GateEdgeTest(BtTestCase):
             (
                 {"action": "accept", "offer": 1300, "text": "deal"},
                 False,
-                "worse than floor",
+                LIMITS,
             ),
             (
                 {"action": "accept", "offer": 1300, "text": "deal"},
                 True,
-                "worse than floor",
+                LIMITS,
             ),
             ({"offer": 1100, "text": "hello"}, False, "not one of"),
             ({"action": "Send", "offer": 1100, "text": "hello"}, False, "not one of"),
@@ -153,23 +156,33 @@ class GateEdgeTest(BtTestCase):
             for name in ("brief.yaml", "plan.yaml", ".floor")
         }
         rows = [
-            ("brief.yaml", "pack: [unclosed\n"),
-            ("plan.yaml", "target: [unclosed\n"),
-            ("brief.yaml", "- a\n- b\n"),
-            (".floor", "not a number\n"),
+            ("brief.yaml", "pack: [unclosed\n", 2),
+            ("plan.yaml", "target: [unclosed\n", 2),
+            ("brief.yaml", "- a\n- b\n", 2),
+            # A corrupt .floor file is a runtime limit failure: the gate
+            # blocks (exit 1) instead of trusting a guess, while the
+            # scorer reports the error (exit 2).
+            (".floor", "not a number\n", 1),
         ]
-        for name, content in rows:
+        for name, content, gate_rc in rows:
             with self.subTest(corrupt=f"{name}: {content.strip()}"):
                 path = case_dir / name
                 path.write_text(content)
                 try:
-                    for cmd in (
-                        ["gate", case_id, "--draft", str(draft)],
-                        ["score", case_id, "--inbound", str(inbound)],
-                    ):
-                        proc, out = run_bt_json(self.home, *cmd)
-                        self.assertEqual(proc.returncode, 2, out)
+                    proc, out = run_bt_json(
+                        self.home, "gate", case_id, "--draft", str(draft)
+                    )
+                    self.assertEqual(proc.returncode, gate_rc, out)
+                    if gate_rc == 1:
+                        self.assertEqual(out["result"], "block")
+                        self.assertIn(LIMITS, out["reasons"])
+                    else:
                         self.assertIn("error", out)
+                    proc, out = run_bt_json(
+                        self.home, "score", case_id, "--inbound", str(inbound)
+                    )
+                    self.assertEqual(proc.returncode, 2, out)
+                    self.assertIn("error", out)
                 finally:
                     path.write_text(originals[name])
 

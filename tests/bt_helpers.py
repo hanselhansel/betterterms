@@ -95,6 +95,37 @@ PLAN_BILLS = {
 }
 
 
+_KEEP = object()
+
+
+def plan_for(direction, floor, target=_KEEP):
+    """A plan whose target, option and ladder values sit inside the
+    band for the given direction and floor, so the plan-vs-limits check
+    does not trip. PLAN_BILLS is shaped for a pay floor of 1200; other
+    setups derive values from the floor. ``target`` overrides the plan
+    target, including to None."""
+    if floor is None:
+        return dict(PLAN_BILLS)
+    if direction == "receive":
+        plan = dict(
+            PLAN_BILLS,
+            target=floor + 10000,
+            options=[{"label": "a", "value": floor + 5000, "terms": "x"}],
+            ladder=[{"value": floor + 2000, "reason": "r"}],
+        )
+    elif floor == 1200:
+        plan = dict(PLAN_BILLS)
+    else:
+        plan = dict(
+            PLAN_BILLS,
+            options=[{"label": "a", "value": floor - 5, "terms": "x"}],
+            ladder=[{"value": floor - 2, "reason": "r"}],
+        )
+    if target is not _KEEP:
+        plan["target"] = target
+    return plan
+
+
 class BtTestCase(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()

@@ -5,11 +5,14 @@ from bt_helpers import (
     PLAN_BILLS,
     BtTestCase,
     new_case,
+    plan_for,
     run_bt_json,
     write_case_files,
     write_draft,
 )
 from btlib import yaml
+
+LIMITS = "outside your limits; escalate to the user"
 
 
 class GateTest(BtTestCase):
@@ -21,7 +24,7 @@ class GateTest(BtTestCase):
         write_case_files(
             case_dir,
             brief=b,
-            plan=PLAN_BILLS if plan is None else plan,
+            plan=plan_for(direction, floor) if plan is None else plan,
             floor=floor,
         )
         return case_id, case_dir
@@ -42,7 +45,7 @@ class GateTest(BtTestCase):
         proc, out = self.gate(case_id, {"action": "send", "offer": 1250, "text": "final", "claims": []})
         self.assertEqual(proc.returncode, 1)
         self.assertEqual(out["result"], "block")
-        self.assertIn("worse than floor", " ".join(out["reasons"]))
+        self.assertIn(LIMITS, out["reasons"])
 
     def test_offer_below_floor_passes_pay(self):
         case_id, _ = self.make_case(floor=1200)
@@ -75,7 +78,7 @@ class GateTest(BtTestCase):
                 )
                 self.assertEqual(proc.returncode, 1, out)
                 self.assertEqual(out["result"], "block")
-                self.assertIn("floor disclosed", " ".join(out["reasons"]))
+                self.assertIn(LIMITS, out["reasons"])
 
     def test_gate_direction_receive(self):
         case_id, _ = self.make_case(direction="receive", floor=150000)
@@ -85,7 +88,7 @@ class GateTest(BtTestCase):
         )
         self.assertEqual(proc.returncode, 1)
         self.assertEqual(out["result"], "block")
-        self.assertIn("worse than floor", " ".join(out["reasons"]))
+        self.assertIn(LIMITS, out["reasons"])
 
     def test_direction_receive_offer_above_floor_passes(self):
         case_id, _ = self.make_case(direction="receive", floor=150000)
@@ -217,7 +220,7 @@ class GateTest(BtTestCase):
             inbound={"offer": 1200, "text": "fine, $1,200 it is"},
         )
         self.assertEqual(proc.returncode, 1)
-        self.assertIn("floor disclosed", " ".join(out["reasons"]))
+        self.assertIn(LIMITS, out["reasons"])
 
     def test_inbound_missing_file_errors(self):
         case_id, _ = self.make_case(floor=1200)
@@ -239,7 +242,7 @@ class GateTest(BtTestCase):
         )
         self.assertEqual(proc.returncode, 1)
         self.assertEqual(out["result"], "block")
-        self.assertIn("floor", " ".join(out["reasons"]))
+        self.assertIn(LIMITS, out["reasons"])
 
     def test_never_disclose_blocks(self):
         case_id, _ = self.make_case(floor=1200)

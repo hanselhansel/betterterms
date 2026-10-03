@@ -1,7 +1,9 @@
 # Coach mode procedure
 
 1. Fix target, floor, and the package before the conversation; the user
-   commits to them.
+   commits to them. The user restates or confirms the floor themselves
+   by running `bt.py case set-floor` in their own terminal; the agent
+   never asks for the floor in chat.
 2. Script: opening line, the ask as a precise figure or range, the
    reasons, two or three equal options, answers to the five likeliest
    objections, and the closing request for writing.

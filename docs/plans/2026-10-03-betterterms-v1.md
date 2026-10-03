@@ -67,10 +67,10 @@ in the open Agent Skills format; promptfoo 0.123 for evals; Node only for the mo
 | Command | Exit codes | Output |
 |---|---|---|
 | `bt.py case new --pack <pack> [--mode act\|coach] [--direction pay\|receive]` | 0 ok, 2 usage | `{"case_id": "...", "path": "..."}` |
-| `bt.py case set-floor <case_id>` (value read from stdin, never argv) | 0, 2 | `{"ok": true}` (never echoes the value) |
+| `bt.py case set-floor <case_id>` (hidden `getpass` prompt on a TTY, else stdin, never argv) | 0, 2 | `{"ok": true}` (never echoes the value) |
 | `bt.py case show <case_id>` | 0, 2 | brief + plan, floor field omitted |
 | `bt.py gate <case_id> --draft <draft.yaml> [--approved] [--inbound <inbound.yaml>]` | 0 pass, 1 block, 2 usage/error, 3 needs approval | `{"result": "pass\|block\|needs_approval", "reasons": [...]}` |
-| `bt.py score <case_id> --inbound <inbound.yaml>` | 0, 2 | `{"band": "at_or_above_target\|in_band\|near_floor\|below_floor", "escalate": [...]}` |
+| `bt.py score <case_id> --inbound <inbound.yaml>` | 0, 2 | `{"band": "at_or_above_target\|in_band\|near_floor\|below_floor\|unknown", "escalate": [...]}` |
 | `bt.py ledger add <case_id> --before N --after N --period month\|year` | 0, 2 | `{"saved_per_year": N}` |
 | `bt.py ledger total` | 0 | `{"cases": N, "saved_per_year": N, "by_pack": {...}}` |
 
@@ -84,9 +84,9 @@ Case files (`$BETTERTERMS_HOME/cases/<case_id>/`):
 - Draft (`draft.yaml`): `action (send|accept|cancel|pay|sign|dispute), offer (number or null), text, claims (list of fact ids)`.
 - Inbound (`inbound.yaml`): `offer (number or null), text`.
 
-Gate rules (in order): missing `.floor` → block; `action` in irreversible set and no `--approved` → needs_approval; offer worse than floor for `direction` → block; floor value in `text` under any normalization (commas, decimals, `k`, spelled thousands) → block; any `never_disclose` string in `text` (case-insensitive) → block; any claim id not in `plan.facts` → block; any currency amount in `text` that is not the offer, an option or ladder value, the target, or present in a fact's text → block ("untraced number").
+Gate rules (all run; block > needs_approval > pass): draft or inbound `text` over 64 KB → block "message too long"; `.floor` missing, unreadable, or invalid → block; `direction` not `pay`/`receive`, or plan target/option/ladder outside the band → exit 2 ("plan conflicts with your limits"); missing or unknown `action` → block; `action` in irreversible set, coach `mode`, or `autonomy` 1 without `--approved` → needs_approval (`--approved` is passed only after an explicit user yes in the conversation, quoted in `thread.md`); `offer` not a plain number → block; for `pay` any marked amount in `text` above the floor, for `receive` any below it → block unless every such amount appears in the inbound text or offer and the draft `offer` is inside the band; `offer` outside the band → block; `accept`/`sign`/`pay` require a numeric in-band offer, and `accept` may not take an inbound offer outside the band → block; the floor's digit string as a whole number token in `text` (a token that merely contains it does not count) or its parsed value → block; a `never_disclose` string or a numeric-equal amount in `text` → block; claim id not in `plan.facts` → block; any marked amount in `text` not traced to the offer, an option or ladder value, the target, a fact's text, or the inbound message → block ("untraced number"). Every floor-related block reports one generic reason: "outside your limits; escalate to the user".
 
-Score rules: band by `direction`; `near_floor` = within 10% of the floor; `escalate` includes `suspected_injection` when inbound text matches instruction patterns (ignore/disregard previous instructions, system prompt, reveal budget/maximum/floor/limit, you are an AI assistant), `ai_identity_question` when it asks whether the sender is an AI or a bot, `legal_terms` on arbitration/indemnify/waive.
+Score rules: `direction` must be `pay` or `receive` and the floor must parse (else exit 2); a plan target, option, or ladder outside the band exits 2 ("plan conflicts with your limits"); band by `direction` with the floor checked before the target, so a below-floor offer is never `at_or_above_target`; `near_floor` = within 10% of the floor; a null or non-numeric `offer` gives band `unknown` and `escalate` contains `no_offer_parsed`; `escalate` includes `suspected_injection` when inbound text matches instruction patterns (ignore/disregard previous instructions, system prompt, reveal budget/maximum/floor/limit, you are an AI assistant), `ai_identity_question` when it asks whether the sender is an AI or a bot, `legal_terms` on arbitration/indemnify/waive.
 
 ---
 
@@ -246,3 +246,4 @@ Same file layout as step 6, `mode: coach`, `direction: receive`. Coach skill flo
 - 0003: Open decisions resolved: cloud cases are short-lived; response sharing off; `ai-api` covers pricing only; comp data user-supplied plus cited public sources.
 - 0004: Evals move from step 7 to step 3 so pack prompt changes have baselines.
 - 0005: The YAML layer is vendored pure-Python PyYAML 6.0.3 behind a `miniyaml` wrapper, replacing a hand-written subset that kept diverging from real YAML.
+- 0007: Gate hardening: user-typed floor entry, strict plain-number floor parsing, an every-amount floor rule, oracle-free block reasons, plan and direction validation, a 64 KB text cap, and ledger guards.

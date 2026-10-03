@@ -39,14 +39,28 @@ drafted: misreading them is the biggest source of lost value.
    in `references/question-bank.md`. Ask in short batches. Skip what the
    user already answered.
 3. Capture the walk-away limit: the worst deal the user would still take.
-   Write it immediately, and only through the runtime:
+   The user enters it themselves, in their own terminal. Tell them to run
+   this exact command:
 
-   `printf '%s' "<value>" | python3 ../betterterms-guardrails/scripts/bt.py case set-floor <case_id>`
+   `python3 ../betterterms-guardrails/scripts/bt.py case set-floor <case_id>`
 
-   - The value goes on standard input, never on the command line.
-   - Never repeat it back. Never write it into `brief.yaml`, `plan.yaml`,
-     `thread.md`, a draft, or any other file.
-   - You will not see it again. Only the gate and the scorer can read it.
+   - On a terminal it asks `Walk-away number (hidden): ` and does not
+     echo what they type.
+   - Never repeat the value back. Never write it into `brief.yaml`,
+     `plan.yaml`, `thread.md`, a draft, or any other file. Only the gate
+     and the scorer can read it.
+   - Only if the user says they cannot run the command themselves (for
+     example a cloud session with no terminal) may you pass the value on
+     stdin with a quoted heredoc:
+
+     ```
+     python3 ../betterterms-guardrails/scripts/bt.py case set-floor <case_id> <<'EOF'
+     <value>
+     EOF
+     ```
+
+     Then tell the user you saw the value once. Never use `printf` with
+     double quotes or put the value on the command line.
 4. Ask the autonomy question (question bank item 8). Default: level 2 for
    act mode, level 1 for coach mode.
 5. Run the ranking check (question bank item 10). Offer three sample
