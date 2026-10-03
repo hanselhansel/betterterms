@@ -23,11 +23,15 @@ guarantees and fail closed:
 8. any rendered placeholder value equal to the floor -> block,
    except the in-band offer itself; a value equal only to the
    floor's x12 or /12 conversion is a review hit (``amount matches
-   a converted limit``, no numbers). A price value (target, ladder,
-   price option, quote or fact amount not on ``send``) worse than
-   the floor blocks too; fact values read the structured ``amount``
-   field only, never the text (decision 0010). Bonus and fee options
-   are not offers, so only the equal-to-floor rule reaches them
+   a converted limit``, no numbers). A ``send`` offer equal to the
+   floor after conversion is a review hit too (``offer is at your
+   limit``): inside the band, but it reveals the walk-away number;
+   ``accept``, ``sign`` and ``pay`` may sit exactly on it. A price
+   value (target, ladder, price option, quote or fact amount not on
+   ``send``) worse than the floor blocks too; fact values read the
+   structured ``amount`` field only, never the text (decision 0010).
+   Bonus and fee options are not offers, so only the equal-to-floor
+   rule reaches them
 9. rendered message over 64 KB, checked after fact expansion and
    before any text scanning -> block
 10. any claim id (draft or auto-claimed by ``{fact:id}``) not in
@@ -43,8 +47,8 @@ any number word, decimal, separator-joined or non-isolated digit
 token, currency or scale word or abbreviation, listed commitment
 words, a fact that states a number its ``amount`` does not carry,
 sentinel glue and every ``never_disclose`` term all route to the
-user. Irreversible actions, coach mode and autonomy 1 also need
-approval.
+user. Irreversible actions, coach mode, autonomy 1 and a ``send``
+offer at the floor also need approval.
 
 ``block`` dominates ``needs_approval``, which dominates ``pass``, and
 every floor-related block reports the same generic reason so the
@@ -200,10 +204,20 @@ def check(case_dir, draft, approved=False, inbound=None):
                     findings.append(("block", LIMITS))
 
     if floor is not None:
-        if offer is not None and _worse(
-            render.convert(offer, period, plan_period), floor, direction
-        ):
-            findings.append(("block", LIMITS))
+        if offer is not None:
+            offer_floor = render.convert(offer, period, plan_period)
+            if _worse(offer_floor, floor, direction):
+                findings.append(("block", LIMITS))
+            elif (
+                not approved
+                and action == "send"
+                and _same(offer_floor, (floor,))
+            ):
+                # A send offer at the floor is inside the band, but it
+                # hands the counterparty the user's walk-away number.
+                # accept, sign and pay may sit on it: they take a price
+                # already on the table.
+                findings.append(("approval", "offer is at your limit"))
         if clean:
             _check_values(find, action, floor, direction, plan_period, findings)
 

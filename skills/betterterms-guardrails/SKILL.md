@@ -43,8 +43,9 @@ Exit codes and results:
   reason is generic; do not redraft toward a guessed limit, escalate
   to the user. On any other block, redraft without the blocked content.
 - 2: usage or file error. Fix the call.
-- 3, `needs_approval`: the action is irreversible, or coach mode,
-  autonomy level 1, or the review scan flagged the rendered text.
+- 3, `needs_approval`: the action is irreversible, coach mode,
+  autonomy level 1, a `send` offer at the user's limit, or the
+  review scan flagged the rendered text.
   Show the user the `rendered` text and the plain-word reasons, ask
   for an explicit yes, then re-run with `--approved`.
 
@@ -81,9 +82,10 @@ Hard blocks, in order:
    `accept` needs an in-band inbound offer equal to the draft offer,
    both read in the floor's period.
 7. Any rendered placeholder value equal to the floor: block, except
-   the in-band offer itself (an offer exactly at the floor is
-   allowed). A value equal only to the floor's x12 or /12 conversion
-   routes to the user instead: "amount matches a converted limit".
+   the in-band offer itself (an offer exactly at the floor is inside
+   the band, but on `send` it routes to the user). A value equal
+   only to the floor's x12 or /12 conversion routes to the user
+   instead: "amount matches a converted limit".
    A price value (target, ladder, price option, quote or fact amount
    not on `send`) worse than the floor blocks too. A fact's value is
    its structured `amount` (period-converted from its declared
@@ -130,6 +132,10 @@ that carries no numbers:
   characters stripped; numeric items match as whole numbers only.
 - A rendered non-offer value equal to the floor only after an x12 or
   /12 conversion.
+- A `send` draft offer equal to the floor after conversion to the
+  floor's period: "offer is at your limit". Sending it reveals the
+  walk-away number. `accept`, `sign` and `pay` may sit exactly on
+  the floor because they take a price already on the table.
 
 The word lists live in `scripts/btlib/wordlists.py`, the single
 module the runtime and this file share:

@@ -190,18 +190,24 @@ class AcceptConversionTest(PeriodCase):
 class FloorPeriodKeyTest(PeriodCase):
     def test_floor_period_key_declares_the_floor_period(self):
         # ``floor_period`` is the canonical key; the legacy ``period``
-        # key on the plan still works.
+        # key on the plan still works. A 720/year offer converts to
+        # the 60/month floor exactly: inside the band, but on send it
+        # is the walk-away number, so it routes to the user.
         for key in ("floor_period", "period"):
             with self.subTest(key=key):
                 plan = dict(
                     plan_for("pay", 60, target=50), **{key: "month"}
                 )
                 case_id = self.make_case(floor=60, plan=plan)
-                proc, out = self.gate(
-                    case_id,
-                    send_draft(offer=720, period="year",
-                               template="I can do {offer}"),
+                draft = send_draft(offer=720, period="year",
+                                   template="I can do {offer}")
+                proc, out = self.gate(case_id, draft)
+                self.assertEqual(proc.returncode, 3, out)
+                self.assertEqual(out["rendered"], "I can do $720/year")
+                self.assertIn(
+                    "offer is at your limit", out["reasons"]
                 )
+                proc, out = self.gate(case_id, draft, approved=True)
                 self.assertEqual(proc.returncode, 0, out)
                 self.assertEqual(out["rendered"], "I can do $720/year")
 
