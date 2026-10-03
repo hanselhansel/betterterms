@@ -138,6 +138,32 @@ class ShapeTest(unittest.TestCase):
         self.assertEqual(plugin["source"], "./")
         self.assertIn("description", plugin)
 
+    def test_claude_marketplace_lists_mod_when_present(self):
+        mod = self.root / "mod" / ".claude-plugin"
+        mod.mkdir(parents=True)
+        (mod / "plugin.json").write_text(json.dumps({
+            "name": "betterterms-mod",
+            "description": "Test mod.",
+            "version": "0.0.0",
+            "author": {"name": "x"},
+        }))
+        data = json.loads(gen_claude.gen(self.root, VERSION)
+                          [".claude-plugin/marketplace.json"])
+        self.assertEqual(len(data["plugins"]), 2)
+        entry = data["plugins"][1]
+        self.assertEqual(entry["name"], "betterterms-mod")
+        self.assertEqual(entry["source"], "./mod")
+        self.assertEqual(entry["description"], "Test mod.")
+
+    def test_claude_marketplace_mod_entry_without_manifest(self):
+        (self.root / "mod").mkdir()
+        data = json.loads(gen_claude.gen(self.root, VERSION)
+                          [".claude-plugin/marketplace.json"])
+        entry = data["plugins"][1]
+        self.assertEqual(entry["name"], "betterterms-mod")
+        self.assertEqual(entry["source"], "./mod")
+        self.assertIn("description", entry)
+
     def test_codex_plugin_json_shape(self):
         data = json.loads(self.files[".codex-plugin/plugin.json"])
         self.assertEqual(data["name"], "betterterms")
