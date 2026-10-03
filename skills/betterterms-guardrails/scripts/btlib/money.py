@@ -10,20 +10,17 @@ month``), bare numbers (``1200.00``) and spelled-out numbers up to the
 billions (``twelve hundred``, ``one thousand, two hundred``,
 ``two million``).
 
-``find(text)`` returns :class:`Amount` records with a ``marked`` flag.
-Marked means the amount looked like money (currency prefix or suffix, a
-multiplier or scale word, a hedged or per-period form, or a spelled
-phrase that ends on a scale word). The scorer's suggested-amounts
-listing, the gate's fact-value check and the never-disclose whole
-number match all read these results.
+``find(text)`` returns :class:`Amount` records (start, end, value).
+The scorer's suggested-amounts listing, the gate's fact-value check
+and the never-disclose whole-number match all read these results.
 
 Parsed values saturate at ``_CAP``: a hostile digit run or spelled
 phrase returns the cap instead of raising OverflowError or yielding
-infinity. Every pattern is linear-time: no nested quantifiers,
-fixed-lookbehind anchors. Overlap suppression merges each pass's spans
-once, and spelled matches check a precomputed predecessor index for a
-leading currency sign, so the whole scan stays linear on hostile
-input.
+infinity. Only the first ``MAX_TEXT`` characters are scanned, so a
+huge input costs the same as a 64 KB one. Every pattern is
+linear-time: no nested quantifiers, fixed-lookbehind anchors.
+Overlap suppression merges each pass's spans once, so the whole scan
+stays linear on hostile input.
 """
 
 import bisect
@@ -31,7 +28,9 @@ import re
 from collections import namedtuple
 from heapq import merge
 
-Amount = namedtuple("Amount", ["start", "end", "value", "marked"])
+from . import MAX_TEXT
+
+Amount = namedtuple("Amount", ["start", "end", "value"])
 
 _NUM = r"\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?"
 _SPACE_NUM = r"\d{1,3}(?: \d{3})+"
@@ -80,8 +79,13 @@ _SCALE_WORD = re.compile(
     re.IGNORECASE,
 )
 # Hedged or approximate forms are still marked amounts: "1200ish" and
-# "~1200" state a number just as surely as "$1200".
-_ISH = re.compile(rf"(?<![\w.,])(?P<num>{_NUM})\s*-?\s*ish\b", re.IGNORECASE)
+# "~1200" state a number just as surely as "$1200". The whitespace
+# around the dash is bounded, so a long run of spaces cannot feed the
+# matcher a quadratic walk.
+_ISH = re.compile(
+    rf"(?<![\w.,])(?P<num>{_NUM})\s{{0,20}}-?\s{{0,20}}ish\b",
+    re.IGNORECASE,
+)
 _APPROX = re.compile(rf"(?<![\w.,])(?:~|≈)\s*(?P<num>{_NUM})")
 _PER = re.compile(
     rf"(?<![\w.,])(?P<num>{_NUM})"
@@ -96,12 +100,10 @@ _WORD = "|".join(sorted(set(_UNITS) | set(_TENS) | set(_SCALES) | {"a", "an", "a
 # Commas join spelled phrases ("one thousand, two hundred") the same way
 # spaces do.
 _SPELLED = re.compile(rf"\b(?:{_WORD})(?:[\s,-]+(?:{_WORD}))*", re.IGNORECASE)
-_AFTER_CURRENCY_WORD = re.compile(rf"\s*{_SUFFIX}", re.IGNORECASE)
 
 # Parsed values clamp here: no result is ever inf or an OverflowError.
 _CAP = 1e18
 _CAP_INT = 10**18
-_CURRENCY_SIGNS = frozenset("$€£₹¥")
 
 
 def _clamp(value):
@@ -159,18 +161,10 @@ def _spelled_words(text):
 
 
 def find(text):
-    """Return all amounts in ``text`` as Amount(start, end, value, marked)."""
+    """Return all amounts in ``text`` as Amount(start, end, value)."""
     found = []
     taken = []
-    # Index of the last non-space char before each position, so the
-    # spelled pass can check for a leading currency sign in O(1)
-    # instead of rescanning the whole prefix per match.
-    prev_nonspace = [-1] * len(text)
-    last = -1
-    for i, ch in enumerate(text):
-        prev_nonspace[i] = last
-        if not ch.isspace():
-            last = i
+    text = text[:MAX_TEXT]
 
     def scan(regex, parse):
         added = []
@@ -178,9 +172,8 @@ def find(text):
             hit = parse(m)
             if hit is None or _covered(taken, m.start(), m.end()):
                 continue
-            value, marked = hit
             added.append(m.span())
-            found.append(Amount(m.start(), m.end(), value, marked))
+            found.append(Amount(m.start(), m.end(), hit))
         # Matches arrive sorted within a pass; one linear merge keeps the
         # whole scan linear instead of a per-match list insert.
         if added:
@@ -189,29 +182,23 @@ def find(text):
     def scaled(m):
         g = m.groupdict()
         num = g.get("num") or g.get("num2")
-        return (_clamp(_to_num(num) * _mult_of(g.get("mult"))), True)
+        return _clamp(_to_num(num) * _mult_of(g.get("mult")))
 
     def spelled(m):
         words = _spelled_words(m.group(0))
         if words is None:
             return None
-        p = prev_nonspace[m.start()]
-        marked = (
-            bool(_AFTER_CURRENCY_WORD.match(text, m.end()))
-            or (p >= 0 and text[p] in _CURRENCY_SIGNS)
-            or (words[-1] in _SCALES and words[0] not in ("a", "an"))
-        )
-        return (float(_spelled_value(words)), marked)
+        return float(_spelled_value(words))
 
     scan(_MARKED, scaled)
     scan(_SUFFIXED, scaled)
-    scan(_SCALE_WORD, lambda m: (_clamp(_to_num(m.group("num")) * _SCALE_WORD_VALUE[m.group("scale").lower()]), True))
-    scan(_ISH, lambda m: (_to_num(m.group("num")), True))
-    scan(_APPROX, lambda m: (_to_num(m.group("num")), True))
-    scan(_PER, lambda m: (_to_num(m.group("num")), True))
-    scan(_SPACE_GROUP, lambda m: (_to_num(m.group("num")), True))
+    scan(_SCALE_WORD, lambda m: _clamp(_to_num(m.group("num")) * _SCALE_WORD_VALUE[m.group("scale").lower()]))
+    scan(_ISH, lambda m: _to_num(m.group("num")))
+    scan(_APPROX, lambda m: _to_num(m.group("num")))
+    scan(_PER, lambda m: _to_num(m.group("num")))
+    scan(_SPACE_GROUP, lambda m: _to_num(m.group("num")))
     scan(_SPELLED, spelled)
-    scan(_BARE, lambda m: (_to_num(m.group(0)), False))
+    scan(_BARE, lambda m: _to_num(m.group(0)))
     found.sort(key=lambda a: a.start)
     return found
 

@@ -126,6 +126,22 @@ class LedgerTest(BtTestCase):
                 self.assertIn("error", out)
         self.assertFalse((self.home / "ledger.jsonl").exists())
 
+    def test_ledger_add_invalid_direction_errors(self):
+        # direction comes from cases.direction_of: an unknown value is
+        # broken case data, exit 2, never a silent "pay" default.
+        case_id, case_dir = new_case(self.home)
+        brief_path = case_dir / "brief.yaml"
+        brief = yaml.load(brief_path.read_text())
+        brief["direction"] = "sideways"
+        brief_path.write_text(yaml.dump(brief))
+        proc, out = run_bt_json(
+            self.home,
+            "ledger", "add", case_id,
+            "--before", "80", "--after", "60", "--period", "month",
+        )
+        self.assertEqual(proc.returncode, 2, out)
+        self.assertIn("error", out)
+
     def test_ledger_rejects_duplicate_case(self):
         case_id, _ = new_case(self.home)
         args = (

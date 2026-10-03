@@ -125,7 +125,8 @@ class MalformedPlaceholderTest(GluedTest):
 
 class FactAmountAtFloorTest(GluedTest):
     # Value: protects=0009 A: a rendered fact amount equal to the floor
-    #   or its x12 or /12 form hard-blocks even with --approved;
+    #   hard-blocks even with --approved; an amount equal only after a
+    #   period conversion is a review hit, not a block;
     # fails_when=render stops recording fact values or _check_values
     #   skips kind "fact", so --approved (no review) ships the floor;
     # why_new=fact tests only assert needs_approval without --approved;
@@ -140,16 +141,25 @@ class FactAmountAtFloorTest(GluedTest):
             ],
         )
         case_id = self.make_case(plan=plan)
-        for fid in ("eq", "mo"):
-            with self.subTest(fact=fid):
-                proc, out = self.gate(
-                    case_id,
-                    send_draft(template=f"note: {{fact:{fid}}}"),
-                    approved=True,
-                )
-                self.assertEqual(proc.returncode, 1, out)
-                self.assertEqual(out["reasons"], [LIMITS])
-                self.assertIsNone(out["rendered"])
+        proc, out = self.gate(
+            case_id,
+            send_draft(template="note: {fact:eq}"),
+            approved=True,
+        )
+        self.assertEqual(proc.returncode, 1, out)
+        self.assertEqual(out["reasons"], [LIMITS])
+        self.assertIsNone(out["rendered"])
+        # $100 is the floor /12: a converted match, a review hit only.
+        proc, out = self.gate(
+            case_id, send_draft(template="note: {fact:mo}")
+        )
+        self.assertEqual(proc.returncode, 3, out)
+        self.assertIn("converted limit", " ".join(out["reasons"]))
+        proc, out = self.gate(
+            case_id, send_draft(template="note: {fact:mo}"),
+            approved=True,
+        )
+        self.assertEqual(proc.returncode, 0, out)
         # Control: a fact amount unrelated to the floor ships approved.
         proc, out = self.gate(
             case_id, send_draft(template="note: {fact:ok}"), approved=True

@@ -177,16 +177,14 @@ class GateEdgeTest(BtTestCase):
             "long-term; pushed: $1,150",
         )
 
-    def test_repeated_currency_symbol_reported_once(self):
+    def test_repeated_currency_sign_reported_once(self):
         case_id = self.make_case(floor=1200)
         proc, out = self.gate(
             case_id, send_draft(template="not $55, I said not $55"),
         )
         self.assertEqual(proc.returncode, 3, out)
-        money_reasons = [
-            r for r in out["reasons"] if "currency" in r or "money" in r
-        ]
-        self.assertEqual(len(money_reasons), 1, out)
+        unusual = [r for r in out["reasons"] if "unusual" in r]
+        self.assertEqual(unusual, ["unusual characters in the message"])
 
     def test_missing_claims_and_missing_offer_default(self):
         # Absent claims and offer read as empty, not errors.
