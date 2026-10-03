@@ -1,0 +1,40 @@
+name: refunds
+command: refunds
+mode: act
+direction: receive
+triggers:
+  - "refund"
+  - "get my money back"
+  - "money back"
+  - "charged me twice"
+  - "double charged"
+  - "never arrived"
+  - "item not received"
+  - "not as described"
+  - "defective"
+  - "return it"
+  - "charged after I cancelled"
+  - "chargeback"
+  - "dispute a charge"
+intake:
+  - "What happened, in a sentence or two?"
+  - "What amount and currency were you charged?"
+  - "How did you pay: card, wallet, bank transfer, or store credit?"
+  - "What is the statement date for the charge?"
+  - "What evidence do you have: receipt, photos, tracking, chat or email threads?"
+  - "Have you already contacted the merchant? What did they say?"
+  - "What remedy do you want: full refund, partial refund, replacement, or repair?"
+  - "If the merchant refuses, are you willing to file a dispute with your card issuer?"
+discovery:
+  - source: email
+    find: "order confirmations, receipts, shipping and delivery notices, merchant support threads"
+    window_days: 400
+  - source: files
+    find: "card or bank statements showing the charge, photos of the item, warranty or policy documents the user provides"
+    window_days: 400
+research:
+  - kind: policy
+  - kind: precedent
+  - kind: rights
+savings:
+  formula: "(before - after) * periods_per_year"
