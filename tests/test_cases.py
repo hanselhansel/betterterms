@@ -58,6 +58,27 @@ class CaseTest(BtTestCase):
         self.assertNotIn("floor", out)
         self.assertNotIn("1200", proc.stdout)
 
+    def test_case_show_with_date_deadline_outputs_json(self):
+        # YAML 1.1 loads an ISO date as datetime.date; case show must
+        # still emit JSON instead of crashing in json.dumps.
+        case_id, case_dir = new_case(self.home)
+        (case_dir / "brief.yaml").write_text(
+            "pack: bills\nmode: act\ndirection: pay\ndeadline: 2026-11-01\n"
+        )
+        proc, out = run_bt_json(self.home, "case", "show", case_id)
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertEqual(out["brief"]["deadline"], "2026-11-01")
+
+    def test_case_show_approvals_load_as_booleans(self):
+        # approved_by_user: yes|no and friends are booleans under YAML 1.1.
+        case_id, case_dir = new_case(self.home)
+        (case_dir / "brief.yaml").write_text(
+            "pack: bills\nmode: act\ndirection: pay\napproved_by_user: yes\n"
+        )
+        proc, out = run_bt_json(self.home, "case", "show", case_id)
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertIs(out["brief"]["approved_by_user"], True)
+
     def test_case_show_unknown_errors(self):
         proc, out = run_bt_json(self.home, "case", "show", "bills-20000101-0000")
         self.assertEqual(proc.returncode, 2)

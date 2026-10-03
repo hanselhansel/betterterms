@@ -1,6 +1,6 @@
 ---
 name: betterterms-exchange
-description: Runs Act-mode negotiation turns for a betterterms case. Parses each inbound reply, scores it, verifies claims, picks one move, drafts the next message, and gates it before anything is sent. Runs only when called: when a counterparty reply arrives in an open case or the user asks for the next message to send.
+description: Runs Act-mode negotiation turns for a betterterms case. Parses each inbound reply, scores it, verifies claims, picks one move, drafts the next message, and gates it before anything is sent. Runs only on demand, when a counterparty reply arrives in an open case or the user asks for the next message to send.
 metadata:
   disable-model-invocation: "true"
 ---

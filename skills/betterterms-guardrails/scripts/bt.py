@@ -138,7 +138,7 @@ def main(argv):
         code, out = args.fn(args)
     except (BtError, OSError, ValueError) as e:
         code, out = 2, {"error": str(e)}
-    print(json.dumps(out))
+    print(json.dumps(out, default=str))
     return code
 
 

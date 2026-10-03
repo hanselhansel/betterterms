@@ -138,6 +138,22 @@ class GateTest(BtTestCase):
         self.assertEqual(proc.returncode, 0, out)
         self.assertEqual(out["result"], "pass")
 
+    def test_yaml11_booleans_in_lists_do_not_crash(self):
+        # YAML 1.1 loads yes/no/on/off as booleans. A bool where a list
+        # was expected must produce a gate verdict, never a traceback.
+        case_id, case_dir = self.make_case(floor=1200)
+        (case_dir / "brief.yaml").write_text(
+            "pack: bills\nmode: act\ndirection: pay\nnever_disclose: yes\n"
+        )
+        draft_path = self.tmp / "draft.yaml"
+        draft_path.write_text(
+            "action: send\noffer: 1100\ntext: a counter offer\nclaims: yes\n"
+        )
+        proc, out = run_bt_json(self.home, "gate", case_id, "--draft", str(draft_path))
+        self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+        self.assertEqual(out["result"], "block")
+        self.assertIn("not in plan facts", " ".join(out["reasons"]))
+
     def test_gate_without_floor_blocks(self):
         case_id, _ = self.make_case(floor=None)
         proc, out = self.gate(

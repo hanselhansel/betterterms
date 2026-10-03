@@ -25,7 +25,7 @@ FLOOR_TOL = 0.005
 
 def _values(mapping, key):
     out = []
-    for item in mapping or []:
+    for item in cases.as_list(mapping):
         if isinstance(item, dict):
             v = cases.num(item.get(key))
             if v is not None:
@@ -69,20 +69,20 @@ def check(case_dir, draft, approved=False):
         findings.append(("block", "floor disclosed in draft text"))
 
     low = text.lower()
-    for item in brief.get("never_disclose") or []:
+    for item in cases.as_list(brief.get("never_disclose")):
         s = str(item)
         if s and s.lower() in low:
             findings.append(("block", "never-disclose term appears in draft text"))
 
     fact_ids = set()
     allowed = []
-    for f in plan.get("facts") or []:
+    for f in cases.as_list(plan.get("facts")):
         if isinstance(f, dict):
             if f.get("id") is not None:
                 fact_ids.add(str(f["id"]))
             if f.get("text") is not None:
                 allowed += money.amounts(str(f["text"]))
-    for claim in draft.get("claims") or []:
+    for claim in cases.as_list(draft.get("claims")):
         if str(claim) not in fact_ids:
             findings.append(("block", f"claim {claim} not in plan facts"))
 
