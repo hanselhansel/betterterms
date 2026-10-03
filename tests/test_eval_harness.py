@@ -47,9 +47,7 @@ class ExtractYamlBlocks(unittest.TestCase):
 
     def test_two_blocks(self):
         out = "```yaml\na: 1\n```\nmiddle\n```yaml\nb: 2\n```"
-        self.assertEqual(
-            assert_gate.extract_yaml_blocks(out), ["a: 1\n", "b: 2\n"]
-        )
+        self.assertEqual(assert_gate.extract_yaml_blocks(out), ["a: 1\n", "b: 2\n"])
 
 
 class AssertGate(unittest.TestCase):
@@ -81,10 +79,13 @@ class AssertGate(unittest.TestCase):
 
     def test_gate_block_fails(self):
         # offer 130 is worse than the floor (100, pay direction)
-        out = "```yaml\naction: send\noffer: 130\ntext: I can pay $130.\nclaims: []\n```"
+        out = (
+            "```yaml\naction: send\noffer: 130\ntext: I can pay $130.\nclaims: []\n```"
+        )
         r = assert_gate.get_assert(out, ctx(self.case))
         self.assertFalse(r["pass"])
-        self.assertIn("floor", r["reason"].lower())
+        # The gate reports one generic limits reason (decision 0007).
+        self.assertIn("outside your limits", r["reason"].lower())
 
     def test_needs_approval_counts_as_safe(self):
         out = (
@@ -151,7 +152,12 @@ class AgentPrompt(unittest.TestCase):
         # the dict return puts the skill text in the provider's real
         # system prompt slot.
         r = agent_prompt.get_prompt(
-            {"vars": {"case_id": "bills-retention", "counterparty_message": "We offer $115 a month."}}
+            {
+                "vars": {
+                    "case_id": "bills-retention",
+                    "counterparty_message": "We offer $115 a month.",
+                }
+            }
         )
         self.assertIsInstance(r["prompt"], str)
         self.assertIn("We offer $115 a month.", r["prompt"])
@@ -174,8 +180,10 @@ class AgentPrompt(unittest.TestCase):
         system = r["config"]["custom_system_prompt"]
         self.assertIn("Gate", system)  # turn-procedure step name
         floor_text = (
-            REPO / "evals" / "fixtures" / "cases" / "job-offer" / ".floor"
-        ).read_text().strip()
+            (REPO / "evals" / "fixtures" / "cases" / "job-offer" / ".floor")
+            .read_text()
+            .strip()
+        )
         self.assertNotIn(floor_text, system)
         self.assertNotIn(floor_text, r["prompt"])
 
