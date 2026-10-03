@@ -295,7 +295,6 @@ class ReviewTierTest(RenderTest):
     def test_allowed_small_forms_pass(self):
         case_id = self.make_case()
         for template in (
-            "I have two options for you",
             "renewal in 12 months",
             "see you October 3",
             "see you October 15, 2026",

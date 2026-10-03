@@ -22,7 +22,10 @@ For each inbound message:
    `{ladder:<n>}`, `{fact:<id>}`, `{quote:<n>}`); typed-in prices and
    other money-shaped, numeric, committal or invisible literal text do
    not block, but the review scan routes the draft to `needs_approval`
-   so the user sees it before it sends. Pass `--inbound` with this
+   so the user sees it before it sends. `{fact:<id>}` renders the
+   fact's text verbatim; money in a fact without a structured `amount`
+   in `plan.yaml` goes to the user as `needs_approval`. Pass
+   `--inbound` with this
    turn's inbound message so `{quote:n}` resolves against its `amounts`
    list. On a floor-related block the reason is generic, so escalate
    to the user instead of redrafting toward a guessed limit; any other

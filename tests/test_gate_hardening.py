@@ -252,10 +252,11 @@ class HardeningTest(BtTestCase):
         )
         self.assertEqual(proc.returncode, 3, out)
         self.assertNotIn("never-disclose", " ".join(out["reasons"]))
+        # "4.2" is a decimal: review-tier under 0010, not a silent pass.
         proc, out = self.gate(
             case_id, send_draft(template="rate 4.2 today")
         )
-        self.assertEqual(proc.returncode, 0, out)
+        self.assertEqual(proc.returncode, 3, out)
 
     def test_offer_types_weird(self):
         case_id, _ = self.make_case()

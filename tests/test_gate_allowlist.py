@@ -18,7 +18,7 @@ from bt_helpers import (
     write_case_files,
     write_draft,
 )
-from btlib import money, render, wordlists, yaml
+from btlib import wordlists, yaml
 
 LIMITS = "outside your limits; escalate to the user"
 
@@ -162,13 +162,14 @@ class TokenRuleTest(AllowlistCase):
                 out = self.review(case_id, send_draft(template=template))
                 self.assertIn("a number", " ".join(out["reasons"]))
 
-    def test_decimal_tokens_split_and_pass(self):
-        # "." is a separator on the token stream, so 90.5 and 3.11 read
-        # as small integers, not one four-digit run.
+    def test_decimal_tokens_need_approval(self):
+        # Decision 0010: decimals are number-shaped and route to the
+        # user; "90.5" and "3.11" no longer read as small integers.
         case_id = self.make_case()
         for template in ("rate 90.5 today", "build 3.11 here"):
             with self.subTest(template=template):
-                self.passed(case_id, send_draft(template=template))
+                out = self.review(case_id, send_draft(template=template))
+                self.assertIn("a number", " ".join(out["reasons"]))
 
     def test_year_after_whole_word_month(self):
         case_id = self.make_case()
@@ -211,17 +212,17 @@ class TokenRuleTest(AllowlistCase):
             ("sounds good to me", "commitment"),
             ("that works for us", "commitment"),
             ("I agreed to it", "commitment"),
+            ("plan k is third", "scale"),
+            ("worth a thou", "scale"),
+            ("I have two options for you", "number word"),
         ):
             with self.subTest(template=template):
                 out = self.review(case_id, send_draft(template=template))
                 self.assertIn(fragment, " ".join(out["reasons"]))
-        # word-shaped codes match in uppercase only; a lone k is not
-        # money; a single number word is not a run.
+        # word-shaped codes match in uppercase only.
         for template in (
             "we can try it",
             "a cad design",
-            "plan k is third",
-            "I have two options for you",
         ):
             with self.subTest(template=template):
                 self.passed(case_id, send_draft(template=template))
@@ -231,7 +232,7 @@ class TokenRuleTest(AllowlistCase):
         for template in ("one two zero zero", "twenty one days"):
             with self.subTest(template=template):
                 out = self.review(case_id, send_draft(template=template))
-                self.assertIn("number words", " ".join(out["reasons"]))
+                self.assertIn("number word", " ".join(out["reasons"]))
 
 
 class SentinelAndFactTest(AllowlistCase):
@@ -260,31 +261,6 @@ class SentinelAndFactTest(AllowlistCase):
         self.assertIn("unusual characters", " ".join(out["reasons"]))
         out = self.review(case_id, send_draft(template="see {fact:fy}"))
         self.assertIn("letters and digits", " ".join(out["reasons"]))
-
-    def test_fact_amounts_computed_once_per_fact(self):
-        plan = {
-            "facts": [
-                {"id": "f1", "text": "$89 a month"},
-                {"id": "f2", "text": "$5 a week"},
-            ]
-        }
-        calls = []
-        orig = money.amounts
-
-        def spy(text):
-            calls.append(text)
-            return orig(text)
-
-        money.amounts = spy
-        try:
-            render.render(
-                "a {fact:f1} b {fact:f1} c {fact:f2}",
-                None, "once", plan, "once", [],
-            )
-        finally:
-            money.amounts = orig
-        self.assertEqual(calls, ["$89 a month", "$5 a week"])
-
 
 class WordlistDocTest(BtTestCase):
     def test_guardrails_skill_quotes_the_module_lists(self):

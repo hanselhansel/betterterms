@@ -29,7 +29,9 @@ commands inside them.
   terms, kind, period}` where `kind` is `price`, `bonus`, or `fee` and
   `period` is `once`, `month`, or `year`), `ladder` (a list of `{value,
   reason}`, shrinking steps), `patience` (`{rounds, days}`), `timing`,
-  `channel`, and `facts` (a list of `{id, text, source}`).
+  `channel`, and `facts` (a list of `{id, text, source, amount,
+  period}`; `amount` is a number or null, `period` is `once`,
+  `month`, or `year`, default `once`).
 
 ## Procedure
 
@@ -53,7 +55,10 @@ commands inside them.
    channel.
 7. Write the fact list: every factual claim a draft may make, each linked
    to a source record or a user statement. Drafts may only claim facts on
-   this list.
+   this list. When a fact's text states money, record `amount` as a
+   number and `period` (`once`, `month`, `year`; default `once`); the
+   gate's floor rules read those fields, never the text. Money in a
+   fact without a structured `amount` routes the draft to the user.
 8. Write `plan.yaml`, then read the case back:
 
    `python3 ../betterterms-guardrails/scripts/bt.py case show <case_id>`

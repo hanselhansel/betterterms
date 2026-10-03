@@ -5,8 +5,9 @@ Every list is matched as whole tokens on the rendered message's
 lowercased alphanumeric token stream, never as substrings or regexes.
 ``CURRENCY_CODES`` is the one exception: it matches the raw token
 case-sensitively, because TRY, RUB and CAD are also common words in
-lowercase. A lone ``k`` counts as a scale word only right after a
-digit-only token; it lives in code, not in a list, for that reason.
+lowercase. ``k``, ``m``, ``mil`` and ``thou`` are scale abbreviations
+under decision 0010: a bare one is number-shaped enough to route to
+the user, so they live in ``SCALE_WORDS`` with the full words.
 
 The guardrails SKILL.md quotes these lists verbatim; a unit test
 checks the quote.
@@ -35,7 +36,7 @@ NUMBER_WORD_VALUES = {
 
 SCALE_WORDS = frozenset(
     "hundred hundreds thousand thousands million millions billion "
-    "billions trillion trillions bn mm".split()
+    "billions trillion trillions bn mm k m mil thou".split()
 )
 
 # ISO-style codes matched case-sensitively on the raw token: "CAD"

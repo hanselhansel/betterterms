@@ -1,4 +1,4 @@
-"""Money amount extraction for the gate and scorer.
+"""Money amount extraction for the scorer and inbound parsing.
 
 ``amounts(text)`` returns every numeric amount mentioned: currency-marked
 (``$1,200``, ``USD 1200``, ``S$1,200``, ``1200 dollars``, ``1200 EUR``),
@@ -11,8 +11,9 @@ billions (``twelve hundred``, ``one thousand, two hundred``,
 ``two million``).
 
 ``find(text)`` returns :class:`Amount` records (start, end, value).
-The scorer's suggested-amounts listing, the gate's fact-value check
-and the never-disclose whole-number match all read these results.
+The scorer's suggested-amounts listing and inbound amount extraction
+read these results. Decision 0010: the gate never parses free text
+for floor rules, so nothing on the gate path imports this module.
 
 Parsed values saturate at ``_CAP``: a hostile digit run or spelled
 phrase returns the cap instead of raising OverflowError or yielding

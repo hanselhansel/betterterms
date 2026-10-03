@@ -307,6 +307,14 @@ def check_plan_limits(plan, floor, direction, brief=None):
                 raise BtError("ladder period must be once, month or year")
             if item_period == period:
                 values.append(num(item.get("value")))
+    # A fact's period defaults to ``once``; anything else invalid is a
+    # broken plan. The ``amount`` field itself never joins ``values``:
+    # a fact states what the counterparty said, not a price on offer.
+    for item in as_list(plan.get("facts")):
+        if isinstance(item, dict):
+            item_period = str(item.get("period") or "once").lower()
+            if item_period not in PERIODS:
+                raise BtError("fact period must be once, month or year")
     for v in values:
         if v is None:
             continue

@@ -134,13 +134,24 @@ class JoinedDigitsTest(ReviewFixCase):
                 out = self.review(case_id, send_draft(template=template))
                 self.assertIn("a number", " ".join(out["reasons"]))
 
-    def test_small_forms_still_pass(self):
+    def test_decimals_and_adjacent_digits_need_approval(self):
+        # Decision 0010: decimals and adjacent digit tokens are
+        # number-shaped now; only month-name dates still pass.
         case_id = self.make_case()
         for template in (
             "rate 90.5 today",
             "build 3.11 here",
-            "meet October 15, 2026",
             "rooms 3 4 are free",
+        ):
+            with self.subTest(template=template):
+                out = self.review(case_id, send_draft(template=template))
+                self.assertIn("a number", " ".join(out["reasons"]))
+
+    def test_month_name_dates_still_pass(self):
+        case_id = self.make_case()
+        for template in (
+            "meet October 15, 2026",
+            "due 15 October 2026",
         ):
             with self.subTest(template=template):
                 self.passed(case_id, send_draft(template=template))
@@ -158,7 +169,7 @@ class NumberWordRunTest(ReviewFixCase):
         ):
             with self.subTest(template=template.encode("unicode_escape")):
                 out = self.review(case_id, send_draft(template=template))
-                self.assertIn("number words", " ".join(out["reasons"]))
+                self.assertIn("number word", " ".join(out["reasons"]))
 
     def test_number_word_equal_to_floor_needs_approval(self):
         case_id = self.make_case(
@@ -169,14 +180,16 @@ class NumberWordRunTest(ReviewFixCase):
         )
         self.assertIn("matching your limit", " ".join(out["reasons"]))
 
-    def test_number_word_below_floor_passes(self):
-        # "forty" against a 50 floor is not the limit and not a run.
+    def test_number_word_below_floor_needs_approval(self):
+        # Decision 0010: any spelled number word routes to the user,
+        # matching the floor or not.
         case_id = self.make_case(
             floor=50, plan=plan_for("pay", 50, target=40)
         )
-        self.passed(
+        out = self.review(
             case_id, send_draft(offer=45, template="about forty flat")
         )
+        self.assertIn("number word", " ".join(out["reasons"]))
 
 
 class HostileScanTimingTest(ReviewFixCase):

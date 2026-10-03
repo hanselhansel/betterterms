@@ -124,20 +124,23 @@ class MalformedPlaceholderTest(GluedTest):
 
 
 class FactAmountAtFloorTest(GluedTest):
-    # Value: protects=0009 A: a rendered fact amount equal to the floor
-    #   hard-blocks even with --approved; an amount equal only after a
-    #   period conversion is a review hit, not a block;
-    # fails_when=render stops recording fact values or _check_values
-    #   skips kind "fact", so --approved (no review) ships the floor;
-    # why_new=fact tests only assert needs_approval without --approved;
-    #   seam=none
+    # Value: protects=0010 A: a rendered fact whose structured amount
+    #   equals the floor hard-blocks even with --approved; an amount
+    #   equal only after a period conversion is a review hit, not a
+    #   block; fails_when=render stops recording fact amounts or
+    #   _check_values skips kind "fact", so --approved (no review)
+    #   ships the floor; why_new=fact tests only assert needs_approval
+    #   without --approved; seam=none
     def test_fact_repeating_floor_blocks_even_when_approved(self):
         plan = dict(
             plan_for("pay", 1200),
             facts=[
-                {"id": "eq", "text": "they first quoted $1,200", "source": "x"},
-                {"id": "mo", "text": "that is $100 a month", "source": "x"},
-                {"id": "ok", "text": "competitor charges $89 a month", "source": "x"},
+                {"id": "eq", "text": "they first quoted $1,200",
+                 "source": "x", "amount": 1200},
+                {"id": "mo", "text": "that is $100 a month",
+                 "source": "x", "amount": 100, "period": "month"},
+                {"id": "ok", "text": "competitor charges $89 a month",
+                 "source": "x", "amount": 89, "period": "month"},
             ],
         )
         case_id = self.make_case(plan=plan)

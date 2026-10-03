@@ -1,6 +1,6 @@
 # 0009. Gate scope: two tiers, hard blocks and review
 
-Status: accepted (owner decision, step 2 scope). Date: 2026-10-05.
+Status: amended by 0010 (was: accepted, owner decision, step 2 scope). Date: 2026-10-05.
 
 ## Context
 
@@ -96,19 +96,20 @@ enumerate suspicious forms; it fails closed on anything unusual.
   the sentinel itself. Non-English messages therefore always go to
   the user.
 - Free text tokenizes on non-alphanumeric characters in one linear
-  pass. A token mixing letters and digits routes to the user. Digit
-  runs joined only by separators ("1,050", "1.099", "12 50") evaluate
-  as the whole joined number, never as separate small tokens. A
-  joined group passes only when it is 1-99 written without a leading
-  zero (and not equal to the floor's integer value when the floor is
-  below 100, in digits or as one number word) or a 1900-2100 year
-  right after a whole-word month name.
+  pass. A token mixing letters and digits routes to the user. Under
+  0010 a digit token passes only when it is isolated (no number-shaped
+  token within two tokens) and is 1-99 written without a leading zero
+  (and not equal to the floor's integer value when the floor is below
+  100, in digits or as one number word), or it belongs to a
+  whole-word month-name date. Decimals and separator-joined digit
+  forms route to the user like any other number shape.
 - Number words, scale words, currency words and commitment words
   stay as whole-word lists matched on the token stream. They live in
   one shared module (`scripts/btlib/wordlists.py`) that the
-  guardrails SKILL.md quotes verbatim, pinned by a unit test. Any
-  spacing or punctuation between number words still counts as one
-  run.
+  guardrails SKILL.md quotes verbatim, pinned by a unit test. Under
+  0010 every spelled number word and every scale abbreviation
+  (including a bare k, m, mil or thou) routes to the user, singly or
+  in combination.
 - A sentinel touching a letter or digit still routes to the user.
 - A rendered non-offer value equal to the floor exactly still
   blocks; equal only to an x12 or /12 conversion is now a review hit
@@ -120,5 +121,9 @@ enumerate suspicious forms; it fails closed on anything unusual.
   `period` keys still work); `cases.num` caps magnitudes at 1e12 so
   a huge offer blocks as "offer must be a number" instead of
   raising; `ledger add` validates `direction` through
-  `cases.direction_of`; `score` and `money` inputs cap at 64 KB and
-  fact amounts parse once per fact.
+  `cases.direction_of`; `score` and `money` inputs cap at 64 KB.
+
+Amended by 0010: hard blocks no longer parse fact text at all; floor
+rules read a fact's structured `amount` and `period` only, and
+`money.py` serves `score` alone. The token rules above describe the
+superseded forms; 0010's review list is the current contract.

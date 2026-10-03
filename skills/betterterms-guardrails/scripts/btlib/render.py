@@ -23,7 +23,7 @@ import math
 import re
 import unicodedata
 
-from . import BtError, MAX_TEXT, cases, money
+from . import BtError, MAX_TEXT, cases
 
 _MONTHS = {"month": 1.0, "year": 12.0}
 TAG = re.compile(r"\{([^{}]*)\}")
@@ -50,15 +50,16 @@ class Find:
     """The outcome of rendering a template. ``errors`` are blocking
     reasons that name the placeholder, never a number. ``masked`` is
     the rendered text with non-fact placeholder outputs replaced by
-    the mask character. ``fact_amounts`` caches one money scan per
-    fact id so a repeated {fact:id} costs once. ``sentinel`` marks a
-    mask character found in the template or a fact body; ``oversized``
-    marks a render that crossed ``MAX_TEXT``, in which case ``text``
-    stays None: the size is summed from piece lengths, so the
-    oversized string is never materialized."""
+    the mask character. ``fact_texts`` holds ``(text, has_amount)``
+    for each rendered fact, so the review tier can flag a fact that
+    states a number its ``amount`` field does not carry. ``sentinel``
+    marks a mask character found in the template or a fact body;
+    ``oversized`` marks a render that crossed ``MAX_TEXT``: resolution
+    stops, ``text`` stays None and the oversized string is never
+    materialized."""
 
     __slots__ = ("text", "values", "masked", "fact_ids", "errors",
-                 "fact_amounts", "sentinel", "oversized")
+                 "fact_texts", "sentinel", "oversized")
 
     def __init__(self):
         self.text = None
@@ -66,7 +67,7 @@ class Find:
         self.masked = ""
         self.fact_ids = set()
         self.errors = []
-        self.fact_amounts = {}
+        self.fact_texts = []
         self.sentinel = False
         self.oversized = False
 
@@ -114,8 +115,9 @@ def render(template, offer, offer_period, plan, plan_period, in_amounts):
     list; entries are coerced with :func:`cases.num` at lookup time.
     The rendered byte size is summed from each piece as it resolves,
     so a fact expansion that crosses ``MAX_TEXT`` flags
-    ``find.oversized`` and leaves ``find.text`` unset instead of
-    joining the oversized string."""
+    ``find.oversized``, stops resolving (a later placeholder is never
+    touched) and leaves ``find.text`` unset instead of joining the
+    oversized string."""
     find = Find()
     find.sentinel = _MASK in template
     out, masked = [], []
@@ -133,6 +135,9 @@ def render(template, offer, offer_period, plan, plan_period, in_amounts):
         masked.append(mask)
         size += len(text.encode("utf-8"))
         pos = m.end()
+        if size > MAX_TEXT:
+            find.oversized = True
+            return find
     tail = template[pos:]
     _bad_brace(tail, find)
     out.append(tail)
@@ -208,10 +213,15 @@ def _resolve(tag, find, offer, offer_period, plan, plan_period, in_amounts):
                 if _MASK in text:
                     find.sentinel = True
                 find.fact_ids.add(arg)
-                if arg not in find.fact_amounts:
-                    find.fact_amounts[arg] = money.amounts(text)
-                for v in find.fact_amounts[arg]:
-                    find.values.append(Value("fact", v, "once"))
+                # Hard blocks read the structured amount only; the
+                # fact text renders verbatim for the user and the
+                # review tier, never for a money parse.
+                v = cases.num(item.get("amount"))
+                has_amount = v is not None and math.isfinite(v)
+                if has_amount:
+                    period = str(item.get("period") or "once").lower()
+                    find.values.append(Value("fact", v, period))
+                find.fact_texts.append((text, has_amount))
                 return text, text
         find.errors.append(f"{{fact:{arg}}} not in plan facts")
         return "", ""

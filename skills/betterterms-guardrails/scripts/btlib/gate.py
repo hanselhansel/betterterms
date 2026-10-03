@@ -24,9 +24,10 @@ guarantees and fail closed:
    except the in-band offer itself; a value equal only to the
    floor's x12 or /12 conversion is a review hit (``amount matches
    a converted limit``, no numbers). A price value (target, ladder,
-   price option, quote not on ``send``) worse than the floor blocks
-   too. Bonus and fee options are not offers, so only the
-   equal-to-floor rule reaches them
+   price option, quote or fact amount not on ``send``) worse than
+   the floor blocks too; fact values read the structured ``amount``
+   field only, never the text (decision 0010). Bonus and fee options
+   are not offers, so only the equal-to-floor rule reaches them
 9. rendered message over 64 KB, checked after fact expansion and
    before any text scanning -> block
 10. any claim id (draft or auto-claimed by ``{fact:id}``) not in
@@ -36,11 +37,14 @@ The review tier never blocks but never passes silently either: a
 draft whose rendered text (placeholder outputs masked, fact text
 visible) trips a check in ``btlib.review`` returns
 ``needs_approval`` with plain-word reasons that carry no numbers.
-The text scan is an allowlist (decision 0009 amendment): characters
-off the permitted set, tokens mixing letters and digits, disallowed
-numbers, listed money and commitment words, sentinel glue and every
-``never_disclose`` term all route to the user. Irreversible
-actions, coach mode and autonomy 1 also need approval.
+The text scan is an allowlist (decisions 0009 amendment, 0010):
+characters off the permitted set, tokens mixing letters and digits,
+any number word, decimal, separator-joined or non-isolated digit
+token, currency or scale word or abbreviation, listed commitment
+words, a fact that states a number its ``amount`` does not carry,
+sentinel glue and every ``never_disclose`` term all route to the
+user. Irreversible actions, coach mode and autonomy 1 also need
+approval.
 
 ``block`` dominates ``needs_approval``, which dominates ``pass``, and
 every floor-related block reports the same generic reason so the
@@ -68,19 +72,20 @@ def _check_values(find, action, floor, direction, plan_period, findings):
     """Floor rules on the amounts the placeholders placed: every value
     except the offer itself must not equal the floor (in its own or
     the floor's period), and a price value (target, ladder, price
-    option, quote not on ``send``) must not be worse than the floor.
-    Equality with only a period conversion is a review hit, not a
-    block; it is checked in ``_converted_match`` under the review
-    tier. Bonus and fee options are not offers, so only the
-    equality rule reaches them."""
+    option, quote or fact amount not on ``send``) must not be worse
+    than the floor. Fact amounts come from the structured ``amount``
+    field only, never parsed text (decision 0010). Equality with only
+    a period conversion is a review hit, not a block; it is checked
+    in ``_converted_match`` under the review tier. Bonus and fee
+    options are not offers, so only the equality rule reaches them."""
     for v in find.values:
         if v.value is None:
             continue
         nv = render.convert(v.value, v.period, plan_period)
         if v.kind != "offer" and (_same(nv, (floor,)) or _same(v.value, (floor,))):
             findings.append(("block", LIMITS))
-        elif v.kind in ("target", "ladder", "option:price", "quote") and not (
-            v.kind == "quote" and action == "send"
+        elif v.kind in ("target", "ladder", "option:price", "quote", "fact") and not (
+            v.kind in ("quote", "fact") and action == "send"
         ) and _worse(nv, floor, direction):
             findings.append(("block", LIMITS))
 
@@ -125,8 +130,9 @@ def check(case_dir, draft, approved=False, inbound=None):
         findings.append(("block", "use template, not text"))
 
     action = draft.get("action")
-    if action not in ACTIONS:
+    if not isinstance(action, str) or action not in ACTIONS:
         findings.append(("block", f"draft action {action!r} not one of {sorted(ACTIONS)}"))
+        action = None
 
     raw_offer = draft.get("offer")
     offer = cases.num(raw_offer)
