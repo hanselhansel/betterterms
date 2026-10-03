@@ -1,7 +1,7 @@
 """Step-2 review fixes: a sentinel the template cannot type, NUL and
-control characters off the allowlist, separator-joined digit groups
-read as one number, number-word runs across punctuation, number words
-equal to the floor, and 64 KB scans that stay linear."""
+control characters off the allowlist, digits anywhere in the text
+routing to the user, number-word runs across punctuation and inside
+glued letter runs, and 64 KB scans that stay linear."""
 
 import time
 import unittest
@@ -101,8 +101,8 @@ class SentinelTest(ReviewFixCase):
 
 class JoinedDigitsTest(ReviewFixCase):
     def test_separator_joined_groups_need_approval(self):
-        # Digit groups fused by separators evaluate as the whole joined
-        # number, never as separate small tokens.
+        # Every digit token routes on its own; separator-joined groups
+        # can no longer split a number into passing small tokens.
         case_id = self.make_case()
         for template in (
             "My ceiling is 1,050 per month",
@@ -114,7 +114,7 @@ class JoinedDigitsTest(ReviewFixCase):
         ):
             with self.subTest(template=template):
                 out = self.review(case_id, send_draft(template=template))
-                self.assertIn("a number", " ".join(out["reasons"]))
+                self.assertIn("numbers", " ".join(out["reasons"]))
 
     def test_grouped_number_never_passes_at_its_floor(self):
         # floor 1050: "1,050" restates the limit as joined digits. It
@@ -125,18 +125,18 @@ class JoinedDigitsTest(ReviewFixCase):
             send_draft(offer=1040,
                        template="My ceiling is 1,050 per month"),
         )
-        self.assertIn("a number", " ".join(out["reasons"]))
+        self.assertIn("numbers", " ".join(out["reasons"]))
 
     def test_leading_zero_digit_tokens_need_approval(self):
         case_id = self.make_case()
         for template in ("room 007 it is", "code 050 works"):
             with self.subTest(template=template):
                 out = self.review(case_id, send_draft(template=template))
-                self.assertIn("a number", " ".join(out["reasons"]))
+                self.assertIn("numbers", " ".join(out["reasons"]))
 
     def test_decimals_and_adjacent_digits_need_approval(self):
-        # Decision 0010: decimals and adjacent digit tokens are
-        # number-shaped now; only month-name dates still pass.
+        # Decision 0010 amendment: every digit form routes; no date or
+        # small-number exception remains.
         case_id = self.make_case()
         for template in (
             "rate 90.5 today",
@@ -145,16 +145,18 @@ class JoinedDigitsTest(ReviewFixCase):
         ):
             with self.subTest(template=template):
                 out = self.review(case_id, send_draft(template=template))
-                self.assertIn("a number", " ".join(out["reasons"]))
+                self.assertIn("numbers", " ".join(out["reasons"]))
 
-    def test_month_name_dates_still_pass(self):
+    def test_month_name_dates_need_approval(self):
+        # 0010 amendment: the month-name date exception is gone.
         case_id = self.make_case()
         for template in (
             "meet October 15, 2026",
             "due 15 October 2026",
         ):
             with self.subTest(template=template):
-                self.passed(case_id, send_draft(template=template))
+                out = self.review(case_id, send_draft(template=template))
+                self.assertIn("numbers", " ".join(out["reasons"]))
 
 
 class NumberWordRunTest(ReviewFixCase):
@@ -171,14 +173,16 @@ class NumberWordRunTest(ReviewFixCase):
                 out = self.review(case_id, send_draft(template=template))
                 self.assertIn("number word", " ".join(out["reasons"]))
 
-    def test_number_word_equal_to_floor_needs_approval(self):
+    def test_number_word_at_floor_still_routes(self):
+        # The sub-100 floor-integer rule is gone with the rest of the
+        # small-integer machinery: "fifty" routes as a number word.
         case_id = self.make_case(
             floor=50, plan=plan_for("pay", 50, target=40)
         )
         out = self.review(
             case_id, send_draft(offer=45, template="about fifty flat")
         )
-        self.assertIn("matching your limit", " ".join(out["reasons"]))
+        self.assertIn("number word", " ".join(out["reasons"]))
 
     def test_number_word_below_floor_needs_approval(self):
         # Decision 0010: any spelled number word routes to the user,

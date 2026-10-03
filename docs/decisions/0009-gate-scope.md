@@ -127,4 +127,7 @@ enumerate suspicious forms; it fails closed on anything unusual.
 Amended by 0010: hard blocks no longer parse fact text at all; floor
 rules read a fact's structured `amount` and `period` only, and
 `money.py` serves `score` alone. The token rules above describe the
-superseded forms; 0010's review list is the current contract.
+superseded forms; 0010's review list is the current contract. Its
+latest amendment removes the last exceptions too: the small-integer
+and month-name-date passes in section D are gone, and any ASCII
+digit in the text routes to the user.

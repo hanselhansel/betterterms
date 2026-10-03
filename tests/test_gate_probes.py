@@ -206,7 +206,7 @@ class Pass3ProbeTest(ProbeTest):
         out = self.review(
             case_id, send_draft(template="I can do {offer}0 today")
         )
-        self.assertIn("digit", " ".join(out["reasons"]))
+        self.assertIn("numbers", " ".join(out["reasons"]))
 
     def test_empty_fact_joiners(self):
         # A fact whose text is only invisible joiners still adds

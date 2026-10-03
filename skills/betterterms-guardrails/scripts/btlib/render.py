@@ -50,16 +50,15 @@ class Find:
     """The outcome of rendering a template. ``errors`` are blocking
     reasons that name the placeholder, never a number. ``masked`` is
     the rendered text with non-fact placeholder outputs replaced by
-    the mask character. ``fact_texts`` holds ``(text, has_amount)``
-    for each rendered fact, so the review tier can flag a fact that
-    states a number its ``amount`` field does not carry. ``sentinel``
+    the mask character; fact text stays visible inside it for the
+    review tier to scan like any other free text. ``sentinel``
     marks a mask character found in the template or a fact body;
     ``oversized`` marks a render that crossed ``MAX_TEXT``: resolution
     stops, ``text`` stays None and the oversized string is never
     materialized."""
 
     __slots__ = ("text", "values", "masked", "fact_ids", "errors",
-                 "fact_texts", "sentinel", "oversized")
+                 "sentinel", "oversized")
 
     def __init__(self):
         self.text = None
@@ -67,7 +66,6 @@ class Find:
         self.masked = ""
         self.fact_ids = set()
         self.errors = []
-        self.fact_texts = []
         self.sentinel = False
         self.oversized = False
 
@@ -224,11 +222,9 @@ def _resolve(tag, find, offer, offer_period, plan, plan_period, in_amounts):
                     find.errors.append(
                         f"{{fact:{arg}}} amount is not a number")
                     return "", ""
-                has_amount = v is not None and math.isfinite(v)
-                if has_amount:
+                if v is not None and math.isfinite(v):
                     period = str(item.get("period") or "once").lower()
                     find.values.append(Value("fact", v, period))
-                find.fact_texts.append((text, has_amount))
                 return text, text
         find.errors.append(f"{{fact:{arg}}} not in plan facts")
         return "", ""

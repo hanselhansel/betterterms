@@ -1,9 +1,9 @@
 """Structural fact amounts and the stricter review tier (decision
 0010): hard-block floor rules read a fact's ``amount`` and ``period``
-fields only, never its text; the review tier flags every spelled
-number word, decimal or separator-joined digit form, non-isolated
-digit token, currency or scale word or abbreviation, and every fact
-whose text states a number its ``amount`` does not carry."""
+fields only, never its text; the review tier flags every ASCII digit
+in the free text or in a fact's rendered text, every spelled number
+word inside a letter run, and every currency or scale word or
+abbreviation."""
 
 import time
 import unittest
@@ -71,9 +71,9 @@ class StructuralFactTest(FactAmountCase):
         self.assertEqual(proc.returncode, 1, out)
         self.assertEqual(out["reasons"], [LIMITS])
 
-    def test_fact_null_amount_stating_money_needs_approval(self):
+    def test_fact_null_amount_with_digits_needs_approval(self):
         # Same fact text with no structured amount: never a hard
-        # block, always routed to the user.
+        # block, always routed to the user on its digits.
         plan = self.plan_with_fact(
             {"id": "f1", "text": "Basic,1200 dollars a year",
              "source": "x"}
@@ -84,7 +84,7 @@ class StructuralFactTest(FactAmountCase):
         )
         self.assertEqual(proc.returncode, 3, out)
         self.assertEqual(out["result"], "needs_approval")
-        self.assertIn("structured amount", " ".join(out["reasons"]))
+        self.assertIn("numbers", " ".join(out["reasons"]))
 
     def test_fact_text_without_numbers_and_null_amount_passes(self):
         # A number-free fact with no amount is plain user data.
@@ -204,12 +204,12 @@ class StricterReviewTest(FactAmountCase):
                 out = self.review(case_id, send_draft(template=template))
                 self.assertIn("number word", " ".join(out["reasons"]))
 
-    def test_digit_within_two_tokens_of_a_number_word(self):
+    def test_digits_and_spelled_amounts_need_approval(self):
         case_id = self.make_case()
         for template in ("call it 12 fifty", "quote 12 of fifty items"):
             with self.subTest(template=template):
                 out = self.review(case_id, send_draft(template=template))
-                self.assertIn("a number", " ".join(out["reasons"]))
+                self.assertIn("numbers", " ".join(out["reasons"]))
 
     def test_scale_abbreviations_need_approval(self):
         # "5 mil" flags the digit next to the abbreviation; a bare
@@ -236,7 +236,7 @@ class StricterReviewTest(FactAmountCase):
                          "build 3.11 here"):
             with self.subTest(template=template):
                 out = self.review(case_id, send_draft(template=template))
-                self.assertIn("a number", " ".join(out["reasons"]))
+                self.assertIn("numbers", " ".join(out["reasons"]))
 
     def test_action_list_or_mapping_blocks_not_crashes(self):
         # The review probe: a non-string action used to die as an

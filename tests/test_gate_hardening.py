@@ -236,8 +236,10 @@ class HardeningTest(BtTestCase):
         self.assertEqual(out["result"], "needs_approval")
 
     def test_never_disclose_short_numeric(self):
-        # Numeric items match as whole numbers: "42" hits "42" but not
-        # "420" or "4.2".
+        # Numeric items match fused digit strings in the text and
+        # rendered placeholder values: "42" hits "42" but not "420";
+        # "4.2" fuses to the same digits (an over-match on purpose,
+        # the draft routes either way).
         case_id, _ = self.make_case(brief={"never_disclose": ["42"]})
         proc, out = self.gate(
             case_id, send_draft(template="the code is 42")
@@ -245,18 +247,19 @@ class HardeningTest(BtTestCase):
         self.assertEqual(proc.returncode, 3, out)
         self.assertEqual(out["result"], "needs_approval")
         self.assertIn("never-disclose", " ".join(out["reasons"]))
-        # "420" still needs approval, but only as a 3+ digit number:
-        # it must not match the numeric never-disclose item.
+        # "420" still needs approval, but only on its digits: it must
+        # not match the numeric never-disclose item.
         proc, out = self.gate(
             case_id, send_draft(template="the code is 420")
         )
         self.assertEqual(proc.returncode, 3, out)
         self.assertNotIn("never-disclose", " ".join(out["reasons"]))
-        # "4.2" is a decimal: review-tier under 0010, not a silent pass.
+        # "4.2" fuses to the digit string "42" and hits the item.
         proc, out = self.gate(
             case_id, send_draft(template="rate 4.2 today")
         )
         self.assertEqual(proc.returncode, 3, out)
+        self.assertIn("never-disclose", " ".join(out["reasons"]))
 
     def test_offer_types_weird(self):
         case_id, _ = self.make_case()

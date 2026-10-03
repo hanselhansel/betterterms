@@ -97,10 +97,10 @@ class ConvertedLimitTest(PeriodCase):
                 )
                 self.assertEqual(proc.returncode, 0, out)
 
-    def test_five_years_needs_approval_only_as_rendered_amount(self):
-        # The review probe: a rendered 5 against a 60/month floor is
-        # the floor /12 and routes to the user; free-text "5 years" is
-        # a small integer and passes.
+    def test_five_years_routes_as_amount_and_as_text(self):
+        # A rendered 5 against a 60/month floor is the floor /12 and
+        # routes to the user; free-text "5 years" routes on its digits
+        # too: the small-integer exception is gone.
         plan = dict(plan_for("pay", 60, target=50), period="month")
         case_id = self.make_case(floor=60, plan=plan)
         out = self.review(
@@ -109,8 +109,10 @@ class ConvertedLimitTest(PeriodCase):
             inbound=inbound_msg(text="x", amounts=[5]),
         )
         self.assertIn("converted limit", " ".join(out["reasons"]))
-        self.passed(case_id, send_draft(offer=50,
-                                        template="every 5 years"))
+        out = self.review(
+            case_id, send_draft(offer=50, template="every 5 years")
+        )
+        self.assertIn("numbers", " ".join(out["reasons"]))
 
 
 class AcceptConversionTest(PeriodCase):

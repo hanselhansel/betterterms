@@ -219,12 +219,11 @@ class ReviewTierTest(RenderTest):
         ):
             with self.subTest(template=template):
                 out = self.review(case_id, send_draft(template=template))
-                self.assertIn("a number", " ".join(out["reasons"]))
+                self.assertIn("numbers", " ".join(out["reasons"]))
 
     def test_grouped_digit_runs_need_approval(self):
-        # Group separators split tokens on the alphanumeric tokenizer,
-        # and the tail token is a 3+ digit run. A real decimal like
-        # 90.5 splits into small integers and passes.
+        # Group separators split digit runs; every piece routes now,
+        # so joined numbers can no longer hide behind small tokens.
         case_id = self.make_case()
         for template in (
             "it reads 1.200",
@@ -234,7 +233,7 @@ class ReviewTierTest(RenderTest):
         ):
             with self.subTest(template=template):
                 out = self.review(case_id, send_draft(template=template))
-                self.assertIn("a number", " ".join(out["reasons"]))
+                self.assertIn("numbers", " ".join(out["reasons"]))
 
     def test_unicode_digit_probes_need_approval(self):
         case_id = self.make_case()
@@ -292,7 +291,9 @@ class ReviewTierTest(RenderTest):
         for reason in out["reasons"]:
             self.assertNotRegex(reason, r"\d")
 
-    def test_allowed_small_forms_pass(self):
+    def test_formerly_allowed_small_forms_route_now(self):
+        # 0010 amendment: the small-integer and month-date exceptions
+        # are gone; every digit form routes to the user.
         case_id = self.make_case()
         for template in (
             "renewal in 12 months",
@@ -304,43 +305,40 @@ class ReviewTierTest(RenderTest):
             "we met in 96",
         ):
             with self.subTest(template=template):
-                proc, out = self.gate(
-                    case_id, send_draft(template=template)
-                )
-                self.assertEqual(proc.returncode, 0, out)
-                self.assertEqual(out["result"], "pass")
+                out = self.review(case_id, send_draft(template=template))
+                self.assertIn("numbers", " ".join(out["reasons"]))
 
-    def test_floor_8999_seven_days_is_not_a_review_item(self):
-        # Owner decision: a sub-100 floor must not turn "7 days" into a
-        # review item. Small integers pass unless they equal the
-        # floor's integer part.
+    def test_sub100_floor_no_longer_matters_for_text_digits(self):
+        # Owner decision amended: a sub-100 floor no longer has a
+        # text-side integer exception at all; "7 days" routes like
+        # every other digit.
         case_id = self.make_case(
             floor=89.99, plan=plan_for("pay", 89.99, target=80)
         )
-        proc, out = self.gate(
+        out = self.review(
             case_id, send_draft(offer=80, template="reply within 7 days")
         )
-        self.assertEqual(proc.returncode, 0, out)
+        self.assertIn("numbers", " ".join(out["reasons"]))
         out = self.review(
             case_id, send_draft(offer=80, template="room 89 works")
         )
-        self.assertEqual(out["result"], "needs_approval")
+        self.assertIn("numbers", " ".join(out["reasons"]))
 
-    def test_small_int_equal_to_sub100_floor_needs_approval(self):
+    def test_small_int_at_sub100_floor_routes_as_digits(self):
         case_id = self.make_case(floor=50, plan=plan_for("pay", 50, target=40))
         out = self.review(
             case_id, send_draft(offer=45, template="meet in room 50")
         )
-        self.assertEqual(out["result"], "needs_approval")
+        self.assertIn("numbers", " ".join(out["reasons"]))
 
-    def test_small_int_below_sub100_floor_passes(self):
-        # floor 96: the standalone 8 no longer trips anything; only the
-        # floor's integer value itself is protected below 100.
+    def test_small_int_below_sub100_floor_routes_too(self):
+        # floor 96: a standalone 8 still routes; the floor plays no
+        # part in the text scan anymore.
         case_id = self.make_case(floor=96, plan=plan_for("pay", 96, target=80))
-        proc, out = self.gate(
+        out = self.review(
             case_id, send_draft(offer=90, template="only 8 seats left")
         )
-        self.assertEqual(proc.returncode, 0, out)
+        self.assertIn("numbers", " ".join(out["reasons"]))
 
     def test_phone_digits_and_facts_need_approval(self):
         case_id = self.make_case(
@@ -353,7 +351,7 @@ class ReviewTierTest(RenderTest):
         out = self.review(
             case_id, send_draft(offer=80, template="call 800-555-0199")
         )
-        self.assertIn("a number", " ".join(out["reasons"]))
+        self.assertIn("numbers", " ".join(out["reasons"]))
         # The same digits inside a fact are fact text: still reviewed.
         plan = dict(
             plan_for("pay", 85.50, target=80),

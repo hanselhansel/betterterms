@@ -1,17 +1,20 @@
 """The review-tier text scan: an allowlist, not a blacklist.
 
-``review(find, floor, never_items)`` reads ``find.masked`` (each
-non-fact placeholder output replaced by :data:`render._MASK`, fact
-text visible) and ``find.fact_texts``, and returns one plain-word
-reason per tripped check; reasons carry no numbers. Decision 0010
-keeps the tier simple and strict: any spelled number word or scale
-abbreviation, any decimal or separator-joined digit form, any digit
-token that is not isolated, any currency word, code or symbol, and
-any fact whose text states a number its ``amount`` does not carry
-routes to the user. Only isolated 1-2 digit integers (1-99, no
-leading zero) and whole-word month-name dates pass. The character
-allowlist, the sentinel rules and the commitment-word rules are
-unchanged from the 0009 amendment.
+``review(find, never_items)`` reads ``find.masked`` (each non-fact
+placeholder output replaced by :data:`render._MASK`, fact text
+visible) and ``find.values``, and returns one plain-word reason per
+tripped check; reasons carry no numbers. The 0010 amendment keeps
+the tier simple and strict: any ASCII digit in the free text or in a
+rendered fact's text, any number word inside a lowercased letter run
+(outside the listed common-English exceptions), any scale word,
+currency word or code, any commitment word or phrase, characters off
+the allowed set, glue on a rendered amount and every
+``never_disclose`` term all route to the user. A numeric
+``never_disclose`` item also compares against the rendered
+placeholder values, so the term still matches behind the mask. There
+is no digit parsing in this tier: a digit run of any length is a
+match, never a number to read, so nothing here can crash on
+``int()`` or stall on a huge token.
 """
 
 import re
@@ -28,19 +31,22 @@ _ALLOWED = frozenset(
     " \n.,;:!?'\"()-/&" + render._MASK
 )
 # Free text splits into alphanumeric runs: one linear pass, no
-# backtracking.
-_TOKEN = re.compile(r"[0-9A-Za-z]+")
+# backtracking. Interior apostrophes stay inside the token so "i'll
+# take" matches the commitment phrase and "won't" is not "won".
+_TOKEN = re.compile(r"[0-9A-Za-z]+(?:'[0-9A-Za-z]+)*")
+# Lowercase letter runs for the number-word substring check.
+_LETTERS = re.compile(r"[a-z]+")
+# The digit rule: one ASCII digit anywhere is a match.
+_DIGIT = re.compile(r"[0-9]")
 _SEP = ",. \n"
 
 
 def _touching(text):
-    """Characters that could extend a rendered amount sit right
-    against a mask sentinel. Returns the kinds found: ``digit`` for a
-    digit directly on the sentinel ("$1,100" plus "0" restates the
-    price), ``letter`` for a letter ("$1,100k" reads as 1,100,000) and
-    ``decimal`` for a ``.``/``,`` separator with a digit on its far
-    side ("$1,100.99"). An empty set means the sentinel is clean."""
-    found = set()
+    """Glue that could extend a rendered amount sits right against a
+    mask sentinel: a letter ("$1,100k" reads as 1,100,000) or a
+    ``.``/``,`` separator with a digit on its far side
+    ("$1,100.99"). A bare digit on the sentinel is already caught by
+    the digit scan, so it is not repeated here."""
     for i, c in enumerate(text):
         if c != render._MASK:
             continue
@@ -48,16 +54,14 @@ def _touching(text):
             if not 0 <= j < len(text):
                 continue
             d = text[j]
-            if d.isascii() and d.isdigit():
-                found.add("digit")
-            elif d.isascii() and d.isalpha():
-                found.add("letter")
-            elif d in ".,":
+            if d.isascii() and d.isalpha():
+                return True
+            if d in ".,":
                 k = j + (j - i)  # the character past the separator
                 if (0 <= k < len(text) and text[k].isascii()
                         and text[k].isdigit()):
-                    found.add("decimal")
-    return found
+                    return True
+    return False
 
 
 def _tokens(text):
@@ -66,98 +70,38 @@ def _tokens(text):
     return [(m.start(), m.end(), m.group(0)) for m in _TOKEN.finditer(text)]
 
 
-def _is_year(masked, toks, i):
-    """A 1900-2100 digit token is a year only when it follows a
-    whole-word month name ("Jan 2026", "15 October 2026") or a month,
-    a day 1-31 and a comma ("October 15, 2026")."""
-    tok = toks[i][2]
-    if len(tok) != 4 or not 1900 <= int(tok) <= 2100 or i == 0:
+def _number_word_hit(run):
+    """A lowercased letter run is number-shaped when it contains a
+    number word as a substring ("twelvehundred", "fiftyish",
+    "twentyone") and is not a listed common English word ("often",
+    "money"). The exception is whole-run only, so "oftener" still
+    flags."""
+    if run in wordlists.NUMBER_WORD_EXCEPTIONS:
         return False
-    if toks[i - 1][2].lower() in wordlists.MONTH_WORDS:
-        return True
-    if (
-        i >= 2
-        and toks[i - 1][2].isdigit()
-        and len(toks[i - 1][2]) <= 3
-        and 1 <= int(toks[i - 1][2]) <= 31
-        and toks[i - 2][2].lower() in wordlists.MONTH_WORDS
-    ):
-        gap = masked[toks[i - 1][1]:toks[i][0]]
-        return "," in gap and all(c in ", \t\n" for c in gap)
-    return False
+    return any(w in run for w in wordlists.NUMBER_WORDS)
 
 
-def _small_number(digits):
-    """A standalone digit token passes only as a small count: no
-    leading zero, one or two digits, value 1-99."""
-    return len(digits) <= 2 and not digits.startswith("0")
-
-
-def _moneyish(tok):
-    """Whether a token is number-shaped for the isolation rule: a
-    digit run, a spelled number word, a scale word or abbreviation
-    (hundred, k, mil, grand), or a currency word or code."""
-    low = tok.lower()
-    return (
-        any(c.isdigit() for c in tok)
-        or low in wordlists.NUMBER_WORDS
-        or low in wordlists.SCALE_WORDS
-        or low in wordlists.CURRENCY_WORDS
-        or tok in wordlists.CURRENCY_CODES
-    )
-
-
-def _isolated(toks, i):
-    """A digit token is isolated only when no number-shaped token
-    sits within two tokens of it ("12 fifty", "5 mil" fail)."""
-    for j in (i - 2, i - 1, i + 1, i + 2):
-        if 0 <= j < len(toks) and _moneyish(toks[j][2]):
-            return False
-    return True
-
-
-def _date_parts(masked, toks, lower, years):
-    """Mark every digit token that belongs to a whole-word month-name
-    date: the year after a month name, the day before one ("15
-    October"), the day after one ("October 3") and the day in a
-    "Month D, YYYY" form. Those are the only digits allowed."""
-    parts = [False] * len(toks)
-    for i, (_, _, tok) in enumerate(toks):
-        if not tok.isdigit():
-            continue
-        day = 1 <= int(tok) <= 31
-        if years[i]:
-            parts[i] = True
-        elif day and i + 1 < len(toks) and lower[i + 1] in wordlists.MONTH_WORDS:
-            parts[i] = True
-        elif day and i > 0 and lower[i - 1] in wordlists.MONTH_WORDS:
-            parts[i] = True
-    return parts
-
-
-def _whole_numbers(masked, toks, years):
-    """Whole-number candidates for a numeric never-disclose item:
-    every digit token, fused across gaps that hold only separators
-    (",", ".", space, newline) so "1,200" and "4.2" read as the
-    numbers they write. A year after a month name ends a run."""
-    values = []
+def _digit_groups(masked, toks):
+    """Digit runs for a numeric never-disclose item: consecutive
+    digit tokens joined over gaps that hold only separators (",",
+    ".", space, newline) fuse into one digit string, so "1,200" and
+    "12 00" read as "1200". Nothing is parsed: groups stay strings
+    and compare as strings."""
+    groups = []
     i = 0
     while i < len(toks):
-        if not toks[i][2].isdigit():
-            i += 1
-            continue
-        digits = toks[i][2]
-        while (
-            i + 1 < len(toks)
-            and toks[i + 1][2].isdigit()
-            and not years[i + 1]
-            and all(c in _SEP for c in masked[toks[i][1]:toks[i + 1][0]])
-        ):
-            i += 1
-            digits += toks[i][2]
-        values.append(float(digits))
+        if toks[i][2].isdigit():
+            start = i
+            while (
+                i + 1 < len(toks)
+                and toks[i + 1][2].isdigit()
+                and all(c in _SEP
+                        for c in masked[toks[i][1]:toks[i + 1][0]])
+            ):
+                i += 1
+            groups.append("".join(t[2] for t in toks[start:i + 1]))
         i += 1
-    return values
+    return groups
 
 
 def _numeric_item(item):
@@ -170,71 +114,40 @@ def _numeric_item(item):
     return cases.num(re.sub(r"[^0-9.\-]", "", s))
 
 
-def review(find, floor, never_items):
+def review(find, never_items):
     """Review-tier checks on the rendered message. Returns one
     plain-word reason per tripped check; reasons carry no numbers."""
     reasons = []
     masked = find.masked
     if find.sentinel or any(c not in _ALLOWED for c in masked):
         reasons.append("unusual characters in the message")
-    touch = _touching(masked)
-    if "digit" in touch:
-        reasons.append("a digit next to a rendered amount")
-    if touch:
+    if _DIGIT.search(masked):
+        reasons.append("numbers in the message")
+    if _touching(masked):
         reasons.append("text touches a rendered amount")
     toks = _tokens(masked)
     lower = [t.lower() for _, _, t in toks]
-    flags = {"mix": False, "scale": False, "currency": False,
-             "commit": False, "number": False, "word": False}
+    flags = {"scale": False, "currency": False, "commit": False}
     for i, (_, _, tok) in enumerate(toks):
         l = lower[i]
-        flags["mix"] = (
-            flags["mix"]
-            or any(c.isdigit() for c in tok) and any(c.isalpha() for c in tok)
-        )
         flags["scale"] = flags["scale"] or l in wordlists.SCALE_WORDS
         flags["currency"] = (
             flags["currency"]
             or l in wordlists.CURRENCY_WORDS or tok in wordlists.CURRENCY_CODES
         )
         flags["commit"] = flags["commit"] or l in wordlists.COMMIT_WORDS
-        flags["word"] = flags["word"] or l in wordlists.NUMBER_WORDS
-    years = [
-        toks[i][2].isdigit() and _is_year(masked, toks, i)
-        for i in range(len(toks))
-    ]
-    dates = _date_parts(masked, toks, lower, years)
-    flags["number"] = any(
-        toks[i][2].isdigit()
-        and not dates[i]
-        and (not _small_number(toks[i][2]) or not _isolated(toks, i))
-        for i in range(len(toks))
-    )
     for key, msg in (
-        ("mix", "a token mixing letters and digits in the message"),
         ("scale", "a scale word in the message"),
         ("currency", "a currency symbol or code in the message"),
         ("commit", "agreement or commitment wording in the message"),
-        ("word", "a number word in the message"),
-        ("number", "a number in the message"),
     ):
         if flags[key]:
             reasons.append(msg)
-    if floor is not None and floor < 100:
-        # Small integers are harmless except the one that repeats a
-        # sub-100 floor's integer part, in digits or as a number word.
-        fint = int(floor)
-        if any(
-            (
-                toks[i][2].isdigit()
-                and not dates[i]
-                and _small_number(toks[i][2])
-                and int(toks[i][2]) == fint
-            )
-            or wordlists.NUMBER_WORD_VALUES.get(lower[i]) == fint
-            for i in range(len(toks))
-        ):
-            reasons.append("a number matching your limit")
+    if any(
+        _number_word_hit(run)
+        for run in _LETTERS.findall(masked.lower())
+    ):
+        reasons.append("a number word in the message")
     # A phrase whose first word is absent cannot match, so most
     # phrases cost one set lookup on the token set, not a scan.
     present = set(lower)
@@ -248,29 +161,24 @@ def review(find, floor, never_items):
         ):
             reasons.append("agreement or commitment wording in the message")
             break
-    for text, has_amount in find.fact_texts:
-        if has_amount:
-            continue
-        words = _TOKEN.findall(text)
-        if (
-            any(c.isdigit() for c in text)
-            or any(_moneyish(w) for w in words)
-        ):
-            reasons.append(
-                "a fact states a number without a structured amount")
-            break
 
     low = render.normalize(masked).lower()
-    found = None
+    groups = None
     for item in never_items:
         s = render.normalize(str(item)).strip().lower()
         if not s:
             continue
         num = _numeric_item(item)
         if num is not None:
-            if found is None:
-                found = _whole_numbers(masked, toks, years)
-            hit = any(abs(num - v) <= FLOOR_TOL for v in found)
+            if groups is None:
+                groups = _digit_groups(masked, toks)
+            # The item's digits match a fused text run as a whole
+            # string ("42" hits "42" and "4.2", not "420"), and its
+            # value matches a rendered placeholder amount behind the
+            # mask.
+            hit = re.sub(r"[^0-9]", "", s) in groups or any(
+                abs(num - v.value) <= FLOOR_TOL for v in find.values
+            )
         else:
             hit = s in low
         if hit:

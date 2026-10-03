@@ -110,28 +110,27 @@ that carries no numbers:
   written in a language other than English always needs approval. The
   sentinel is one reserved private-use codepoint; a template or fact
   that already carries it routes to the user too.
-- Any token mixing letters and digits ("95USD", "12hundred",
-  "2ndly").
-- Any number-shaped token: a spelled number word ("twelve hundred",
-  "two", "one, two"), a decimal or separator-joined digit form
-  ("90.5", "12.50", "1,050", "12 50"), or a digit token that is not
-  isolated (within two tokens of another digit token, a number word,
-  or a currency or scale word or abbreviation like "5 mil" or "12
-  fifty"). Only isolated 1-2 digit integers (1-99, no leading zero)
-  and whole-word month-name dates ("October 15, 2026", "15 October
-  2026", "Jan 2026") pass, unless the floor is below 100 and the
-  integer or a matching number word equals its integer part.
-- A letter, a digit, or a digit past a `.`/`,` separator glued to a
-  rendered amount: "$1,100k" or "$1,100.99" restates a price.
-- A fact whose text states a number (digits, number words, currency
-  or scale words) while its `amount` is null: money in a fact goes
-  to the user unless the plan carries it structurally.
-- The whole-word lists below, matched on the lowercased token stream
-  (currency codes match the raw token case-sensitively).
+- Any ASCII digit in the free text or in a rendered fact's text:
+  "numbers in the message". Small counts, dates, room numbers and
+  codes all route to the user; there are no exceptions.
+- Any number word inside a lowercased letter run ("twelvehundred",
+  "fiftyish", "two"), except a run that equals a listed common
+  English word ("often", "tone", "money"): "a number word in the
+  message".
+- A letter or a `.`/`,` separator plus digit glued to a rendered
+  amount: "$1,100k" or "$1,100.99" restates a price.
+- The whole-word lists below, matched on the token stream (currency
+  codes match the raw token case-sensitively; tokens keep interior
+  apostrophes, so "i'll take" matches and "won't" is not "won").
 - Any `never_disclose` term, matched on normalized text with format
-  characters stripped; numeric items match as whole numbers only.
+  characters stripped; numeric items match fused digit runs in the
+  text and also compare against rendered placeholder values.
 - A rendered non-offer value equal to the floor only after an x12 or
   /12 conversion.
+- A `send` draft offer whose digits equal the floor's digits in a
+  period that is not the floor's: "amount matches your limit's
+  digits". `accept`, `sign` and `pay` are exempt because they may
+  restate a price the counterparty named.
 - A `send` draft offer equal to the floor after conversion to the
   floor's period: "offer is at your limit". Sending it reveals the
   walk-away number. `accept`, `sign` and `pay` may sit exactly on
@@ -141,12 +140,12 @@ The word lists live in `scripts/btlib/wordlists.py`, the single
 module the runtime and this file share:
 
 number words: eight, eighteen, eighty, eleven, fifteen, fifty, five, forty, four, fourteen, nine, nineteen, ninety, one, seven, seventeen, seventy, six, sixteen, sixty, ten, thirteen, thirty, three, twelve, twenty, two, zero
+number word exceptions: abandoned, alone, antenna, anyone, artwork, attend, attendance, attended, attending, attention, bone, bones, clone, commissioner, commissioners, competent, component, components, consistency, consistent, consistently, content, contents, done, everyone, existence, extend, extended, extending, extends, extension, extensions, extensive, extent, forgotten, freight, gone, gotten, headphones, height, heights, honest, honey, hormone, hydrocodone, indonesia, indonesian, intend, intended, intense, intensity, intensive, intent, intention, jones, leone, liechtenstein, lightweight, listen, listening, lone, lonely, maintenance, mentioned, microphone, monetary, money, network, networking, networks, nintendo, none, often, ones, opponent, opponents, ozone, patent, patents, persistent, phone, phones, pioneer, potential, potentially, practitioner, practitioners, prisoner, prisoners, retention, ringtone, ringtones, sentence, sentences, someone, soonest, stationery, stone, stones, superintendent, telephone, tenant, tend, tender, tennessee, tennis, tension, tent, threatened, threatening, tone, toner, tones, weight, weighted, weights, written, zone, zones
 scale words: billion, billions, bn, hundred, hundreds, k, m, mil, million, millions, mm, thou, thousand, thousands, trillion, trillions
 currency codes: AED, AUD, BRL, CAD, CHF, CNH, CNY, CZK, DKK, EUR, GBP, HKD, HUF, IDR, ILS, INR, JPY, KRW, MXN, MYR, NOK, NZD, PHP, PLN, RUB, SAR, SEK, SGD, THB, TRY, TWD, USD, VND, ZAR
-currency words: aed, aud, brl, buck, bucks, chf, cnh, cny, czk, dkk, dollar, dollars, eur, euro, euros, gbp, grand, hkd, huf, idr, ils, inr, jpy, krw, mxn, myr, nok, nzd, php, pln, pound, pounds, quid, renminbi, sar, sek, sgd, thb, twd, usd, vnd, yen, yuan, zar
-commitment words: accept, acceptance, accepted, accepting, accepts, agree, agreeable, agreed, agreeing, agreement, agreements, charge, confirm, confirmation, confirmed, confirming, confirms, deal, pay
-commitment phrases: cancel my, glad to pay, go ahead, happy to pay, process it, ready to pay, sign me up, sounds good, willing to pay, work for me, work for us, works for me, works for us
-month words: apr, april, aug, august, dec, december, feb, february, jan, january, jul, july, jun, june, mar, march, may, nov, november, oct, october, sep, september
+currency words: aed, aud, baht, brl, buck, bucks, cent, cents, chf, cnh, cny, czk, dirham, dkk, dollar, dollars, dong, eur, euro, euros, francs, gbp, grand, hkd, huf, idr, ils, inr, jpy, krona, krone, krw, lira, mxn, myr, naira, nok, nzd, peso, pesos, php, pln, pound, pounds, quid, rand, reais, real, renminbi, ringgit, riyal, rupee, rupees, sar, sek, sgd, shekel, thb, twd, usd, vnd, won, yen, yuan, zar, zloty
+commitment words: accept, acceptance, accepted, accepting, accepts, agree, agreeable, agreed, agreeing, agreement, agreements, cancel, charge, confirm, confirmation, confirmed, confirming, confirms, deal, pay, sold
+commitment phrases: cancel my, count me in, glad to pay, go ahead, happy to pay, i'll take, let's do, process it, ready to pay, sign me up, sounds good, take it, we'll take, willing to pay, work for me, work for us, works for me, works for us, you have a deal
 
 Every floor-related block reports the single generic reason "outside
 your limits; escalate to the user". Gate output never carries the floor
