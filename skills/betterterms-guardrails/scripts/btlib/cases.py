@@ -15,13 +15,12 @@ import secrets
 from datetime import date
 from pathlib import Path
 
-from . import BtError, MAX_AMOUNT, PERIODS, yaml
+from . import BtError, MAX_AMOUNT, PERIODS, minor, yaml
+from .floorio import parse_number, read_floor, set_floor
 
-PACK_RE = re.compile(r"^[a-z0-9-]{1,64}$")
-CASE_ID_RE = re.compile(r"^[a-z0-9-]+$")
-FLOOR_FILE = ".floor"
-FLOOR_MSG = "floor must be a single plain number like 1200 or 1200.50"
-_PLAIN_NUMBER = re.compile(r"\d+(?:\.(\d+))?$")
+PACK_RE = re.compile(r"[a-z0-9-]{1,64}")
+CASE_ID_RE = re.compile(r"[a-z0-9-]+")
+_CURRENCY = re.compile(r"[A-Za-z]{3}")
 
 AUTONOMY_DEFAULT = {"act": 2, "coach": 1}
 OPTION_KINDS = ("bonus", "fee", "price")
@@ -39,7 +38,7 @@ def case_dir(case_id):
 def require_case(case_id):
     # Case ids are file names: anything outside [a-z0-9-] could leave
     # the cases directory, so it is rejected before touching the path.
-    if not CASE_ID_RE.match(str(case_id or "")):
+    if not CASE_ID_RE.fullmatch(str(case_id or "")):
         raise BtError(f"bad case id {case_id!r}; expected [a-z0-9-]")
     d = case_dir(case_id)
     if not d.is_dir():
@@ -76,7 +75,7 @@ def new_case_id(pack):
 
 
 def create_case(pack, mode="act", direction="pay"):
-    if not PACK_RE.match(pack):
+    if not PACK_RE.fullmatch(pack):
         raise BtError(f"bad pack name {pack!r}; expected [a-z0-9-]")
     if mode not in AUTONOMY_DEFAULT:
         raise BtError(f"bad mode {mode!r}; expected act or coach")
@@ -84,6 +83,7 @@ def create_case(pack, mode="act", direction="pay"):
         raise BtError(f"bad direction {direction!r}; expected pay or receive")
     root = home() / "cases"
     root.mkdir(parents=True, exist_ok=True)
+    os.chmod(root, 0o700)
     for _ in range(5):
         case_id = new_case_id(pack)
         d = root / case_id
@@ -91,7 +91,9 @@ def create_case(pack, mode="act", direction="pay"):
             d.mkdir()
         except FileExistsError:
             continue
+        os.chmod(d, 0o700)
         (d / "sources").mkdir()
+        os.chmod(d / "sources", 0o700)
         (d / "brief.yaml").write_text(
             yaml.dump(
                 {
@@ -132,25 +134,6 @@ def create_case(pack, mode="act", direction="pay"):
     raise BtError("could not allocate a case id")
 
 
-def parse_number(text):
-    """Parse a floor value: one plain number like ``1200`` or
-    ``1200.50``. Currency marks, separators, signs, exponents, spelled
-    forms and extra decimals are all ambiguous, so they are rejected
-    with one fixed message that never echoes the input: the input may
-    hold the floor. A three-digit decimal tail (``85.000``) is a
-    thousands separator in some locales, so it is rejected too."""
-    m = _PLAIN_NUMBER.fullmatch(str(text or "").strip())
-    value = None
-    if m and (m.group(1) is None or len(m.group(1)) != 3):
-        try:
-            value = float(m.group(0))
-        except ValueError:
-            value = None
-    if value is None or not math.isfinite(value):
-        raise BtError(FLOOR_MSG)
-    return value
-
-
 def as_list(value):
     """Coerce a YAML value to a list. Lists pass through, None -> [], and
     a lone scalar or mapping where a list was expected wraps in one. YAML
@@ -184,36 +167,6 @@ def num(value):
     return v if math.isfinite(v) and abs(v) <= MAX_AMOUNT else None
 
 
-def num_repr(value):
-    f = float(value)
-    return str(int(f)) if f.is_integer() else repr(f)
-
-
-def set_floor(case_dir_path, raw):
-    """Write the floor file (mode 0600). The value is never echoed."""
-    value = parse_number(raw)
-    path = Path(case_dir_path) / FLOOR_FILE
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "w", encoding="utf-8") as f:
-        f.write(num_repr(value) + "\n")
-    os.chmod(path, 0o600)
-
-
-def read_floor(case_dir_path):
-    """Floor as float, or None when the file is missing, unreadable or
-    holds anything ``parse_number`` rejects. A bad floor is a limit
-    failure, never a guess: callers must fail closed."""
-    path = Path(case_dir_path) / FLOOR_FILE
-    try:
-        raw = path.read_text(encoding="utf-8")
-    except OSError:
-        return None
-    try:
-        return parse_number(raw)
-    except BtError:
-        return None
-
-
 def direction_of(brief):
     """Brief ``direction``: exactly ``pay`` or ``receive``. Anything else
     is a broken case file, so callers exit 2 instead of defaulting and
@@ -243,12 +196,25 @@ def autonomy_of(brief):
     return a
 
 
+def _period(value, default, what):
+    """A ``period`` key that is present must be a string naming a
+    known period; only an absent key falls back to ``default``. A
+    falsy non-string (``0``, ``false``, ``[]``) is a broken plan, not
+    a default."""
+    if value is None:
+        return default
+    if not isinstance(value, str) or value.lower() not in PERIODS:
+        raise BtError(what)
+    return value.lower()
+
+
 def plan_period(plan):
     """The period the plan's values (and the floor) are expressed in."""
-    p = str((plan or {}).get("period") or "once").lower()
-    if p not in PERIODS:
-        raise BtError("plan period must be once, month or year")
-    return p
+    return _period(
+        (plan or {}).get("period"),
+        "once",
+        "plan period must be once, month or year",
+    )
 
 
 def floor_period(plan, brief):
@@ -256,15 +222,34 @@ def floor_period(plan, brief):
     ``floor_period`` key first, then the plan's ``period``, else the
     brief's, default ``once``. A plan value without its own
     ``period`` is read in this period as well."""
-    if isinstance(plan, dict) and plan.get("floor_period") is not None:
-        p = str(plan.get("floor_period")).lower()
-        if p not in PERIODS:
-            raise BtError("floor period must be once, month or year")
+    p = _period(
+        plan.get("floor_period") if isinstance(plan, dict) else None,
+        None,
+        "floor period must be once, month or year",
+    )
+    if p is not None:
         return p
     for doc in (plan, brief):
         if isinstance(doc, dict) and doc.get("period") is not None:
             return plan_period(doc)
     return "once"
+
+
+def currency_of(plan, brief=None):
+    """The ISO currency the plan's money is expressed in: the plan's
+    ``currency``, else the brief's, default ``USD``. A code that is
+    not three letters, or two different declarations, is a broken
+    case file: which currency the floor means is unknowable."""
+    declared = []
+    for doc in (plan, brief):
+        if isinstance(doc, dict) and doc.get("currency") is not None:
+            c = doc["currency"]
+            if not isinstance(c, str) or not _CURRENCY.fullmatch(c):
+                raise BtError("currency must be a three-letter ISO code")
+            declared.append(c.upper())
+    if declared and any(c != declared[0] for c in declared):
+        raise BtError("brief and plan declare different currencies")
+    return declared[0] if declared else "USD"
 
 
 def option_kind(item):
@@ -288,6 +273,7 @@ def check_plan_limits(plan, floor, direction, brief=None):
     Raises BtError with a message that carries no numbers. Skipped
     when no valid floor exists; that failure is reported by the
     caller's own floor rule."""
+    currency_of(plan, brief)
     if floor is None:
         return
     period = floor_period(plan, brief)
@@ -295,16 +281,18 @@ def check_plan_limits(plan, floor, direction, brief=None):
     for item in as_list(plan.get("options")):
         if isinstance(item, dict):
             kind = option_kind(item)
-            item_period = str(item.get("period") or period).lower()
-            if item_period not in PERIODS:
-                raise BtError("invalid option period")
+            item_period = _period(
+                item.get("period"), period, "invalid option period"
+            )
             if kind == "price" and item_period == period:
                 values.append(num(item.get("value")))
     for item in as_list(plan.get("ladder")):
         if isinstance(item, dict):
-            item_period = str(item.get("period") or period).lower()
-            if item_period not in PERIODS:
-                raise BtError("ladder period must be once, month or year")
+            item_period = _period(
+                item.get("period"),
+                period,
+                "ladder period must be once, month or year",
+            )
             if item_period == period:
                 values.append(num(item.get("value")))
     # A fact's period defaults to ``once``; anything else invalid is a
@@ -315,9 +303,11 @@ def check_plan_limits(plan, floor, direction, brief=None):
     # "no structured amount".
     for item in as_list(plan.get("facts")):
         if isinstance(item, dict):
-            item_period = str(item.get("period") or "once").lower()
-            if item_period not in PERIODS:
-                raise BtError("fact period must be once, month or year")
+            _period(
+                item.get("period"),
+                "once",
+                "fact period must be once, month or year",
+            )
             amount = item.get("amount")
             if amount is not None and (
                 isinstance(amount, bool)
@@ -325,9 +315,11 @@ def check_plan_limits(plan, floor, direction, brief=None):
                 or num(amount) is None
             ):
                 raise BtError("fact amount must be a number or null")
+    floor = minor(floor)
     for v in values:
         if v is None:
             continue
+        v = minor(v)
         if not math.isfinite(v) or (
             direction == "receive" and v < floor
         ) or (

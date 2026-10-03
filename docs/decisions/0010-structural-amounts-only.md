@@ -166,3 +166,46 @@ character allowlist, and the rule that any digit routes to the user. The number,
 and commitment word lists are a best-effort extra signal, not a guarantee: no finite list covers
 every spelling, plural, inflection or foreign word. Known gaps are tracked in TODOS.md. The
 default autonomy (approve each send) means a missed word reaches the user before it is sent.
+
+## Amendment (2026-10-04): fail-closed values, canonical floors, declared currency
+
+- The unconvertible-period rule covers every price value, not only
+  the offer. A plan target, ladder step or price option whose
+  period cannot convert to the floor's (`once` on either side)
+  blocks when rendered or offered, and so do quote and fact amounts
+  on every action but `send`. The send carve-out is retained: a
+  `send` may still render a counterparty quote or fact amount that
+  is worse than the floor or in a period that cannot be converted,
+  because restating a price the counterparty named is not the
+  agent's offer. Only the agent's own offer routes "period differs
+  from your limit" on `send`; the agreeing actions block. Bonus
+  and fee options keep their equality-only check.
+- The `.floor` file hardens. `set-floor` probes the target with
+  `O_NOFOLLOW` and refuses a symlink or non-regular file, writes a
+  0600 temp file in the case directory, fsyncs it and renames it
+  into place with `os.replace`. `read_floor` lstat-checks and
+  treats anything but a regular file as missing, and a `.floor`
+  that is not valid UTF-8 is an unreadable floor (block), never a
+  traceback. Case directories and `BETTERTERMS_HOME/cases` are
+  created 0700.
+- The floor is stored in canonical two-decimal form. `set-floor`
+  accepts only a plain number that stores exactly in the currency
+  minor unit and is at least 0.01; anything else errors before an
+  existing floor is touched.
+- Every limit comparison reads the value as rendered, rounded to
+  the minor unit, before and after period conversion. An amount
+  that renders onto the floor is the floor (100.005 against a
+  100.00 floor routes a send "offer is at your limit"; 100.006
+  renders "100.01" and blocks), so a rendered amount can never land
+  past the floor inside the raw comparison tolerance.
+- Currency is declared, not guessed: `brief.yaml` or `plan.yaml`
+  may carry an ISO code (default USD; conflicting declarations are
+  exit 2). Rendered amounts use the matching symbol ($, S$, euro
+  sign, pound sign) or the code before the number. The ledger
+  records the case currency on each entry and totals group by
+  currency; amounts in different currencies are never summed.
+- `score.py` reads the inbound offer in its own period and converts
+  with the gate's rules. An unconvertible inbound period bands
+  "unknown" with escalate "offer_period_differs" instead of
+  comparing unlike units; a present non-string or unknown inbound
+  period is exit 2; absent defaults to the floor's period.

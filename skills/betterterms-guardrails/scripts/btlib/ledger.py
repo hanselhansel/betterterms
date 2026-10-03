@@ -68,8 +68,10 @@ def add(case_dir, before, after, period):
     if any(r.get("case_id") == case_id for r in records):
         raise BtError("case already recorded in ledger")
     brief = cases.load_brief(case_dir)
+    plan = cases.load_plan(case_dir)
     pack = str(brief.get("pack") or case_id.rsplit("-", 2)[0])
     direction = cases.direction_of(brief)
+    currency = cases.currency_of(plan, brief)
     multiplier = PERIODS_PER_YEAR[period]
     delta = (after - before) if direction == "receive" else (before - after)
     saved = _clean_number(delta * multiplier)
@@ -81,6 +83,7 @@ def add(case_dir, before, after, period):
         "case_id": case_id,
         "pack": pack,
         "direction": direction,
+        "currency": currency,
         "before": _clean_number(before),
         "after": _clean_number(after),
         "period": period,
@@ -95,17 +98,27 @@ def add(case_dir, before, after, period):
 
 
 def total():
+    """Totals grouped by currency: 240 USD a year and 240 EUR a year
+    are two answers, never 480. A record without a ``currency`` lands
+    in ``unknown`` rather than being guessed into one."""
     records, skipped = _records()
+    by_currency = {}
     by_pack = {}
-    saved_total = 0
     for r in records:
         saved = cases.num(r.get("saved_per_year")) or 0
-        saved_total += saved
+        cur = str(r.get("currency") or "unknown")
+        by_currency[cur] = by_currency.get(cur, 0) + saved
         pack = str(r.get("pack") or "unknown")
-        by_pack[pack] = by_pack.get(pack, 0) + saved
+        by_pack.setdefault(pack, {})
+        by_pack[pack][cur] = by_pack[pack].get(cur, 0) + saved
     return {
         "cases": len(records),
-        "saved_per_year": _clean_number(saved_total),
-        "by_pack": {p: _clean_number(v) for p, v in sorted(by_pack.items())},
+        "by_currency": {
+            c: _clean_number(v) for c, v in sorted(by_currency.items())
+        },
+        "by_pack": {
+            p: {c: _clean_number(v) for c, v in sorted(cs.items())}
+            for p, cs in sorted(by_pack.items())
+        },
         "warnings": skipped,
     }

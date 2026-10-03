@@ -20,6 +20,13 @@ PERIODS = ("once", "month", "year")
 declare. ``once`` is the default and converts against nothing."""
 
 
+def minor(value):
+    """``value`` rounded to the currency minor unit (two decimals),
+    the same form ``money_text`` renders, so every limit comparison
+    reads the number the counterparty would see."""
+    return float(f"{float(value):.2f}")
+
+
 class BtError(Exception):
     """A user-facing runtime error. The CLI prints it as {"error": ...} and
     exits 2."""

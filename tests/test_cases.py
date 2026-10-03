@@ -39,7 +39,7 @@ class CaseTest(BtTestCase):
         self.assertTrue(floor_path.is_file())
         mode = stat.S_IMODE(os.stat(floor_path).st_mode)
         self.assertEqual(mode, 0o600, oct(mode))
-        self.assertEqual(floor_path.read_text().strip(), "1200")
+        self.assertEqual(floor_path.read_text().strip(), "1200.00")
 
     def test_set_floor_rejects_currency_text(self):
         # Strict parsing: only a plain number like 1200 or 1200.50. A
@@ -53,7 +53,7 @@ class CaseTest(BtTestCase):
         proc, out = run_bt_json(self.home, "case", "set-floor", case_id, stdin="1200.00\n")
         self.assertEqual(proc.returncode, 0, proc.stdout)
         self.assertNotIn("1200", proc.stdout)
-        self.assertEqual((case_dir / ".floor").read_text().strip(), "1200")
+        self.assertEqual((case_dir / ".floor").read_text().strip(), "1200.00")
 
     def test_case_show_omits_floor(self):
         case_id, case_dir = new_case(self.home)

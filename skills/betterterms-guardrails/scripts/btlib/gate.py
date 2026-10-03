@@ -32,10 +32,14 @@ guarantees and fail closed:
    limit``): inside the band, but it reveals the walk-away number;
    ``accept``, ``sign`` and ``pay`` may sit exactly on it. A price
    value (target, ladder, price option, quote or fact amount not on
-   ``send``) worse than the floor blocks too; fact values read the
-   structured ``amount`` field only, never the text (decision 0010).
-   Bonus and fee options are not offers, so only the equal-to-floor
-   rule reaches them
+   ``send``) worse than the floor blocks too, and a price value
+   whose period cannot convert to the floor's fails closed like an
+   unconvertible offer; fact values read the structured ``amount``
+   field only, never the text (decision 0010). A ``send`` may
+   render a quote or fact worse than the floor: restating a price
+   the counterparty named is not the agent's offer. Bonus and fee
+   options are not offers, so only the equal-to-floor rule reaches
+   them
 9. rendered message over 64 KB, checked after fact expansion and
    before any text scanning -> block
 10. any claim id (draft or auto-claimed by ``{fact:id}``) not in
@@ -63,13 +67,14 @@ every floor-related block reports the same generic reason so the
 output can never leak the floor's value, direction or distance.
 """
 
-from . import BtError, FLOOR_TOL, PERIODS, cases, render, review
+from . import BtError, FLOOR_TOL, PERIODS, cases, minor, render, review
 
 IRREVERSIBLE = {"accept", "cancel", "pay", "sign", "dispute"}
 OFFERED = {"accept", "pay", "sign"}
 ACTIONS = IRREVERSIBLE | {"send"}
 DRAFT_KEYS = {"action", "offer", "period", "template", "claims"}
 LIMITS = "outside your limits; escalate to the user"
+PRICE_KINDS = ("target", "ladder", "option:price", "quote", "fact")
 
 
 def _worse(value, floor, direction):
@@ -78,6 +83,12 @@ def _worse(value, floor, direction):
 
 def _same(a, values):
     return any(abs(a - v) <= FLOOR_TOL for v in values)
+
+
+def _in_floor_period(value, from_period, plan_period):
+    """``value`` as it renders (minor unit), converted and rounded
+    again: comparisons always read rendered amounts."""
+    return minor(render.convert(minor(value), from_period, plan_period))
 
 
 def _check_values(find, action, floor, direction, plan_period, findings):
@@ -89,14 +100,23 @@ def _check_values(find, action, floor, direction, plan_period, findings):
     field only, never parsed text (decision 0010). Equality with only
     a period conversion is a review hit, not a block; it is checked
     in ``_converted_match`` under the review tier. Bonus and fee
-    options are not offers, so only the equality rule reaches them."""
+    options are not offers, so only the equality rule reaches them.
+    A price value whose period cannot convert to the floor's (``once``
+    on either side) fails closed like an unconvertible offer."""
     for v in find.values:
-        nv = render.convert(v.value, v.period, plan_period)
-        if v.kind != "offer" and (_same(nv, (floor,)) or _same(v.value, (floor,))):
+        quoted = v.kind in ("quote", "fact") and action == "send"
+        priced = v.kind in PRICE_KINDS and not quoted
+        if priced and v.period != plan_period and "once" in (
+            v.period, plan_period
+        ):
+            findings.append(("block", "period differs from your limit"))
+            continue
+        nv = _in_floor_period(v.value, v.period, plan_period)
+        if v.kind != "offer" and (
+            _same(nv, (floor,)) or _same(minor(v.value), (floor,))
+        ):
             findings.append(("block", LIMITS))
-        elif v.kind in ("target", "ladder", "option:price", "quote", "fact") and not (
-            v.kind in ("quote", "fact") and action == "send"
-        ) and _worse(nv, floor, direction):
+        elif priced and _worse(nv, floor, direction):
             findings.append(("block", LIMITS))
 
 
@@ -108,8 +128,8 @@ def _converted_match(find, floor, plan_period):
     for v in find.values:
         if v.kind == "offer":
             continue
-        nv = render.convert(v.value, v.period, plan_period)
-        for val in (nv, v.value):
+        nv = _in_floor_period(v.value, v.period, plan_period)
+        for val in (nv, minor(v.value)):
             if _same(val, (floor * 12, floor / 12)) and not _same(
                 val, (floor,)
             ):
@@ -131,8 +151,8 @@ def _floor_digits(find, floor, plan_period, action):
     for v in find.values:
         if v.kind != "offer":
             continue
-        nv = render.convert(v.value, v.period, plan_period)
-        if _same(v.value, (floor,)) and not _same(nv, (floor,)):
+        nv = _in_floor_period(v.value, v.period, plan_period)
+        if _same(minor(v.value), (floor,)) and not _same(nv, (floor,)):
             return True
     return False
 
@@ -150,6 +170,7 @@ def check(case_dir, draft, approved=False, inbound=None):
     floor = cases.read_floor(case_dir)
     cases.check_plan_limits(plan, floor, direction, brief)
     plan_period = cases.floor_period(plan, brief)
+    currency = cases.currency_of(plan, brief)
 
     findings = []  # (kind, message); kind is "block" or "approval"
 
@@ -203,7 +224,7 @@ def check(case_dir, draft, approved=False, inbound=None):
             in_period = raw_in.lower()
 
     find = render.render(
-        template, offer, period, plan, plan_period, in_amounts
+        template, offer, period, plan, plan_period, in_amounts, currency
     ) if template is not None else None
     clean = find is not None and not find.errors
     if find is not None:
@@ -231,17 +252,20 @@ def check(case_dir, draft, approved=False, inbound=None):
                     findings.append(
                         ("block", "period differs from your limit")
                     )
-                in_floor = render.convert(in_offer, in_period, plan_period)
-                if offer is not None and abs(
-                    render.convert(offer, period, plan_period) - in_floor
-                ) > FLOOR_TOL:
+                in_floor = _in_floor_period(
+                    in_offer, in_period, plan_period
+                )
+                if offer is not None and not _same(
+                    _in_floor_period(offer, period, plan_period),
+                    (in_floor,),
+                ):
                     findings.append(("block", "accept must equal the counterparty's offer"))
                 if floor is not None and _worse(in_floor, floor, direction):
                     findings.append(("block", LIMITS))
 
     if floor is not None:
         if offer is not None:
-            offer_floor = render.convert(offer, period, plan_period)
+            offer_floor = _in_floor_period(offer, period, plan_period)
             # "once" has no conversion factor, so a period mismatch
             # with it can never verify the offer against the floor:
             # a send routes to the user, an agreeing action fails

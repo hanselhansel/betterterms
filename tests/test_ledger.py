@@ -45,14 +45,17 @@ class LedgerTest(BtTestCase):
         proc, out = run_bt_json(self.home, "ledger", "total")
         self.assertEqual(proc.returncode, 0, proc.stdout)
         self.assertEqual(out["cases"], 2)
-        self.assertEqual(out["saved_per_year"], 360)
-        self.assertEqual(out["by_pack"], {"bills": 240, "subscriptions": 120})
+        self.assertEqual(out["by_currency"], {"USD": 360})
+        self.assertEqual(
+            out["by_pack"],
+            {"bills": {"USD": 240}, "subscriptions": {"USD": 120}},
+        )
 
     def test_ledger_total_empty(self):
         proc, out = run_bt_json(self.home, "ledger", "total")
         self.assertEqual(proc.returncode, 0, proc.stdout)
         self.assertEqual(out["cases"], 0)
-        self.assertEqual(out["saved_per_year"], 0)
+        self.assertEqual(out["by_currency"], {})
         self.assertEqual(out["by_pack"], {})
 
     def test_ledger_add_unknown_case_errors(self):
@@ -80,7 +83,7 @@ class LedgerTest(BtTestCase):
         self.assertEqual(proc.returncode, 0, proc.stdout)
         proc, out = run_bt_json(self.home, "ledger", "total")
         self.assertEqual(proc.returncode, 0, proc.stdout)
-        self.assertEqual(out["by_pack"], {"job-offer": 20})
+        self.assertEqual(out["by_pack"], {"job-offer": {"USD": 20}})
 
     # A corrupt or oversized line no longer sinks the total: the valid
     # records still report, with a warning count for what was skipped.
@@ -101,8 +104,8 @@ class LedgerTest(BtTestCase):
         proc, out = run_bt_json(self.home, "ledger", "total")
         self.assertEqual(proc.returncode, 0, out)
         self.assertEqual(out["cases"], 1)
-        self.assertEqual(out["saved_per_year"], 240)
-        self.assertEqual(out["by_pack"], {"bills": 240})
+        self.assertEqual(out["by_currency"], {"USD": 240})
+        self.assertEqual(out["by_pack"], {"bills": {"USD": 240}})
         self.assertEqual(out["warnings"], 4)
 
     def test_ledger_rejects_amounts_over_cap(self):

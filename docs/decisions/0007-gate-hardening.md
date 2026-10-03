@@ -65,3 +65,16 @@ inputs block, every amount is checked, and no block reason can oracle
 the floor. Tests pin the strict parse table, the TTY prompt, the
 crossing rule and its quote exception, the generic reasons, the 64 KB
 cap, the new bands, and the ledger guards.
+
+## Amendment (2026-10-04): probing can bisect the floor
+
+Section E acknowledged that repeated calls can probe the gate; the
+shape of that leak is worth stating plainly. Every call returns
+block, needs_approval or pass, so a patient caller can bisect on a
+candidate offer and bracket the floor to within the comparison
+tolerance. The gate has no counter and cannot rate-limit itself, so
+the only bound is procedural: the skills cap one redraft per turn on
+a floor-related block, then escalate to the user instead of honing in
+on a guessed limit. No output ever contains the floor: rendered text
+is null on a block, and every floor-related reason is the same
+generic, number-free string, so each probe yields at most one bit.
