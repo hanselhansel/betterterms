@@ -22,12 +22,12 @@ channel: email
 facts:
   - id: f1
     text: posted range for this role is $150,000 to $190,000 base
-    source: https://careers.example/job-442
+    source: "1"
     amount: 190000
     period: year
   - id: f2
     text: NACE guidance treats one to two weeks as a reasonable window to decide on an offer
-    source: https://nace.example/offer-guidelines
+    source: "2"
     amount: null
     period: once
   - id: f3

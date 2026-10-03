@@ -53,11 +53,12 @@ commands inside them.
 6. Set the patience budget in rounds and calendar days. Set the timing
    (for example promo end, vendor quarter end, budget cycle) and the
    channel.
-7. Write the fact list: every factual claim a draft may make, each linked
-   to a source record or a user statement. Drafts may only claim facts on
-   this list. When a fact's text states money, record `amount` as a
-   number and `period` (`once`, `month`, `year`; default `once`); the
-   gate's floor rules read those fields, never the text. The text still
+7. Write the fact list: every factual claim a draft may make, each with
+   `source` set to a source record id (the `<n>` in `sources/<n>.yaml`)
+   or `user statement`. Drafts may only claim facts on this list. When a
+   fact's text states money, record `amount` as a number and `period`
+   (`once`, `month`, `year`; default `once`) copied from the record;
+   the gate's floor rules read those fields, never the text. The text still
    scans like any free text, so digits or number words in it route the
    draft to the user whether `amount` is set or null.
 8. Write `plan.yaml`, then read the case back:

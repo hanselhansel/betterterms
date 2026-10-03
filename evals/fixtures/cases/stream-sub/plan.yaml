@@ -25,6 +25,6 @@ facts:
     period: month
   - id: f2
     text: provider advertises a $15 per month annual plan to new customers
-    source: https://stream.example/plans
+    source: "1"
     amount: 15
     period: month

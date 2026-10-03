@@ -13,14 +13,18 @@ read. Read only what you named.
 - `brief.yaml` in the case folder: goals and pack.
 - The pack's `pack.yaml` `discovery` intents: which sources, what to find,
   and the look-back window for each.
+- `references/sources.md`: the readable sources and the per-source
+  permission rule.
+- `references/target-record.md`: the target record format.
 - Connected data: email, files, calendar, work tools. Fallback: exports
   the user drops in (CSV, PDF).
 
 ## Outputs
 
 - `targets.yaml` in the case folder: one record per candidate with
-  `counterparty`, `amount`, `cadence`, `renewal_date`, `evidence`,
-  `usage_signal`.
+  `counterparty`, `amount`, `period` (`once`, `month`, or `year`),
+  `renewal_date`, `evidence`, `usage_signal`. Format detail is in
+  `references/target-record.md`.
 - The user's pick of targets, confirmed in conversation.
 
 ## Procedure

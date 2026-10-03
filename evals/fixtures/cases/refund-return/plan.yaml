@@ -22,16 +22,16 @@ channel: email
 facts:
   - id: f1
     text: published return policy promises a full refund within 30 days of delivery
-    source: https://merchant.example/returns
+    source: "1"
     amount: null
     period: once
   - id: f2
     text: item was returned and tracking shows delivery on 2026-09-24
-    source: tracking record
+    source: user statement
     amount: null
     period: once
   - id: f3
     text: purchase amount was $89
-    source: receipt
+    source: user statement
     amount: 89
     period: once

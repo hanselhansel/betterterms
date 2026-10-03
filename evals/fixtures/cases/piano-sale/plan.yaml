@@ -22,7 +22,7 @@ channel: marketplace chat
 facts:
   - id: f1
     text: comparable upright pianos list at $850 to $1,100 locally
-    source: listing survey 2026-09-28
+    source: user statement
     amount: 850
     period: once
   - id: f2
