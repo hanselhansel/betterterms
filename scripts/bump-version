@@ -1,0 +1,85 @@
+#!/usr/bin/env python3
+"""Write VERSION and regenerate manifests.
+
+Usage: bump-version --check | <new-version>
+  --check        verify every generated manifest's version equals VERSION
+  <new-version>  X.Y.Z; writes VERSION, then reruns scripts/build
+"""
+
+import importlib.machinery
+import importlib.util
+import json
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+SEMVER = re.compile(r"^\d+\.\d+\.\d+([-.][0-9A-Za-z.-]+)?$")
+
+
+def _build_module():
+    path = ROOT / "scripts" / "build"
+    loader = importlib.machinery.SourceFileLoader("bt_build", str(path))
+    spec = importlib.util.spec_from_loader("bt_build", loader)
+    mod = importlib.util.module_from_spec(spec)
+    loader.exec_module(mod)
+    return mod
+
+
+def _manifest_paths(build):
+    return sorted(build.expected(ROOT))
+
+
+def check():
+    version_file = ROOT / "VERSION"
+    if not version_file.is_file():
+        print("VERSION file missing", file=sys.stderr)
+        return 2
+    version = version_file.read_text().strip()
+    problems = []
+    for rel in _manifest_paths(_build_module()):
+        path = ROOT / rel
+        if not path.is_file():
+            continue  # unbuilt manifests are build-fresh's problem
+        try:
+            data = json.loads(path.read_text())
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            continue  # non-JSON generated files carry no version field
+        if isinstance(data, dict) and "version" in data and str(data["version"]) != version:
+            problems.append(f"{rel}: version {data['version']!r} != VERSION {version!r}")
+    if problems:
+        print("manifest versions out of sync:", file=sys.stderr)
+        for p in problems:
+            print(f"  {p}", file=sys.stderr)
+        print("run scripts/bump-version", file=sys.stderr)
+        return 1
+    print(f"version check passed ({version})")
+    return 0
+
+
+def bump(new):
+    if not SEMVER.match(new):
+        print(f"bad version {new!r}; expected X.Y.Z", file=sys.stderr)
+        return 2
+    (ROOT / "VERSION").write_text(new + "\n")
+    result = subprocess.run(
+        [sys.executable, str(ROOT / "scripts" / "build")], cwd=ROOT
+    )
+    if result.returncode != 0:
+        return result.returncode
+    print(f"VERSION set to {new}")
+    return 0
+
+
+def main(argv):
+    if argv == ["--check"]:
+        return check()
+    if len(argv) == 1:
+        return bump(argv[0])
+    print(__doc__.strip(), file=sys.stderr)
+    return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
