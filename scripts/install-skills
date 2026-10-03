@@ -1,0 +1,160 @@
+#!/usr/bin/env python3
+"""Install betterterms skills into a skills directory.
+
+Usage: install-skills --target DIR [--copy]
+
+Default mode symlinks each skills/betterterms-* folder into DIR;
+--copy copies them instead and writes DIR/.betterterms-version.
+
+Refuses (exit 1) when a betterterms-* name already sits in both
+$HOME/.agents/skills and $HOME/.claude/skills (Cursor and Muse read
+both, so a skill in each loads twice), when installing would create
+that duplicate, or when linking would place a symlink inside this
+repo (the repo holds none; use --copy there). Never replaces a real
+directory that does not look like a betterterms skill. Exit 2 on
+usage errors. HOME is read from the environment.
+"""
+
+import os
+import shutil
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+SKILLS_DIR = ROOT / "skills"
+VERSION_FILE = ROOT / "VERSION"
+SHARED_DIRS = (".agents/skills", ".claude/skills")
+
+
+def _home():
+    return Path(os.environ.get("HOME") or Path.home())
+
+
+def _skill_names(d):
+    if not d.is_dir():
+        return set()
+    return {p.name for p in d.iterdir() if p.name.startswith("betterterms-")}
+
+
+def _skills():
+    return sorted(
+        p for p in SKILLS_DIR.iterdir()
+        if p.is_dir() and not p.is_symlink() and p.name.startswith("betterterms-")
+    )
+
+
+def _is_ours(dest, name):
+    """Whether an existing directory looks like a betterterms skill
+    copy: it holds SKILL.md naming the folder. Protects foreign dirs
+    that share the prefix."""
+    skill_md = dest / "SKILL.md"
+    if not skill_md.is_file():
+        return False
+    try:
+        head = skill_md.read_text(encoding="utf-8", errors="replace")[:4096]
+    except OSError:
+        return False
+    return f"name: {name}" in head
+
+
+def _preflight(skills, target, copy):
+    """Reject the whole install before writing when any destination
+    state is one we must not clobber."""
+    problems = []
+    for skill in skills:
+        dest = target / skill.name
+        if copy:
+            if dest.is_symlink():
+                continue  # an old link is replaced, not followed
+            if dest.is_dir() and not _is_ours(dest, skill.name):
+                problems.append(f"{dest}: not a betterterms skill copy")
+            elif dest.exists() and not dest.is_dir():
+                problems.append(f"{dest}: exists and is not a directory")
+        elif dest.exists() and not dest.is_symlink():
+            problems.append(f"{dest}: already exists; remove it or use --copy")
+    return problems
+
+
+def install(skills, target, copy):
+    for skill in skills:
+        dest = target / skill.name
+        if copy:
+            if dest.is_symlink():
+                dest.unlink()
+            elif dest.is_dir():
+                shutil.rmtree(dest)
+            shutil.copytree(
+                skill, dest, ignore=shutil.ignore_patterns("__pycache__")
+            )
+            print(f"copied {skill.name}")
+        else:
+            if dest.is_symlink():
+                if dest.resolve() == skill.resolve():
+                    print(f"ok {skill.name} (already linked)")
+                    continue
+                dest.unlink()
+            dest.symlink_to(skill.resolve(), target_is_directory=True)
+            print(f"linked {skill.name}")
+    if copy:
+        marker = target / ".betterterms-version"
+        marker.write_text(VERSION_FILE.read_text(encoding="utf-8"), encoding="utf-8")
+        print(f"wrote {marker.name} ({marker.read_text().strip()})")
+
+
+def main(argv):
+    copy = "--copy" in argv
+    rest = [a for a in argv if a != "--copy"]
+    if rest[:1] != ["--target"] or len(rest) != 2:
+        print(__doc__.strip(), file=sys.stderr)
+        return 2
+    target = Path(rest[1]).expanduser()
+    skills = _skills()
+    home = _home()
+    agents, claude = (home / d for d in SHARED_DIRS)
+
+    dupes = _skill_names(agents) & _skill_names(claude)
+    if dupes:
+        print(
+            f"refusing: {', '.join(sorted(dupes))} exist in both "
+            f"{agents} and {claude}; remove one copy first",
+            file=sys.stderr,
+        )
+        return 1
+
+    resolved_target = target.resolve()
+    ours = {p.name for p in skills}
+    for shared, other in ((agents, claude), (claude, agents)):
+        if resolved_target == shared.resolve():
+            conflicts = sorted(ours & _skill_names(other))
+            if conflicts:
+                print(
+                    f"refusing: {', '.join(conflicts)} already exist in "
+                    f"{other}; installing here would duplicate them",
+                    file=sys.stderr,
+                )
+                return 1
+
+    if not copy and resolved_target.is_relative_to(ROOT):
+        print(
+            "refusing: --target is inside the repo and symlinks are "
+            "not allowed there; use --copy or a target outside the repo",
+            file=sys.stderr,
+        )
+        return 1
+
+    problems = _preflight(skills, target, copy)
+    if problems:
+        for p in problems:
+            print(f"refusing: {p}", file=sys.stderr)
+        return 1
+
+    if target.is_symlink():
+        print(f"refusing: {target} is a symlink", file=sys.stderr)
+        return 1
+    target.mkdir(parents=True, exist_ok=True)
+    install(skills, target, copy)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

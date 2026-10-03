@@ -22,9 +22,17 @@ Usage: build [--check]
 import sys
 from pathlib import Path, PurePosixPath
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from _lib.gen_claude import gen as _gen_claude
+from _lib.gen_codex import gen as _gen_codex
+
 ROOT = Path(__file__).resolve().parent.parent
 
+# Tests stub the generator list by rewriting this exact assignment;
+# keep the empty literal on its own line and append real generators.
 GENERATORS = []
+GENERATORS += [_gen_claude, _gen_codex]
 
 
 def _check_relpath(rel):
