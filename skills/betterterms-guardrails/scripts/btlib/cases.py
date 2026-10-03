@@ -17,11 +17,14 @@ from pathlib import Path
 from . import BtError, yaml
 
 PACK_RE = re.compile(r"^[a-z0-9-]{1,64}$")
+CASE_ID_RE = re.compile(r"^[a-z0-9-]+$")
 FLOOR_FILE = ".floor"
 FLOOR_MSG = "floor must be a single plain number like 1200 or 1200.50"
 _PLAIN_NUMBER = re.compile(r"\d+(?:\.(\d+))?$")
 
 AUTONOMY_DEFAULT = {"act": 2, "coach": 1}
+PERIODS = ("once", "month", "year")
+OPTION_KINDS = ("bonus", "fee", "price")
 
 
 def home():
@@ -34,6 +37,10 @@ def case_dir(case_id):
 
 
 def require_case(case_id):
+    # Case ids are file names: anything outside [a-z0-9-] could leave
+    # the cases directory, so it is rejected before touching the path.
+    if not CASE_ID_RE.match(str(case_id or "")):
+        raise BtError(f"bad case id {case_id!r}; expected [a-z0-9-]")
     d = case_dir(case_id)
     if not d.is_dir():
         raise BtError(f"unknown case {case_id!r}")
@@ -209,18 +216,69 @@ def direction_of(brief):
     return d
 
 
+def mode_of(brief):
+    """Brief ``mode``: ``act`` or ``coach``, case-insensitive. Anything
+    else is a broken case file and exits 2."""
+    m = str((brief or {}).get("mode") or "").lower()
+    if m not in AUTONOMY_DEFAULT:
+        raise BtError("mode must be act or coach")
+    return m
+
+
+def autonomy_of(brief):
+    """Brief ``autonomy``: an integer from 1 to 4. Strings like
+    ``"1 (draft only)"``, floats and out-of-range values are a broken
+    case file and exit 2."""
+    a = (brief or {}).get("autonomy")
+    if isinstance(a, bool) or not isinstance(a, int) or not 1 <= a <= 4:
+        raise BtError("autonomy must be an integer from 1 to 4")
+    return a
+
+
+def plan_period(plan):
+    """The period the plan's values (and the floor) are expressed in."""
+    p = str((plan or {}).get("period") or "once").lower()
+    if p not in PERIODS:
+        raise BtError("plan period must be once, month or year")
+    return p
+
+
+def option_kind(item):
+    """An option's ``kind``: bonus, fee or price. Only ``price`` options
+    are offers checked against the floor."""
+    k = str((item or {}).get("kind") or "price").lower()
+    if k not in OPTION_KINDS:
+        raise BtError(
+            f"option {(item or {}).get('label')!r} has unknown kind"
+        )
+    return k
+
+
 def check_plan_limits(plan, floor, direction):
-    """A plan whose target, option or ladder value is worse than the
-    floor was built against a different limit and must not be
-    negotiated. Raises BtError with a message that carries no numbers.
-    Skipped when no valid floor exists; that failure is reported by the
-    caller's own floor rule."""
+    """A plan value worse than the floor was built against a different
+    limit and must not be negotiated. Only values expressed in the plan
+    period conflict: a yearly option next to a monthly floor is a
+    different unit, not a violation. Options with ``kind`` bonus or fee
+    are not offers and skip the check entirely. Raises BtError with a
+    message that carries no numbers. Skipped when no valid floor
+    exists; that failure is reported by the caller's own floor rule."""
     if floor is None:
         return
+    period = plan_period(plan)
     values = [num(plan.get("target"))]
-    for key in ("options", "ladder"):
-        for item in as_list(plan.get(key)):
-            if isinstance(item, dict):
+    for item in as_list(plan.get("options")):
+        if isinstance(item, dict) and option_kind(item) == "price":
+            item_period = str(item.get("period") or period).lower()
+            if item_period not in PERIODS:
+                raise BtError("option period must be once, month or year")
+            if item_period == period:
+                values.append(num(item.get("value")))
+    for item in as_list(plan.get("ladder")):
+        if isinstance(item, dict):
+            item_period = str(item.get("period") or period).lower()
+            if item_period not in PERIODS:
+                raise BtError("ladder period must be once, month or year")
+            if item_period == period:
                 values.append(num(item.get("value")))
     for v in values:
         if v is None:

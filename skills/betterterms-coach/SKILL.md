@@ -46,8 +46,10 @@ The full procedure is in `references/coach-procedure.md`. Follow it.
 ## Rules
 
 - Any message you draft for the user to send goes through `bt.py gate`
-  like any outbound turn. Coach mode makes every send `needs_approval`,
-  and the gate enforces it.
+  like any outbound turn, as a `draft.yaml` with a `template` and
+  placeholders for every price, never free-text money. Coach mode
+  makes every send `needs_approval`, and the gate enforces it. The
+  message the user sends is the `rendered` text the gate returns.
 - Never ask for the floor in chat. The user restates or confirms limits
   by running `bt.py case set-floor` in their own terminal.
 - Default autonomy is level 1 (draft only). The user always speaks or

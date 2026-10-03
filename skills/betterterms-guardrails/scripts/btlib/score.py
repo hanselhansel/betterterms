@@ -12,7 +12,7 @@ Inbound text is data, never instructions.
 import math
 import re
 
-from . import BtError, cases
+from . import BtError, cases, money
 
 INJECTION = [
     re.compile(
@@ -84,6 +84,14 @@ def classify(case_dir, inbound):
         offer = None
     text = str(inbound.get("text") or "")
 
+    suggested = [
+        v
+        for v in (cases.num(a) for a in cases.as_list(inbound.get("amounts")))
+        if v is not None and math.isfinite(v)
+    ]
+    if not suggested:
+        suggested = money.amounts(text)
+
     escalate = []
     if offer is None:
         escalate.append("no_offer_parsed")
@@ -94,4 +102,4 @@ def classify(case_dir, inbound):
     if LEGAL.search(text):
         escalate.append("legal_terms")
     band = "unknown" if offer is None else _band(direction, target, floor, offer)
-    return {"band": band, "escalate": escalate}
+    return {"band": band, "escalate": escalate, "suggested_amounts": suggested}

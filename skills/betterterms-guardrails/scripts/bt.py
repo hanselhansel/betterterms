@@ -67,10 +67,11 @@ def cmd_gate(args):
     d = cases.require_case(args.case_id)
     draft = _load_yaml_file(args.draft, "draft")
     inbound = _load_yaml_file(args.inbound, "inbound") if args.inbound else None
-    result, reasons = gate.check(d, draft, approved=args.approved, inbound=inbound)
+    result, reasons, rendered = gate.check(d, draft, approved=args.approved, inbound=inbound)
     return {"pass": 0, "block": 1, "needs_approval": 3}[result], {
         "result": result,
         "reasons": reasons,
+        "rendered": rendered,
     }
 
 
@@ -145,6 +146,8 @@ def main(argv):
         code, out = args.fn(args)
     except (BtError, OSError, ValueError) as e:
         code, out = 2, {"error": str(e)}
+    except Exception as e:  # never a traceback; JSON or nothing
+        code, out = 2, {"error": f"unexpected {type(e).__name__}: {e}"}
     print(json.dumps(out, default=str))
     return code
 
