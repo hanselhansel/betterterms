@@ -1,0 +1,32 @@
+name: subscriptions
+command: subscriptions
+mode: act
+direction: pay
+triggers:
+  - subscription
+  - streaming
+  - membership
+  - renewal price
+  - price increase
+  - lower my plan
+  - too expensive
+  - save on subscriptions
+intake:
+  - "How much did you use this subscription in the last 90 days?"
+  - "What is it worth to you to keep it?"
+  - "Would a pause or a downgrade work instead of a lower price?"
+  - "Are you eligible for a discount (student, annual, nonprofit)?"
+discovery:
+  - source: email
+    find: "receipts, renewal notices, and price-change emails for recurring subscriptions"
+    window_days: 400
+  - source: files
+    find: "card or bank statements the user provides listing recurring charges"
+    window_days: 400
+research:
+  - kind: policy
+  - kind: pricing
+  - kind: precedent
+  - kind: rights
+savings:
+  formula: "(before - after) * periods_per_year"
