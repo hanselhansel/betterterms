@@ -9,6 +9,7 @@ from pathlib import Path
 
 from .checks_scan import (
     SUBPROCESS_TIMEOUT,
+    display,
     join,
     junk_file,
     tail,
@@ -42,17 +43,27 @@ def _run_script(root, name, *args):
     return ("PASS", "") if r.returncode == 0 else ("FAIL", tail(r))
 
 
-def _payload(p):
+def _payload(p, linked):
     """{relpath: bytes} under a dir, a file's own bytes keyed "", or {}
     when the path does not exist. The rule is the same whether the file
     list came from git or os.walk: every file on disk counts except
-    __pycache__ contents and OS cruft."""
+    __pycache__ contents and OS cruft. A symlinked directory anywhere in
+    the tree is appended to linked instead of followed."""
+    if p.is_symlink() and p.is_dir():
+        linked.append(str(p))
+        return {}
     if p.is_file():
         return {"": p.read_bytes()}
     out = {}
     if p.is_dir():
         for dirpath, dirnames, filenames in os.walk(p):
-            dirnames[:] = [d for d in dirnames if d != "__pycache__"]
+            kept = []
+            for d in dirnames:
+                if (Path(dirpath) / d).is_symlink():
+                    linked.append(str(Path(dirpath) / d))
+                elif d != "__pycache__":
+                    kept.append(d)
+            dirnames[:] = kept
             for name in filenames:
                 if not junk_file(name):
                     f = Path(dirpath) / name
@@ -71,19 +82,26 @@ def _first_diff(rel, a, b):
 
 def check_vendor_sync(root):
     """btlib ships byte-identical copies of the YAML layer; SKIP when
-    skills/betterterms-guardrails/scripts/btlib is absent."""
+    skills/betterterms-guardrails/scripts/btlib is absent. Symlinked
+    directories FAIL: the walk cannot follow them, so their contents
+    could drift invisibly."""
     btlib = root / "skills/betterterms-guardrails/scripts/btlib"
     if not btlib.is_dir():
         return "SKIP", "no skills/betterterms-guardrails/scripts/btlib"
     problems = []
+    linked = []
     for rel, src in (("_vendor/yaml", "_vendor/yaml"), ("yaml.py", "miniyaml.py")):
-        mine = _payload(btlib / rel)
-        theirs = _payload(root / "scripts/_lib" / src)
+        mine = _payload(btlib / rel, linked)
+        theirs = _payload(root / "scripts/_lib" / src, linked)
         if mine != theirs:
             problems.append(
                 f"btlib/{rel} is not identical to scripts/_lib/{src}"
-                f" (first diff: {_first_diff(rel, mine, theirs)})"
+                f" (first diff: {display(_first_diff(rel, mine, theirs))})"
             )
+    problems += [
+        f"{display(Path(d).relative_to(root))}: symlinked directory"
+        for d in linked
+    ]
     return ("FAIL", join(problems)) if problems else ("PASS", "")
 
 
