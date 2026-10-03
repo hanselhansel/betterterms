@@ -1,0 +1,6 @@
+{
+  "name": "betterterms",
+  "version": "0.1.0",
+  "description": "Cross-agent negotiation toolkit: core skills, packs, and a pre-send gate for bills, refunds, cancellations, and offers.",
+  "contextFileName": "GEMINI.md"
+}

@@ -24,8 +24,12 @@ from pathlib import Path, PurePosixPath
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from _lib.gen_agent_plugins import gen as _gen_agent_plugins
 from _lib.gen_claude import gen as _gen_claude
 from _lib.gen_codex import gen as _gen_codex
+from _lib.gen_cursor import gen as _gen_cursor
+from _lib.gen_gemini import gen as _gen_gemini
+from _lib.gen_muse import gen as _gen_muse
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -33,6 +37,7 @@ ROOT = Path(__file__).resolve().parent.parent
 # keep the empty literal on its own line and append real generators.
 GENERATORS = []
 GENERATORS += [_gen_claude, _gen_codex]
+GENERATORS += [_gen_gemini, _gen_cursor, _gen_muse, _gen_agent_plugins]
 
 
 def _check_relpath(rel):
