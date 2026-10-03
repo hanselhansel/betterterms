@@ -20,6 +20,15 @@ _ENTRY_DESCRIPTION = (
     "cancellations, subscriptions, and job offers to the right pack."
 )
 
+_MOD_ENTRY = {
+    "name": "betterterms-mod",
+    "source": "./mod",
+    "description": (
+        "Optional Claude Code mod for betterterms: case pipeline pane, "
+        "draft-approval band, reply toasts, and the pre-send gate hook."
+    ),
+}
+
 
 def _dumps(obj):
     return json.dumps(obj, indent=2, ensure_ascii=False) + "\n"
@@ -44,6 +53,27 @@ def _skill_description(folder):
         return None
     desc = fm.get("description")
     return desc if isinstance(desc, str) and desc.strip() else None
+
+
+def _mod_entry(root):
+    """The marketplace entry for the opt-in mod, or None when mod/ is
+    absent (fixture roots, partial checkouts). The mod's own manifest is
+    the source of truth for name and description."""
+    mod = root / "mod"
+    if not mod.is_dir():
+        return None
+    entry = dict(_MOD_ENTRY)
+    manifest = mod / ".claude-plugin" / "plugin.json"
+    if manifest.is_file():
+        try:
+            data = json.loads(manifest.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            data = {}
+        if isinstance(data.get("name"), str) and data["name"]:
+            entry["name"] = data["name"]
+        if isinstance(data.get("description"), str) and data["description"].strip():
+            entry["description"] = data["description"]
+    return entry
 
 
 def _pack_commands(root):
@@ -93,11 +123,14 @@ def gen(root, version):
             "name": kit["name"],
             "description": kit["description"],
             "owner": {"name": kit["author"]["name"]},
-            "plugins": [{
-                "name": kit["name"],
-                "source": "./",
-                "description": kit["description"],
-            }],
+            "plugins": [
+                {
+                    "name": kit["name"],
+                    "source": "./",
+                    "description": kit["description"],
+                },
+                *([_mod_entry(root)] if _mod_entry(root) is not None else []),
+            ],
         }),
         "commands/betterterms.md": _command_md(
             _ENTRY_DESCRIPTION, "betterterms-start"
