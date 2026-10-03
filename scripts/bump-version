@@ -18,7 +18,6 @@ ROOT = Path(__file__).resolve().parent.parent
 # ASCII digits only, no leading zeros; always compared with fullmatch so
 # trailing newlines or Unicode digits cannot slip through.
 SEMVER = re.compile(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)")
-HEADING = re.compile(r"^##\s+(\S+)")
 
 
 def _build_module():
@@ -28,19 +27,6 @@ def _build_module():
     mod = importlib.util.module_from_spec(spec)
     loader.exec_module(mod)
     return mod
-
-
-def _top_changelog_version():
-    """The X.Y.Z in the first '## <ver>' heading of CHANGELOG.md, or None
-    when the file is missing or has no version heading."""
-    path = ROOT / "CHANGELOG.md"
-    if not path.is_file():
-        return None
-    for line in path.read_text(encoding="utf-8").splitlines():
-        m = HEADING.match(line)
-        if m and SEMVER.fullmatch(m.group(1)):
-            return m.group(1)
-    return None
 
 
 def check():
@@ -53,11 +39,6 @@ def check():
         print(f"VERSION {version!r} is not X.Y.Z semver", file=sys.stderr)
         return 2
     problems = []
-    top = _top_changelog_version()
-    if top != version:
-        problems.append(
-            f"CHANGELOG.md: top version heading {top!r} != VERSION {version!r}"
-        )
     for rel in sorted(_build_module().expected(ROOT)):
         path = ROOT / rel
         if not path.is_file():
@@ -72,7 +53,7 @@ def check():
         print("versions out of sync:", file=sys.stderr)
         for p in problems:
             print(f"  {p}", file=sys.stderr)
-        print("run scripts/bump-version", file=sys.stderr)
+        print("run scripts/build", file=sys.stderr)
         return 1
     print(f"version check passed ({version})")
     return 0

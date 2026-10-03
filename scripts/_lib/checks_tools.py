@@ -1,16 +1,17 @@
 """Checks that shell out: unit tests, vendor sync, build, version, and
 host-tool validators."""
 
+import os
 import shutil
 import subprocess
 import sys
+from pathlib import Path
 
 from .checks_scan import (
     SUBPROCESS_TIMEOUT,
-    _file_list,
-    _join,
-    _junk_file,
-    _tail,
+    join,
+    junk_file,
+    tail,
 )
 
 UNIT_TEST_TIMEOUT = 300
@@ -24,7 +25,7 @@ def check_unit_tests(root):
         cwd=root, capture_output=True, text=True, timeout=UNIT_TEST_TIMEOUT,
     )
     if r.returncode != 0:
-        return "FAIL", _tail(r)
+        return "FAIL", tail(r)
     if "Ran 0 tests" in (r.stderr or "") + (r.stdout or ""):
         return "FAIL", "test run discovered 0 tests"
     return "PASS", ""
@@ -38,27 +39,24 @@ def _run_script(root, name, *args):
         [sys.executable, str(path), *args], cwd=root,
         capture_output=True, text=True, timeout=SUBPROCESS_TIMEOUT,
     )
-    return ("PASS", "") if r.returncode == 0 else ("FAIL", _tail(r))
+    return ("PASS", "") if r.returncode == 0 else ("FAIL", tail(r))
 
 
-def _payload(p, listed):
+def _payload(p):
     """{relpath: bytes} under a dir, a file's own bytes keyed "", or {}
-    when the path does not exist. Only files in the verify file list
-    count; __pycache__, .DS_Store and editor swap files never do."""
+    when the path does not exist. The rule is the same whether the file
+    list came from git or os.walk: every file on disk counts except
+    __pycache__ contents and OS cruft."""
     if p.is_file():
         return {"": p.read_bytes()}
     out = {}
     if p.is_dir():
-        for f in sorted(p.rglob("*")):
-            rel = f.relative_to(p)
-            if (
-                not f.is_file()
-                or "__pycache__" in rel.parts
-                or _junk_file(f.name)
-                or f not in listed
-            ):
-                continue
-            out[str(rel)] = f.read_bytes()
+        for dirpath, dirnames, filenames in os.walk(p):
+            dirnames[:] = [d for d in dirnames if d != "__pycache__"]
+            for name in filenames:
+                if not junk_file(name):
+                    f = Path(dirpath) / name
+                    out[str(f.relative_to(p))] = f.read_bytes()
     return out
 
 
@@ -77,17 +75,16 @@ def check_vendor_sync(root):
     btlib = root / "skills/betterterms-guardrails/scripts/btlib"
     if not btlib.is_dir():
         return "SKIP", "no skills/betterterms-guardrails/scripts/btlib"
-    listed = set(_file_list(root))
     problems = []
     for rel, src in (("_vendor/yaml", "_vendor/yaml"), ("yaml.py", "miniyaml.py")):
-        mine = _payload(btlib / rel, listed)
-        theirs = _payload(root / "scripts/_lib" / src, listed)
+        mine = _payload(btlib / rel)
+        theirs = _payload(root / "scripts/_lib" / src)
         if mine != theirs:
             problems.append(
                 f"btlib/{rel} is not identical to scripts/_lib/{src}"
                 f" (first diff: {_first_diff(rel, mine, theirs)})"
             )
-    return ("FAIL", _join(problems)) if problems else ("PASS", "")
+    return ("FAIL", join(problems)) if problems else ("PASS", "")
 
 
 def check_build_fresh(root):
@@ -108,7 +105,7 @@ def _validate(root, marker, tool, args, skip_msg):
         [tool, *args],
         cwd=root, capture_output=True, text=True, timeout=SUBPROCESS_TIMEOUT,
     )
-    return ("PASS", "") if r.returncode == 0 else ("FAIL", _tail(r))
+    return ("PASS", "") if r.returncode == 0 else ("FAIL", tail(r))
 
 
 def check_claude_validate(root):

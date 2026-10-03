@@ -3,11 +3,12 @@
 import re
 
 from .checks_scan import (
-    _file_list,
-    _is_internal_doc,
-    _is_vendor,
-    _join,
-    _read_text,
+    BinaryFileError,
+    file_list,
+    is_internal_doc,
+    is_vendor,
+    join,
+    read_text,
 )
 
 MAX_SOURCE_LINES = 400
@@ -24,6 +25,27 @@ LOCAL_PATH = re.compile(
 )
 
 
+def texts(root, bad, skip):
+    """Yield (rel, text) for every scanned file that skip(rel) accepts
+    and that decodes as UTF-8 text. Unreadable and binary files yield
+    nothing; a file that fails UTF-8 decoding, or that holds binary
+    bytes under a text name, appends '{rel}: ...' to bad instead."""
+    for p in file_list(root):
+        rel = p.relative_to(root)
+        if skip(rel):
+            continue
+        try:
+            text = read_text(p, rel)
+        except BinaryFileError:
+            bad.append(f"{rel}: binary content in a text file")
+            continue
+        except UnicodeDecodeError:
+            bad.append(f"{rel}: not valid UTF-8")
+            continue
+        if text is not None:
+            yield rel, text
+
+
 def check_no_bin(root):
     if (root / "bin").exists():
         return "FAIL", "top-level bin/ is not allowed"
@@ -33,46 +55,32 @@ def check_no_bin(root):
 def check_no_root_claude_md(root):
     bad = [
         str(p.relative_to(root))
-        for p in _file_list(root)
+        for p in file_list(root)
         if p.name.lower() in ("claude.md", "agents.md")
     ]
-    return ("FAIL", _join(bad)) if bad else ("PASS", "")
+    return ("FAIL", join(bad)) if bad else ("PASS", "")
 
 
 def check_no_local_paths(root):
+    def skip(rel):
+        return is_internal_doc(rel) or is_vendor(rel)
+
     bad = []
-    for p in _file_list(root):
-        rel = p.relative_to(root)
-        if _is_internal_doc(rel) or _is_vendor(rel):
-            continue
-        try:
-            text = _read_text(p)
-        except UnicodeDecodeError:
-            bad.append(f"{rel}: not valid UTF-8")
-            continue
-        if text is None:
-            continue
+    for rel, text in texts(root, bad, skip):
         for i, line in enumerate(text.splitlines(), 1):
             if LOCAL_PATH.search(line):
                 bad.append(f"{rel}:{i}")
-    return ("FAIL", _join(bad)) if bad else ("PASS", "")
+    return ("FAIL", join(bad)) if bad else ("PASS", "")
 
 
 def check_file_size(root):
+    def skip(rel):
+        scripts_file = rel.parts and rel.parts[0] == "scripts" and "." not in rel.name
+        return is_vendor(rel) or (rel.suffix not in (".py", ".js") and not scripts_file)
+
     bad = []
-    for p in _file_list(root):
-        rel = p.relative_to(root)
-        scripts_file = rel.parts and rel.parts[0] == "scripts" and "." not in p.name
-        if _is_vendor(rel) or (p.suffix not in (".py", ".js") and not scripts_file):
-            continue
-        try:
-            text = _read_text(p)
-        except UnicodeDecodeError:
-            bad.append(f"{rel}: not valid UTF-8")
-            continue
-        if text is None:
-            continue
+    for rel, text in texts(root, bad, skip):
         n = len(text.splitlines())
         if n > MAX_SOURCE_LINES:
             bad.append(f"{rel} ({n} lines > {MAX_SOURCE_LINES})")
-    return ("FAIL", _join(bad)) if bad else ("PASS", "")
+    return ("FAIL", join(bad)) if bad else ("PASS", "")

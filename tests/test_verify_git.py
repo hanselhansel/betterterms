@@ -76,20 +76,37 @@ class GitModeTest(unittest.TestCase):
         self.assertIn("evals/scored.md", proc.stdout)
         self.assertNotIn("holdout", proc.stdout)
 
+    def test_vendor_sync_counts_git_ignored_drift(self):
+        # A gitignored file inside a _vendor tree is invisible to
+        # git ls-files, but the payload compare must still see it.
+        btlib = self.root / "skills/betterterms-guardrails/scripts/btlib"
+        canon = self.root / "scripts/_lib"
+        for base in (btlib / "_vendor" / "yaml", canon / "_vendor" / "yaml"):
+            base.mkdir(parents=True)
+            (base / "a.py").write_text("A\n")
+        (btlib / "yaml.py").write_text("same\n")
+        (canon / "miniyaml.py").write_text("same\n")
+        (self.root / ".gitignore").write_text("*.local\n")
+        (btlib / "_vendor" / "yaml" / "extra.local").write_text("drift\n")
+        subprocess.run([GIT, "add", "-A"], cwd=self.root, check=True)
+        proc = run_verify(self.root)
+        assert_failed(self, proc, "vendor-sync")
+        self.assertIn("extra.local", proc.stdout)
+
     def test_git_file_list_computed_once_per_run(self):
         calls = []
-        real = checks_scan._git_relpaths
+        real = checks_scan.git_relpaths
 
         def counting(root):
             calls.append(root)
             return real(root)
 
-        checks_scan._git_relpaths = counting
+        checks_scan.git_relpaths = counting
         try:
             run_verify(self.root)
         finally:
-            checks_scan._git_relpaths = real
-            checks_scan._file_list.cache_clear()
+            checks_scan.git_relpaths = real
+            checks_scan.file_list.cache_clear()
         self.assertEqual(len(calls), 1)
 
 

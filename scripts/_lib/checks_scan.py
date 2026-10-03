@@ -5,6 +5,7 @@ git file list when the root is a git repo, os.walk otherwise, filtered
 by the skip rules below.
 """
 
+import codecs
 import functools
 import os
 import subprocess
@@ -40,12 +41,30 @@ SUBPROCESS_TIMEOUT = 120
 JUNK_NAMES = {".DS_Store"}
 JUNK_SUFFIXES = (".swp", ".swo", ".swn", "~")
 
+# UTF-16 and UTF-32 byte-order marks: a file starting with one holds
+# text, just not UTF-8.
+_UTF_BOMS = (
+    codecs.BOM_UTF32_LE,
+    codecs.BOM_UTF32_BE,
+    codecs.BOM_UTF16_LE,
+    codecs.BOM_UTF16_BE,
+)
 
-def _is_internal_doc(rel):
+# Suffixes that name a file as text; an extensionless entry point under
+# scripts/ counts too. Binary bytes inside a text-named file are an
+# error, not a skippable binary.
+TEXT_SUFFIXES = {".md", ".py", ".json", ".yaml", ".yml", ".txt", ".toml"}
+
+
+class BinaryFileError(Exception):
+    """A text-named file holds NUL bytes or a UTF-16/32 BOM."""
+
+
+def is_internal_doc(rel):
     return any(rel.parts[: len(skip)] == skip for skip in INTERNAL_DOCS)
 
 
-def _is_vendor(rel):
+def is_vendor(rel):
     return any(rel.parts[: len(v)] == v for v in VENDOR_ROOTS)
 
 
@@ -58,7 +77,7 @@ def _skipped(parts):
     )
 
 
-def _git_relpaths(root):
+def git_relpaths(root):
     """Tracked plus non-ignored untracked files when root is a git repo;
     None otherwise, so callers fall back to os.walk."""
     if not (root / ".git").exists():
@@ -74,11 +93,11 @@ def _git_relpaths(root):
 
 
 @functools.cache
-def _file_list(root):
+def file_list(root):
     """The scan file list for root, computed once per verify run: the git
     file list when available, os.walk otherwise, filtered by skip rules.
-    Callers clear the cache with _file_list.cache_clear()."""
-    rels = _git_relpaths(root)
+    Callers clear the cache with file_list.cache_clear()."""
+    rels = git_relpaths(root)
     if rels is not None:
         return [
             root / rel
@@ -97,30 +116,43 @@ def _file_list(root):
     return files
 
 
-def _junk_file(name):
+def junk_file(name):
     """OS cruft and editor swap files excluded from tree comparisons."""
     return name in JUNK_NAMES or name.endswith(JUNK_SUFFIXES)
 
 
-def _read_text(path):
+def _text_named(rel):
+    """Whether rel names a file that must hold text: a known text
+    suffix, or an extensionless entry point under scripts/."""
+    return rel.suffix in TEXT_SUFFIXES or (
+        rel.parts and rel.parts[0] == "scripts" and "." not in rel.name
+    )
+
+
+def read_text(path, rel):
     """File text, or None for binary or unreadable files. Files holding
     text in a non-UTF-8 encoding raise UnicodeDecodeError so the calling
-    check can FAIL with the path instead of skipping silently."""
+    check can FAIL with the path instead of skipping silently; a
+    text-named file (see _text_named) holding NUL bytes or a UTF-16/32
+    BOM raises BinaryFileError for the same reason."""
     try:
         data = path.read_bytes()
     except OSError:
         return None
-    if b"\0" in data:
-        return None
+    if b"\0" in data or data.startswith(_UTF_BOMS):
+        if _text_named(rel):
+            raise BinaryFileError(rel)
+        if b"\0" in data:
+            return None
     return data.decode("utf-8")
 
 
-def _tail(result, n=5):
+def tail(result, n=5):
     text = (result.stderr or "") + (result.stdout or "")
     return " | ".join(text.strip().splitlines()[-n:])
 
 
-def _join(items, n=8):
+def join(items, n=8):
     shown = items[:n]
     if len(items) > n:
         shown.append(f"+{len(items) - n} more")

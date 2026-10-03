@@ -3,7 +3,7 @@
 import re
 
 from . import frontmatter
-from .checks_scan import _join
+from .checks_scan import join
 
 # Name segments are lowercase alnum joined by single hyphens: no leading,
 # trailing or double hyphens; 1-64 chars total.
@@ -52,4 +52,4 @@ def check_skill_names(root):
         body_lines = len(body.splitlines())
         if body_lines > MAX_SKILL_BODY_LINES:
             problems.append(f"skills/{name}: body {body_lines} lines > {MAX_SKILL_BODY_LINES}")
-    return ("FAIL", _join(problems)) if problems else ("PASS", "")
+    return ("FAIL", join(problems)) if problems else ("PASS", "")

@@ -8,11 +8,14 @@ repo-rooted paths.
 
 Contract: ``load(text)`` returns what ``yaml.safe_load(text)`` returns,
 except that duplicate mapping keys raise :class:`Error` naming the
-1-based line and aliases (``*name``) raise :class:`Error`, so anchored
-data cannot be expanded exponentially. Anchors without aliases are
-fine. ``dump(obj)`` is ``yaml.safe_dump`` with insertion-order keys,
-unicode allowed and block (not flow) style. YAML failures surface as
-:class:`Error`, never as ``yaml.YAMLError``.
+1-based line and aliases (``*name``) and merge keys (``<<``) raise
+:class:`Error`, so anchored data cannot be expanded exponentially or
+silently merged. Anchors without aliases are fine. ``dump(obj)`` is
+``yaml.dump`` on a SafeDumper that never emits anchors or aliases, with
+insertion-order keys, unicode allowed and block (not flow) style.
+Documents nested past the interpreter's recursion limit raise
+:class:`Error` too. YAML failures surface as :class:`Error`, never as
+``yaml.YAMLError``.
 """
 
 from ._vendor import yaml
@@ -40,7 +43,8 @@ _MERGE_TAG = "tag:yaml.org,2002:merge"
 
 
 class _Loader(yaml.SafeLoader):
-    """SafeLoader that refuses aliases and duplicate mapping keys."""
+    """SafeLoader that refuses aliases, merge keys and duplicate
+    mapping keys."""
 
     def compose_node(self, parent, index):
         if self.check_event(yaml.AliasEvent):
@@ -54,11 +58,11 @@ class _Loader(yaml.SafeLoader):
     def construct_mapping(self, node, deep=False):
         seen = set()
         for key_node, _value_node in node.value:
-            # ``<<`` merge keys have no scalar key; super() expands them
-            # via flatten_mapping, so merged pairs are never double-counted
-            # and an explicit key still overrides a merged one.
             if key_node.tag == _MERGE_TAG:
-                continue
+                raise Error(
+                    "merge key << is not supported",
+                    _line(key_node.start_mark),
+                )
             key = self.construct_object(key_node, deep=True)
             try:
                 duplicate = key in seen
@@ -80,16 +84,32 @@ def load(text):
         return yaml.load(text, Loader=_Loader)
     except Error:
         raise
+    except RecursionError as e:
+        raise Error("nesting too deep") from e
     except yaml.YAMLError as e:
         _reraise(e)
+
+
+class _Dumper(yaml.SafeDumper):
+    """SafeDumper that never emits anchors or aliases: a shared object
+    is written out in full at each site."""
+
+    def ignore_aliases(self, data):
+        return True
 
 
 def dump(obj):
     """Serialize a dict, list or scalar to YAML text."""
     try:
-        return yaml.safe_dump(
-            obj, sort_keys=False, allow_unicode=True, default_flow_style=False
+        return yaml.dump(
+            obj,
+            Dumper=_Dumper,
+            sort_keys=False,
+            allow_unicode=True,
+            default_flow_style=False,
         )
+    except RecursionError as e:
+        raise Error("nesting too deep") from e
     except yaml.YAMLError as e:
         _reraise(e)
 

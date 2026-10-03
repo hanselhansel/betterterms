@@ -79,8 +79,34 @@ class VerifyContentTest(VerifyRepoCase):
         proc = run_verify(self.root)
         self.assertNotIn("FAIL prose-rules", proc.stdout)
         (self.root / "evals" / "scored.md").write_text("em \u2014 dash\n")
-        self.assert_failed(run_verify(self.root), "prose-rules")
+        proc = run_verify(self.root)
+        self.assert_failed(proc, "prose-rules")
         self.assertNotIn("holdout", proc.stdout)
+
+    def test_nul_or_utf_bom_in_text_named_file_fails(self):
+        (self.root / "nul.md").write_bytes(b"a\x00b\n")
+        proc = run_verify(self.root)
+        self.assert_failed(proc, "no-local-paths")
+        self.assertIn("nul.md", proc.stdout)
+        # A UTF-16 or UTF-32 BOM counts too, on a text suffix or on an
+        # extensionless scripts/ entry point.
+        (self.root / "nul.md").unlink()
+        (self.root / "bom.yaml").write_bytes(
+            b"\xff\xfea\x00:\x00 \x001\x00\n\x00"
+        )
+        (self.root / "scripts").mkdir()
+        (self.root / "scripts" / "tool").write_bytes(b"\xfe\xff\x00x\x00=\x001\n")
+        proc = run_verify(self.root)
+        self.assert_failed(proc, "no-local-paths")
+        self.assertIn("bom.yaml", proc.stdout)
+        self.assertIn("scripts/tool", proc.stdout)
+        # Binary files under non-text names still skip silently.
+        (self.root / "bom.yaml").unlink()
+        (self.root / "scripts" / "tool").unlink()
+        (self.root / "raw.bin").write_bytes(b"\x00\x01\x02")
+        (self.root / "blob.bin").write_bytes(b"\xff\xfe\x00\x00rest")
+        proc = run_verify(self.root)
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
 
     def test_vendor_sync_ignores_junk_and_names_first_drift(self):
         # A NON-empty vendored tree: two small files mirrored both ways.
@@ -92,10 +118,13 @@ class VerifyContentTest(VerifyRepoCase):
             (base / "b.py").write_text("B\n")
         (btlib / "yaml.py").write_text("same\n")
         (canon / "miniyaml.py").write_text("same\n")
-        # OS cruft and editor swap files do not count as drift.
+        # OS cruft, editor swap files and __pycache__ do not count as drift.
         (btlib / "_vendor" / "yaml" / ".DS_Store").write_bytes(b"junk\x00")
         (canon / "_vendor" / "yaml" / "a.py.swp").write_text("swap\n")
         (canon / "_vendor" / "yaml" / "c.py~").write_text("backup\n")
+        pycache = btlib / "_vendor" / "yaml" / "__pycache__"
+        pycache.mkdir()
+        (pycache / "a.cpython-311.pyc").write_bytes(b"\x00compiled")
         proc = run_verify(self.root)
         self.assertNotIn("FAIL vendor-sync", proc.stdout)
         (btlib / "_vendor" / "yaml" / "b.py").write_text("drifted\n")

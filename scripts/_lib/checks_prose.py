@@ -4,12 +4,12 @@ import json
 import re
 
 from . import miniyaml
+from .checks_files import texts
 from .checks_scan import (
-    _file_list,
-    _is_internal_doc,
-    _is_vendor,
-    _join,
-    _read_text,
+    file_list,
+    is_internal_doc,
+    is_vendor,
+    join,
 )
 
 # "leverag\w*" bans every form of "leverage": the noun as well as the
@@ -41,26 +41,19 @@ def _strings(value):
 
 def _data_files(root):
     """kit.config.json plus skills/**/*.{json,yaml,yml}, vendor exempt."""
-    for p in _file_list(root):
+    for p in file_list(root):
         rel = p.relative_to(root)
         in_skills = rel.parts[0] == "skills" and p.suffix in (".json", ".yaml", ".yml")
-        if not _is_vendor(rel) and (in_skills or rel.parts == ("kit.config.json",)):
+        if not is_vendor(rel) and (in_skills or rel.parts == ("kit.config.json",)):
             yield p, rel
 
 
 def check_prose_rules(root):
+    def skip(rel):
+        return rel.suffix != ".md" or is_internal_doc(rel) or is_vendor(rel)
+
     bad = []
-    for p in _file_list(root):
-        rel = p.relative_to(root)
-        if p.suffix != ".md" or _is_internal_doc(rel) or _is_vendor(rel):
-            continue
-        try:
-            text = _read_text(p)
-        except UnicodeDecodeError:
-            bad.append(f"{rel}: not valid UTF-8")
-            continue
-        if text is None:
-            continue
+    for rel, text in texts(root, bad, skip):
         for i, line in enumerate(text.splitlines(), 1):
             _prose_hit(f"{rel}:{i}", line, bad)
     for p, rel in _data_files(root):
@@ -72,4 +65,4 @@ def check_prose_rules(root):
             continue
         for s in _strings(data):
             _prose_hit(f"{rel}: string value", s, bad)
-    return ("FAIL", _join(bad)) if bad else ("PASS", "")
+    return ("FAIL", join(bad)) if bad else ("PASS", "")

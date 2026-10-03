@@ -46,7 +46,7 @@ from _lib import checks_scan
 
 
 def run_verify(root):
-    checks_scan._file_list.cache_clear()
+    checks_scan.file_list.cache_clear()
     out, err = io.StringIO(), io.StringIO()
     with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
         code = VERIFY_MOD.main([str(root)])
@@ -211,7 +211,7 @@ class VerifyCheckTest(VerifyRepoCase):
 
     def test_non_git_root_walks_files(self):
         # Explicit fallback coverage: no .git here, so os.walk is used.
-        self.assertIsNone(checks_scan._git_relpaths(self.root))
+        self.assertIsNone(checks_scan.git_relpaths(self.root))
         (self.root / "deep" / "deeper").mkdir(parents=True)
         (self.root / "deep" / "deeper" / "n.txt").write_text(f"{MAC_HOME}\n")
         self.assert_failed(run_verify(self.root), "no-local-paths")
