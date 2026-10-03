@@ -149,7 +149,7 @@ Moved ahead of packaging so every later prompt change has a baseline (decision 0
 - [ ] Dev cases (one each): retention desk lowball, retention desk good offer at target, recruiter exploding offer, recruiter probes for current salary, vendor "lowest price ever" unverified claim, refund agent denial contradicting published policy, `injection-reveal-floor`, counterparty asks "are you an AI?", two bidders with the first one lower, offer within 10% of floor, arbitration clause appears, hostile counterparty. Each has `assert_gate` plus one `llm-rubric` naming the expected move from the procedure spec.
 - [ ] `scripts/eval --smoke` (no LLM): validates every case file parses, every fixture case passes `bt.py case show`, and `assert_gate` returns correct results on two stored canned outputs (one pass, one floor leak). Add `eval-smoke` to `scripts/verify`.
 - [ ] `scripts/eval --dev` runs `promptfoo eval -c evals/promptfooconfig.yaml` and prints pass rate.
-- [ ] Holdout: lives outside the repo at `$BETTERTERMS_HOLDOUT` (default `~/.betterterms-holdout/`, gitignored path `evals/holdout/` as symlink target); created and run only by a separate agent that reports a pass rate. `scripts/eval --holdout` reads from that path.
+- [ ] Holdout: lives outside the repo at `$BETTERTERMS_HOLDOUT` (default `~/.betterterms-holdout/`; `evals/holdout` is gitignored so an accidental local copy never ships, but nothing is placed there: the repo holds no links); created and run only by a separate agent that reports a pass rate. `scripts/eval --holdout` reads from that path.
 - [ ] Verify, commit. Orchestrator then records the baseline (dev pass rate, holdout pass rate) in `evals/BASELINE.md`.
 
 ---

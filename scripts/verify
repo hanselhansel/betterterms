@@ -5,6 +5,9 @@ Usage: python3 scripts/verify [ROOT|all]
 
 ROOT defaults to the repo containing this script and must hold VERSION
 and kit.config.json ('all' means the same; anything else exits 2).
+ROOT is meant for a checkout of this repo (a worktree or clone): the
+checks run that tree's own tests/, scripts/build and scripts/
+bump-version, which verifies sibling worktrees, not arbitrary trees.
 Prints `PASS <name>`, `FAIL <name>: <reason>` or `SKIP <name>: <reason>`
 per check and exits 1 when any FAILs.
 

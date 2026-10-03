@@ -3,12 +3,14 @@
 
 Usage: bump-version --check | <new-version>
   --check        verify every generated manifest's version equals VERSION
-  <new-version>  X.Y.Z; computes all build outputs with the new
-                 version first, then writes VERSION and every generated
-                 file; any write target that resolves outside the repo
-                 or goes through a symlink is refused; on any write
+  <new-version>  X.Y.Z, strictly above the current VERSION; computes all
+                 build outputs with the new version first, then writes
+                 VERSION and every generated file; any write target that
+                 resolves outside the repo, goes through a symlink or
+                 exists as a non-regular file is refused; on any write
                  failure every touched file is restored to its prior
-                 bytes
+                 bytes (restore failures are listed, then the original
+                 error propagates)
 """
 
 import importlib.machinery
@@ -63,16 +65,33 @@ def check():
     return 0
 
 
+def _semver_tuple(v):
+    m = SEMVER.fullmatch(v)
+    return tuple(int(g) for g in m.groups()) if m else None
+
+
 def bump(new):
     if not SEMVER.fullmatch(new):
         print(f"bad version {new!r}; expected X.Y.Z", file=sys.stderr)
         return 2
+    version_file = ROOT / "VERSION"
+    cur_text = (
+        version_file.read_text(encoding="utf-8").strip()
+        if version_file.is_file()
+        else ""
+    )
+    cur = _semver_tuple(cur_text)
+    if cur is not None and _semver_tuple(new) <= cur:
+        print(
+            f"version {new} is not above current VERSION {cur_text}",
+            file=sys.stderr,
+        )
+        return 2
     # Compute every build output with the new version before touching
     # the tree, then refuse any write target that would land outside
-    # the repo through a link.
+    # the repo through a link or overwrite a non-regular file.
     build_mod = _build_module()
     files = build_mod.expected(ROOT, new)
-    version_file = ROOT / "VERSION"
     targets = [version_file, *(ROOT / rel for rel in files)]
     for path in targets:
         build_mod._check_write_path(path)
@@ -89,12 +108,25 @@ def bump(new):
         done = True
     finally:
         if not done:
+            # Every restore is attempted even when one fails; the
+            # original write error still propagates afterwards.
+            failures = []
             for path, old in touched.items():
-                if old is None:
-                    path.unlink(missing_ok=True)
-                else:
-                    path.write_bytes(old)
-            print("bump failed; restored every touched file", file=sys.stderr)
+                try:
+                    if old is None:
+                        path.unlink(missing_ok=True)
+                    else:
+                        path.write_bytes(old)
+                except Exception as e:
+                    failures.append(f"{path}: {e}")
+            if failures:
+                print("bump failed and rollback did not restore:",
+                      file=sys.stderr)
+                for f in failures:
+                    print(f"  {f}", file=sys.stderr)
+            else:
+                print("bump failed; restored every touched file",
+                      file=sys.stderr)
     print(f"VERSION set to {new}")
     return 0
 
