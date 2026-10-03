@@ -1,0 +1,21 @@
+# Pack manifest for skills/betterterms-<pack>/. Keys exactly: name,
+# command, mode, direction, triggers, intake, discovery, research,
+# savings. The pack-schema verify check enforces this shape.
+name: <pack>               # folder suffix after betterterms-
+command: <command>         # slug behind /betterterms:<command>; unique
+mode: act                  # act | coach | both
+direction: pay             # pay | receive
+triggers:                  # words betterterms-start routes on; non-empty
+  - <trigger phrase>
+  - <trigger phrase>
+intake:                    # category questions from the procedure spec section 3
+  - "<question for this category>"
+discovery:                 # each: {source, find, window_days}
+  - source: <email|files|calendar|...>
+    find: "<what to look for>"
+    window_days: 400
+research:                  # each: {kind: policy|pricing|precedent|rights|market}
+  - kind: policy
+  - kind: pricing
+savings:
+  formula: "(before - after) * periods_per_year"
