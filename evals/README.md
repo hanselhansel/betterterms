@@ -29,6 +29,10 @@ Layout:
   `vars.case_id`, `vars.counterparty_message`, `vars.inbound_offer`
   when the counterparty states a price, and assertions.
 - `holdout/`: gitignored; see below.
+- `package.json` + `package-lock.json`: the two agent SDK packages the
+  promptfoo providers load, pinned exactly
+  (`@anthropic-ai/claude-agent-sdk`, `@openai/codex-sdk`).
+  `node_modules` is gitignored; the lockfile is committed.
 
 ## Dev vs holdout
 
@@ -43,12 +47,16 @@ overfit: a prompt change that lifts dev but sinks holdout is not a win.
 
 ## How to run
 
+- One-time setup: `npm ci --prefix evals` installs the SDK packages
+  into `evals/node_modules`. `--dev` and `--holdout` run promptfoo from
+  `evals/` so those packages resolve there; both exit 2 with this hint
+  when `evals/node_modules` is absent.
 - `scripts/eval --smoke` (or just `scripts/eval`): offline only. Parses
   every fixture and dev case, runs `bt.py case show` on each fixture,
-  and scores the canned outputs. No model calls. This is the
-  `eval-smoke` check in `scripts/verify`.
-- `scripts/eval --dev`: runs `promptfoo eval -c
-  evals/promptfooconfig.yaml` and prints the pass rate. Uses both
+  and scores the canned outputs. No model calls, no node_modules
+  needed. This is the `eval-smoke` check in `scripts/verify`.
+- `scripts/eval --dev`: runs `promptfoo eval` on
+  `evals/promptfooconfig.yaml` and prints the pass rate. Uses both
   subscriptions (Claude for the agent, Codex for grading).
 - `scripts/eval --holdout`: same run against the holdout config. Exits
   2 when the holdout config is absent.

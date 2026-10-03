@@ -1,8 +1,11 @@
 """Tests for the eval harness: yaml block extraction, the assert_gate
-python assertion, the agent_prompt prompt function, and the offline
-smoke runner in scripts/eval."""
+python assertion, the agent_prompt prompt function, and the
+scripts/eval smoke runner. _copy_repo and _load_eval are shared with
+test_eval_runner.py, which covers the --dev/--holdout promptfoo runs."""
 
 import datetime
+import importlib.machinery
+import importlib.util
 import shutil
 import subprocess
 import sys
@@ -177,6 +180,29 @@ class AgentPrompt(unittest.TestCase):
         self.assertNotIn(floor_text, r["prompt"])
 
 
+def _copy_repo(tmp):
+    """Copy the pieces scripts/eval needs into a throwaway repo root.
+    node_modules is excluded so tests control whether it exists; holdout
+    may be a symlink out of the tree."""
+    ignore = shutil.ignore_patterns("__pycache__", "node_modules", "holdout")
+    shutil.copytree(REPO / "evals", tmp / "evals", ignore=ignore)
+    shutil.copytree(REPO / "skills", tmp / "skills", ignore=ignore)
+    (tmp / "scripts").mkdir()
+    shutil.copy2(EVAL_SCRIPT, tmp / "scripts" / "eval")
+
+
+def _load_eval(root):
+    """Import the temp copy's scripts/eval as a module so tests can call
+    main(argv) in-process and swap module globals freely."""
+    loader = importlib.machinery.SourceFileLoader(
+        "bt_eval_under_test", str(root / "scripts" / "eval")
+    )
+    spec = importlib.util.spec_from_loader("bt_eval_under_test", loader)
+    mod = importlib.util.module_from_spec(spec)
+    loader.exec_module(mod)
+    return mod
+
+
 class SmokeRunner(unittest.TestCase):
     def run_smoke(self, root):
         return subprocess.run(
@@ -191,17 +217,10 @@ class SmokeRunner(unittest.TestCase):
         r = self.run_smoke(REPO)
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
 
-    def _copy_repo(self, tmp):
-        ignore = shutil.ignore_patterns("__pycache__")
-        shutil.copytree(REPO / "evals", tmp / "evals", ignore=ignore)
-        shutil.copytree(REPO / "skills", tmp / "skills", ignore=ignore)
-        (tmp / "scripts").mkdir()
-        shutil.copy2(EVAL_SCRIPT, tmp / "scripts" / "eval")
-
     def test_smoke_fails_on_broken_case_file(self):
         with tempfile.TemporaryDirectory() as td:
             tmp = Path(td) / "repo"
-            self._copy_repo(tmp)
+            _copy_repo(tmp)
             bad = tmp / "evals" / "fixtures" / "cases" / "bills-retention" / "plan.yaml"
             bad.write_text("{not valid: [", encoding="utf-8")
             r = self.run_smoke(tmp)
@@ -213,7 +232,7 @@ class SmokeRunner(unittest.TestCase):
         # check must catch it before the var reaches the gate.
         with tempfile.TemporaryDirectory() as td:
             tmp = Path(td) / "repo"
-            self._copy_repo(tmp)
+            _copy_repo(tmp)
             bad = tmp / "evals" / "cases" / "dev" / "retention-good-offer.yaml"
             bad.write_text(
                 "vars:\n"

@@ -8,6 +8,14 @@
                            $BETTERTERMS_HOLDOUT (default
                            ~/.betterterms-holdout); exits 2 when absent
 
+--dev and --holdout run promptfoo with evals/ as the working directory
+and pass the config as a path relative to it, so the bare SDK packages
+the agent provider and grader load (@anthropic-ai/claude-agent-sdk,
+@openai/codex-sdk) resolve from evals/node_modules while file://
+references still resolve relative to each config file's own directory.
+They exit 2 when evals/node_modules is absent: install it once with
+`npm ci --prefix evals`.
+
 Smoke checks, all offline: fixture case files parse and pass
 `bt.py case show` (and never echo the floor); every dev case file
 parses, names a real fixture, carries a python plus an llm-rubric
@@ -185,12 +193,15 @@ def _run_promptfoo(config):
     if shutil.which("promptfoo") is None:
         print("promptfoo not installed")
         return 2
+    if not (EVALS / "node_modules").is_dir():
+        print("evals/node_modules missing: run `npm ci --prefix evals`")
+        return 2
     with tempfile.TemporaryDirectory() as td:
         out = Path(td) / "results.json"
         r = subprocess.run(
-            ["promptfoo", "eval", "-c", str(config), "-o", str(out),
-             "--no-progress-bar"],
-            cwd=REPO,
+            ["promptfoo", "eval", "-c", os.path.relpath(config, EVALS),
+             "-o", str(out), "--no-progress-bar"],
+            cwd=EVALS,
         )
         _print_pass_rate(out)
         return r.returncode
