@@ -84,11 +84,10 @@ or ask for their offer when it is not. Then gate, send, and log as below.
    the message relies on: put `{fact:<id>}` in `template` and the id
    in `claims`, never one without the other. When the counterparty
    sets a deadline or makes a claim the plan has a fact about, cite
-   that fact (pushing back on a deadline needs the fact about a
-   reasonable decision window). Write money only through
-   placeholders: `{offer}` for your offer with its period,
-   `{target}`, `{option:<label>}`, `{ladder:<n>}` for plan values,
-   `{fact:<id>}` for a fact's text (this claims the id too), and
+   that fact. Write money only through placeholders: `{offer}` for
+   your offer with its period, `{target}`, `{option:<label>}`,
+   `{ladder:<n>}` for plan values, `{fact:<id>}` for a fact's text
+   (this claims the id too), and
    `{quote:<n>}` for the n-th amount in inbound `amounts`. Never type
    a price into the template directly.
 5. Gate it. When this turn answers an inbound message, pass it so
