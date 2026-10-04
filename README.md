@@ -34,7 +34,7 @@ hold yourself: fixed numbers, a script, and a rehearsal before the call.
 | Host | Install |
 |---|---|
 | Claude Code (terminal, desktop) | `/plugin marketplace add hanselhansel/betterterms`, then `/plugin install betterterms@betterterms`. Auto-update for third-party marketplaces is off until you enable it. |
-| Claude Code cloud sessions | Marketplace plugins do not load there. Run `python3 scripts/vendor-into-repo <repo>` to copy the skills into a repo's `.claude/skills/`. |
+| Claude Code cloud sessions | Marketplace plugins do not load there. Run `python3 scripts/vendor-into-repo <repo>`: it copies the skills into `<repo>/.claude/skills/` and enables the plugin through `<repo>/.claude/settings.json`, so the typed commands and read guard hooks come along. The plugin installs from `github.com/hanselhansel/betterterms`, which must be reachable from the session (public works). |
 | Codex | `codex plugin marketplace add hanselhansel/betterterms`, then `codex plugin add betterterms@betterterms`. Codex has no slash commands: name the skill instead (`betterterms-start` routes, `betterterms-subscriptions` starts a pack). |
 | Other Agent Plugins readers | The repo root carries an Agent Plugins 1.0 `plugin.json` pointing at `skills/`; add the repo as a plugin source in your host. |
 | Any Agent Skills reader | `python3 scripts/install-skills --target ~/.agents/skills`. |

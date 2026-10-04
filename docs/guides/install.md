@@ -22,11 +22,20 @@ directly (`subscriptions`, `cancel`, `refunds`, `bills`, `ai-api`, `salary`,
 
 ## Claude Code cloud sessions
 
-Marketplace plugins do not load in cloud sessions. Two paths work:
+Marketplace plugins do not load in cloud sessions. Vendor the kit into
+the repo the session works on:
 
 - `python3 scripts/vendor-into-repo <repo>` copies the skills into
-  `<repo>/.claude/skills/` and writes a `.betterterms-version` marker. Commit
-  the result; the cloud session clones the repo and gets the skills with it.
+  `<repo>/.claude/skills/`, writes a `.betterterms-version` marker, and
+  merges two keys into `<repo>/.claude/settings.json`: the betterterms
+  marketplace under `extraKnownMarketplaces` and
+  `betterterms@betterterms` under `enabledPlugins`. Commit the result.
+- When a session starts in that repo, Claude Code installs the enabled
+  plugin from the marketplace, so the typed `bt` commands
+  (`bt approve`, `bt floor`) and the read guard run in cloud sessions
+  too. That install reads `github.com/hanselhansel/betterterms`, which
+  must be reachable from the session; public works. Pass `--no-plugin`
+  to vendor only the skills.
 
 In a Projects thread, the skills post the same views as interactive
 widgets: cases, the approval card, the terms editor, savings. A widget

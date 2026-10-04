@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Vendor betterterms skills into another repo for cloud sessions.
 
-Usage: vendor-into-repo REPO
+Usage: vendor-into-repo [--no-plugin] REPO
 
 Copies every skills/betterterms-* folder into REPO/.claude/skills/ and
 writes REPO/.claude/skills/.betterterms-version with this repo's
@@ -11,12 +11,25 @@ betterterms there. The relative path
 ../betterterms-guardrails/scripts/bt.py still reaches the runtime
 tool, since the skill folders stay siblings.
 
+It also merges two keys into REPO/.claude/settings.json, creating the
+file when absent: the betterterms marketplace under
+extraKnownMarketplaces and betterterms@betterterms under
+enabledPlugins. Claude Code installs enabled plugins from known
+marketplaces when a session starts in that repo, so the typed bt
+commands hook and the read guard run in cloud sessions too. The repo
+must be reachable from the session (public, or somewhere its
+credentials can clone) for that install to work. Every existing key
+is kept and entries are never duplicated. Pass --no-plugin to skip
+the settings step.
+
 An existing .claude/skills/betterterms-* directory is replaced only
 when it looks like a previous vendored copy (SKILL.md naming the
 folder); a symlinked entry is unlinked, never written through. Exit 1
-on errors, 2 on usage errors.
+on errors, 2 on usage errors and on a settings.json that is not a
+valid JSON object (nothing is written in that case).
 """
 
+import json
 import shutil
 import sys
 from pathlib import Path
@@ -24,6 +37,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 SKILLS_DIR = ROOT / "skills"
 VERSION_FILE = ROOT / "VERSION"
+
+MARKETPLACE = {"source": {"source": "github", "repo": "hanselhansel/betterterms"}}
+PLUGIN_ENTRIES = {
+    "extraKnownMarketplaces": {"betterterms": MARKETPLACE},
+    "enabledPlugins": {"betterterms@betterterms": True},
+}
 
 
 def _skills():
@@ -44,11 +63,73 @@ def _is_vendored(dest, name):
     return f"name: {name}" in head
 
 
+def _merge_plugin_settings(repo):
+    """Merge the plugin keys into REPO/.claude/settings.json and print
+    one line saying what was added. Returns an exit code: 0 on success
+    or when the entries are already present, 1 when the path is
+    unsafe, 2 when the file holds invalid JSON or a shape the merge
+    cannot keep."""
+    path = repo / ".claude" / "settings.json"
+    if not path.resolve().is_relative_to(repo.resolve()):
+        print(
+            f"refusing: {path} resolves outside {repo} through a symlink",
+            file=sys.stderr,
+        )
+        return 1
+    if path.is_symlink():
+        print(f"refusing: {path} is a symlink", file=sys.stderr)
+        return 1
+    existed = path.exists()
+    if existed:
+        try:
+            settings = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            print(f"error: {path} is not valid JSON", file=sys.stderr)
+            return 2
+        if not isinstance(settings, dict):
+            print(f"error: {path} is not a JSON object", file=sys.stderr)
+            return 2
+    else:
+        settings = {}
+    for key in PLUGIN_ENTRIES:
+        value = settings.setdefault(key, {})
+        if not isinstance(value, dict):
+            print(
+                f"error: {path} key {key!r} is not an object",
+                file=sys.stderr,
+            )
+            return 2
+    changed = any(
+        settings[key].get(entry) != value
+        for key, entries in PLUGIN_ENTRIES.items()
+        for entry, value in entries.items()
+    )
+    if not changed:
+        print(".claude/settings.json already enables betterterms@betterterms")
+        return 0
+    for key, entries in PLUGIN_ENTRIES.items():
+        settings[key].update(entries)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(settings, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    if existed:
+        print("enabled betterterms@betterterms in .claude/settings.json")
+    else:
+        print(
+            "created .claude/settings.json enabling betterterms@betterterms"
+        )
+    return 0
+
+
 def main(argv):
-    if len(argv) != 1 or argv[0].startswith("-"):
+    flags = [a for a in argv if a.startswith("-")]
+    args = [a for a in argv if not a.startswith("-")]
+    if len(args) != 1 or set(flags) - {"--no-plugin"}:
         print(__doc__.strip(), file=sys.stderr)
         return 2
-    repo = Path(argv[0]).expanduser()
+    repo = Path(args[0]).expanduser()
     if not repo.is_dir() or repo.is_symlink():
         print(f"error: {repo} is not a directory", file=sys.stderr)
         return 1
@@ -73,6 +154,11 @@ def main(argv):
         for p in problems:
             print(f"refusing: {p}", file=sys.stderr)
         return 1
+
+    if "--no-plugin" not in flags:
+        code = _merge_plugin_settings(repo)
+        if code:
+            return code
 
     target.mkdir(parents=True, exist_ok=True)
     for skill in _skills():
