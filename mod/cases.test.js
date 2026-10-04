@@ -166,6 +166,49 @@ describe("sendShapeError", () => {
     );
   });
 
+  test("real connector shapes pass", () => {
+    // Gmail reply: the message id is a single token under a camelCase
+    // key; the rendered text is the only prose argument.
+    assert.equal(
+      C.sendShapeError(
+        send("gmail.reply", { messageId: "<abc123@mail.gmail.com>", body: RENDERED }),
+        RENDERED,
+      ),
+      null,
+    );
+    // Gmail send inside a thread: recipient, subject and the camelCase
+    // thread id are all envelope fields.
+    assert.equal(
+      C.sendShapeError(
+        send("gmail.send", {
+          to: "vendor@x", subject: "re: renewal", body: RENDERED,
+          replyThreadId: "thread-9917",
+        }),
+        RENDERED,
+      ),
+      null,
+    );
+    // Slack thread reply: snake_case channel and thread ids.
+    assert.equal(
+      C.sendShapeError(
+        send("slack.post", {
+          channel_id: "C0123AB", thread_ts: "1728000000.000100",
+          message: RENDERED,
+        }),
+        RENDERED,
+      ),
+      null,
+    );
+    // Any single-token key name counts as an id, in_reply_to included.
+    assert.equal(
+      C.sendShapeError(
+        send("mail.send", { in_reply_to: "<m-1@x>", body: RENDERED }),
+        RENDERED,
+      ),
+      null,
+    );
+  });
+
   test("a Bash call carrying the text is never a send", () => {
     for (const command of [
       `mail v@x <<EOF\n${RENDERED}\nEOF`,
@@ -187,13 +230,13 @@ describe("sendShapeError", () => {
     );
   });
 
-  test("address fields take one token, no whitespace", () => {
+  test("whitespace in a non-subject field denies as unseen text", () => {
     for (const args of [
       { to: "v@x or whoever", body: RENDERED },
       { to: ["a@x", "b @y"], body: RENDERED },
       { conversation_id: "conv 42", body: RENDERED },
     ]) {
-      assert.match(C.sendShapeError(send("gmail.send", args), RENDERED), /betterterms|address|token|whitespace/i);
+      assert.match(C.sendShapeError(send("gmail.send", args), RENDERED), /carries text/);
     }
   });
 
@@ -202,9 +245,15 @@ describe("sendShapeError", () => {
       C.sendShapeError(send("gmail.send", { subject: "re: the plan", body: RENDERED }), RENDERED),
       null,
     );
+    // A whitespace-free subject is just another token; the title rule
+    // bites only once the value carries spaces.
+    assert.equal(
+      C.sendShapeError(send("gmail.send", { subject: "s".repeat(81), body: RENDERED }), RENDERED),
+      null,
+    );
     for (const args of [
       { subject: "invoice 42", body: RENDERED },
-      { subject: "s".repeat(81), body: RENDERED },
+      { subject: `s ${"s ".repeat(40)}s`, body: RENDERED },
       { title: "offer 3", body: RENDERED },
     ]) {
       assert.match(C.sendShapeError(send("gmail.send", args), RENDERED), /subject|title|digit|characters/i);

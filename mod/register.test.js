@@ -85,11 +85,12 @@ describe("register", () => {
     const out = await on.get("tool.call")($, {
       tool: "Write", tool_use_id: "t2b", file_path: `${DIR}/draft.yaml`, content: RENDERED,
     }, next);
-    // Not bookkeeping: the gate ran, and file_path is no envelope
-    // field, so the write is denied like any malformed send.
+    // Not bookkeeping: the gate ran. The shape rule accepts file_path
+    // (a single token), so at autonomy 2 the write waits on the same
+    // approval ask as any send and the refused answer denies it.
     assert.equal(calls.run.length, 1);
     assert.equal(went.length, 0);
-    assert.match(out.deny, /file_path/);
+    assert.match(out.deny, /not approved|held/);
   });
 
   test("autonomy 2: a passing gate still asks the user first", async () => {

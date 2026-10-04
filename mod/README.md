@@ -112,9 +112,11 @@ an open case when a normalized copy of the `rendered` text in the
 case's `gate.json` appears inside one of its string arguments (for
 renders under 24 chars the call must also name the case id). A send
 then passes only when the gate is re-run on the draft on disk and one
-string argument equals the freshly rendered text exactly, with the
-other string arguments limited to envelope fields (recipient, subject,
-channel ids): extra message body is denied, and an edited draft is
+string argument equals the freshly rendered text exactly, with every
+other string argument either a whitespace-free token (addresses,
+channel, message and thread ids under any key name) or a subject/title
+of at most 80 characters with no digits: extra message body is
+denied, and an edited draft is
 denied until it is re-gated. It covers `Bash` commands, MCP tool
 arguments and agent prompts alike. Writes whose target resolves inside
 the case dir (`draft.yaml`, `inbound.yaml`, `gate.json`, `thread.md`

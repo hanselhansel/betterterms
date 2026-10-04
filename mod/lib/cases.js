@@ -238,15 +238,14 @@ export function callArgs(e) {
   return args;
 }
 
-// The send-shape rule's key sets. Address/id fields say where the
-// message goes, never what it says, so each value must be a single
-// token. subject/title take one short line with no digits, so a price
-// cannot ride in the header.
-const ADDRESS_KEYS = new Set([
-  "to", "cc", "bcc", "recipient", "recipients", "email",
-  "channel", "channel_id", "thread_id", "chat_id",
-  "conversation_id",
-]);
+// The send-shape rule's allowances for every argument that is not the
+// gated text itself. A whitespace-free value under any key name is an
+// id or address: messageId, replyThreadId, thread_ts, in_reply_to, a
+// channel or a recipient all fit that shape, so no key list can keep
+// up with every connector. subject/title are the one place a short
+// line of text may ride along; they take at most TITLE_MAX characters
+// and no digits, so a price cannot hide in the header. Anything else
+// is prose the gate never saw.
 const TITLE_KEYS = new Set(["subject", "title"]);
 const TITLE_MAX = 80;
 
@@ -265,7 +264,7 @@ export function collectLeaves(value, key = "", out = []) {
 
 // null when the call is a clean send of the gated text: exactly one
 // argument equals the freshly rendered message verbatim, every other
-// string leaf is a whitespace-free address/id field or a short
+// string leaf is a whitespace-free id/address token or a short
 // digit-free subject/title, and no numeric leaf is present at all.
 // A Bash call is never a send however it carries the text. Anything
 // else is a send the gate never saw and the user never approved.
@@ -278,7 +277,6 @@ export function sendShapeError(e, rendered) {
   }
   let exact = 0;
   for (const p of collectLeaves(callArgs(e))) {
-    const k = String(p.key).toLowerCase();
     if (typeof p.value === "number") {
       return `argument '${p.key}' carries a number the gate never saw`;
     }
@@ -291,10 +289,8 @@ export function sendShapeError(e, rendered) {
       return "the gated text must be the whole argument, not part of a longer one";
     }
     if (v === "") continue;
-    if (ADDRESS_KEYS.has(k)) {
-      if (!/\s/.test(p.value)) continue;
-      return `address field '${p.key}' takes a single token, no whitespace`;
-    }
+    if (!/\s/.test(p.value)) continue;
+    const k = String(p.key).toLowerCase();
     if (TITLE_KEYS.has(k)) {
       if (!/\d/.test(p.value) && p.value.length <= TITLE_MAX) continue;
       return `field '${p.key}' takes at most ${TITLE_MAX} characters and no digits`;
