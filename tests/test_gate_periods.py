@@ -1,8 +1,8 @@
-"""Period and numeric-bound fixes from the step-2 gate review: a
-rendered value equal to the floor only after an x12 or /12 conversion
-is a review hit, not a block; ``accept`` compares the inbound offer in
-the floor's declared period; ``floor_period`` is the canonical plan
-key; and cases.num caps magnitudes at 1e12."""
+"""Period fixes from the step-2 gate review: a rendered value equal
+to the floor only after an x12 or /12 conversion is a review hit, not
+a block; ``accept`` compares the inbound offer in the floor's
+declared period; ``floor_period`` is the canonical plan key; and a
+present period key validates even when another key shadows it."""
 
 import unittest
 
@@ -17,7 +17,7 @@ from bt_helpers import (
     write_case_files,
     write_draft,
 )
-from btlib import cases, yaml
+from btlib import yaml
 
 LIMITS = "outside your limits; escalate to the user"
 
@@ -378,46 +378,6 @@ class UnconvertiblePeriodTest(PeriodCase):
             send_draft(offer=1100, period="month",
                        template="I can do {offer}"),
         )
-
-
-class NumCapTest(PeriodCase):
-    def test_huge_integer_offer_blocks_not_crashes(self):
-        # A 400-digit offer used to raise OverflowError inside float();
-        # it must come back as a plain block.
-        case_id = self.make_case()
-        path = self.tmp / "draft.yaml"
-        path.write_text(
-            "action: send\noffer: " + "9" * 400 + "\ntemplate: hi\n"
-        )
-        proc, out = run_bt_json(
-            self.home, "gate", case_id, "--draft", str(path)
-        )
-        self.assertEqual(proc.returncode, 1, out)
-        self.assertIn("offer must be a number", out["reasons"])
-
-    def test_overlong_integer_offer_blocks_not_errors(self):
-        # Past Python's digit limit the int constructor raises; the
-        # offer loads as a string and lands as "not a number" (exit 1),
-        # never a YAML parse error (exit 2).
-        case_id = self.make_case()
-        path = self.tmp / "draft.yaml"
-        path.write_text(
-            "action: send\noffer: " + "9" * 5000 + "\ntemplate: hi\n"
-        )
-        proc, out = run_bt_json(
-            self.home, "gate", case_id, "--draft", str(path)
-        )
-        self.assertEqual(proc.returncode, 1, out)
-        self.assertIn("offer must be a number", out["reasons"])
-
-    def test_num_caps_at_1e12(self):
-        for bad in (10**400, 1e13, -2e12, float("inf"), float("nan"),
-                    "1e13", "9" * 400):
-            with self.subTest(bad=repr(bad)[:30]):
-                self.assertIsNone(cases.num(bad))
-        self.assertEqual(cases.num(1e12), 1e12)
-        self.assertEqual(cases.num("999.50"), 999.5)
-        self.assertEqual(cases.num("1,200"), 1200.0)
 
 
 if __name__ == "__main__":

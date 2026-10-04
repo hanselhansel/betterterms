@@ -40,7 +40,7 @@ NUMBER_WORDS = frozenset(
     "zero one two three four five six seven eight nine ten eleven "
     "twelve thirteen fourteen fifteen sixteen seventeen eighteen "
     "nineteen twenty thirty forty fifty sixty seventy eighty "
-    "ninety".split()
+    "ninety dozen fifth ninth twelfth".split()
 )
 
 NUMBER_WORD_EXCEPTIONS = frozenset(
@@ -68,7 +68,8 @@ NUMBER_WORD_EXCEPTIONS = frozenset(
 
 SCALE_WORDS = frozenset(
     "hundred hundreds thousand thousands million millions billion "
-    "billions trillion trillions bn mm k m mil thou".split()
+    "billions trillion trillions quadrillion quadrillions lakh lakhs "
+    "crore crores bn mm k m mil thou mn mln bln tn bil".split()
 )
 
 # The singular full scale words (plus "grand") match as substrings of
@@ -76,7 +77,8 @@ SCALE_WORDS = frozenset(
 # "thousandfold", "hundredish", "grandtotal". The plural stems are
 # covered by the singulars. The abbreviations stay whole-token.
 SCALE_WORD_STEMS = frozenset(
-    "billion grand hundred million thousand trillion".split()
+    "billion crore grand hundred lakh million quadrillion thousand "
+    "trillion".split()
 )
 
 # ISO-style codes matched case-sensitively on the raw token: "CAD"
@@ -84,7 +86,7 @@ SCALE_WORD_STEMS = frozenset(
 CURRENCY_CODES = frozenset(
     "USD EUR GBP SGD JPY CHF CAD AUD NZD HKD CNY CNH SEK NOK DKK "
     "INR BRL MXN KRW ZAR TWD MYR THB IDR PHP VND AED SAR ILS PLN "
-    "CZK HUF TRY RUB".split()
+    "CZK HUF TRY RUB RMB BTC".split()
 )
 
 # Currency words plus the lowercase-safe codes (cad, try and rub are
@@ -92,18 +94,23 @@ CURRENCY_CODES = frozenset(
 # words too ("won", "real", "rand"): a whole-token false positive is
 # still routed to the user, never a silent send.
 CURRENCY_WORDS = frozenset(
-    "aed aud baht brl buck bucks cent cents chf cnh cny czk dirham "
-    "dkk dollar dollars dong eur euro euros francs gbp grand hkd "
-    "huf idr ils inr jpy krona krone krw lira mxn myr naira nok "
-    "nzd peso pesos php pln pound pounds quid rand reais real "
-    "renminbi ringgit riyal rupee rupees sar sek sgd shekel thb "
-    "twd usd vnd won yen yuan zar zloty".split()
+    "aed aud baht bahts brl buck bucks cent cents chf cnh cny czk "
+    "dinar dinars dirham dirhams dkk dollar dollars dong dongs eur "
+    "euro euros franc francs gbp grand hkd huf idr ils inr jpy "
+    "krona kronas krone kroner krones kronor krw lira liras lire "
+    "mxn myr naira nairas nok nzd pence pennies penny peso pesos "
+    "php pln pound pounds quid quids rand rands reais real "
+    "renminbi ringgit ringgits riyal riyals ruble rubles rupee "
+    "rupees rupiah rupiahs sar sek sgd shekel shekels sterling "
+    "thb twd usd vnd won wons yen yens yuan yuans zar zloty "
+    "zlotys".split()
 )
 
 COMMIT_WORDS = frozenset(
     "accept acceptance accepted accepting accepts agree agreeable "
-    "agreed agreeing agreement agreements cancel charge confirm "
-    "confirmation confirmed confirming confirms deal pay sold".split()
+    "agreed agreeing agreement agreements agrees cancel cancelling "
+    "cancellation charge charged confirm confirmation confirmed "
+    "confirming confirms deal deals paid pay paying sold".split()
 )
 
 # Two- or three-token phrases matched on the lowercased token stream;
@@ -111,6 +118,7 @@ COMMIT_WORDS = frozenset(
 COMMIT_PHRASES = frozenset((
     ("cancel", "my"),
     ("count", "me", "in"),
+    ("count", "us", "in"),
     ("glad", "to", "pay"),
     ("go", "ahead"),
     ("happy", "to", "pay"),
@@ -119,6 +127,7 @@ COMMIT_PHRASES = frozenset((
     ("process", "it"),
     ("ready", "to", "pay"),
     ("sign", "me", "up"),
+    ("sign", "us", "up"),
     ("sounds", "good"),
     ("take", "it"),
     ("we'll", "take"),

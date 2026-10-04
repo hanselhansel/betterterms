@@ -138,8 +138,10 @@ that carries no numbers:
   amount: "$1,100k" or "$1,100.99" restates a price.
 - The whole-token lists below, matched on the token stream (currency
   codes match the raw token case-sensitively; tokens keep interior
-  apostrophes, so "i'll take" matches and "won't" is not "won"; the
-  scale word stems match inside letter runs as above).
+  apostrophes, so "i'll take" matches and "won't" is not "won"; a
+  possessive or contraction suffix strips before the match, so
+  "deal's" reads as "deal"; the scale word stems match inside
+  letter runs as above).
 - Any `never_disclose` term, matched on normalized text with format
   characters stripped; numeric items match fused digit runs in the
   text and also compare against rendered placeholder values.
@@ -157,14 +159,14 @@ that carries no numbers:
 The word lists live in `scripts/btlib/wordlists.py`, the single
 module the runtime and this file share:
 
-number words: eight, eighteen, eighty, eleven, fifteen, fifty, five, forty, four, fourteen, nine, nineteen, ninety, one, seven, seventeen, seventy, six, sixteen, sixty, ten, thirteen, thirty, three, twelve, twenty, two, zero
+number words: dozen, eight, eighteen, eighty, eleven, fifteen, fifth, fifty, five, forty, four, fourteen, nine, nineteen, ninety, ninth, one, seven, seventeen, seventy, six, sixteen, sixty, ten, thirteen, thirty, three, twelfth, twelve, twenty, two, zero
 number word exceptions: abandoned, alone, antenna, anyone, artwork, attend, attendance, attended, attending, attention, attentive, bitten, bone, bones, clone, commissioner, commissioners, competent, component, components, consistency, consistent, consistently, content, contents, done, everyone, existence, extend, extended, extending, extends, extension, extensions, extensive, extent, forgotten, freight, frightened, gone, gotten, headphones, height, heights, honest, honestly, honey, hormone, hydrocodone, indonesia, indonesian, intend, intended, intense, intensity, intensive, intent, intention, intentionally, jones, leone, liechtenstein, lightweight, listen, listened, listening, lone, lonely, maintenance, mentioned, microphone, monetary, money, network, networking, networks, nintendo, none, nonetheless, often, oftentimes, ones, opponent, opponents, ozone, patent, patents, persistent, phone, phoned, phones, phoning, pioneer, potential, potentially, practitioner, practitioners, prisoner, prisoners, retention, ringtone, ringtones, sentence, sentences, softened, someone, soonest, stationery, stone, stones, superintendent, telephone, tenant, tend, tender, tennessee, tennis, tension, tent, tenure, threatened, threatening, tone, toned, toner, tones, weight, weighted, weights, written, zone, zones
-scale words: billion, billions, bn, hundred, hundreds, k, m, mil, million, millions, mm, thou, thousand, thousands, trillion, trillions
-scale word stems: billion, grand, hundred, million, thousand, trillion
-currency codes: AED, AUD, BRL, CAD, CHF, CNH, CNY, CZK, DKK, EUR, GBP, HKD, HUF, IDR, ILS, INR, JPY, KRW, MXN, MYR, NOK, NZD, PHP, PLN, RUB, SAR, SEK, SGD, THB, TRY, TWD, USD, VND, ZAR
-currency words: aed, aud, baht, brl, buck, bucks, cent, cents, chf, cnh, cny, czk, dirham, dkk, dollar, dollars, dong, eur, euro, euros, francs, gbp, grand, hkd, huf, idr, ils, inr, jpy, krona, krone, krw, lira, mxn, myr, naira, nok, nzd, peso, pesos, php, pln, pound, pounds, quid, rand, reais, real, renminbi, ringgit, riyal, rupee, rupees, sar, sek, sgd, shekel, thb, twd, usd, vnd, won, yen, yuan, zar, zloty
-commitment words: accept, acceptance, accepted, accepting, accepts, agree, agreeable, agreed, agreeing, agreement, agreements, cancel, charge, confirm, confirmation, confirmed, confirming, confirms, deal, pay, sold
-commitment phrases: cancel my, count me in, glad to pay, go ahead, happy to pay, i'll take, let's do, process it, ready to pay, sign me up, sounds good, take it, we'll take, willing to pay, work for me, work for us, works for me, works for us, you have a deal
+scale words: bil, billion, billions, bln, bn, crore, crores, hundred, hundreds, k, lakh, lakhs, m, mil, million, millions, mln, mm, mn, quadrillion, quadrillions, thou, thousand, thousands, tn, trillion, trillions
+scale word stems: billion, crore, grand, hundred, lakh, million, quadrillion, thousand, trillion
+currency codes: AED, AUD, BRL, BTC, CAD, CHF, CNH, CNY, CZK, DKK, EUR, GBP, HKD, HUF, IDR, ILS, INR, JPY, KRW, MXN, MYR, NOK, NZD, PHP, PLN, RMB, RUB, SAR, SEK, SGD, THB, TRY, TWD, USD, VND, ZAR
+currency words: aed, aud, baht, bahts, brl, buck, bucks, cent, cents, chf, cnh, cny, czk, dinar, dinars, dirham, dirhams, dkk, dollar, dollars, dong, dongs, eur, euro, euros, franc, francs, gbp, grand, hkd, huf, idr, ils, inr, jpy, krona, kronas, krone, kroner, krones, kronor, krw, lira, liras, lire, mxn, myr, naira, nairas, nok, nzd, pence, pennies, penny, peso, pesos, php, pln, pound, pounds, quid, quids, rand, rands, reais, real, renminbi, ringgit, ringgits, riyal, riyals, ruble, rubles, rupee, rupees, rupiah, rupiahs, sar, sek, sgd, shekel, shekels, sterling, thb, twd, usd, vnd, won, wons, yen, yens, yuan, yuans, zar, zloty, zlotys
+commitment words: accept, acceptance, accepted, accepting, accepts, agree, agreeable, agreed, agreeing, agreement, agreements, agrees, cancel, cancellation, cancelling, charge, charged, confirm, confirmation, confirmed, confirming, confirms, deal, deals, paid, pay, paying, sold
+commitment phrases: cancel my, count me in, count us in, glad to pay, go ahead, happy to pay, i'll take, let's do, process it, ready to pay, sign me up, sign us up, sounds good, take it, we'll take, willing to pay, work for me, work for us, works for me, works for us, you have a deal
 
 Every floor-related block reports the single generic reason "outside
 your limits; escalate to the user". Gate output never carries the floor

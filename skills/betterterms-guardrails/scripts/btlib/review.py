@@ -72,6 +72,29 @@ def _tokens(text):
     return [(m.start(), m.end(), m.group(0)) for m in _TOKEN.finditer(text)]
 
 
+# A possessive or contraction suffix hides the list word behind it:
+# "deal's", "dollar's", "USD's", "k's". Each strips once per pass so
+# stacked forms still reach the word; "'t" alone never strips, so
+# "won't" reads as "wo", never the currency "won".
+_SUFFIXES = ("'s", "'ll", "'re", "'ve", "'d", "'m", "n't")
+
+
+def _word_forms(tok):
+    """The token plus each form an apostrophe suffix uncovers, raw
+    case kept so the currency codes still match case-sensitively."""
+    forms = [tok]
+    t = tok
+    while True:
+        for suf in _SUFFIXES:
+            low = t.lower()
+            if low.endswith(suf) and len(low) > len(suf):
+                t = t[: -len(suf)]
+                forms.append(t)
+                break
+        else:
+            return forms
+
+
 def _number_word_hit(run):
     """A lowercased letter run is number-shaped when it contains a
     number word as a substring ("twelvehundred", "fiftyish",
@@ -142,13 +165,19 @@ def review(find, never_items):
     lower = [t.lower() for _, _, t in toks]
     flags = {"scale": False, "currency": False, "commit": False}
     for i, (_, _, tok) in enumerate(toks):
-        l = lower[i]
-        flags["scale"] = flags["scale"] or l in wordlists.SCALE_WORDS
+        forms = _word_forms(tok)
+        lows = [f.lower() for f in forms]
+        flags["scale"] = flags["scale"] or any(
+            f in wordlists.SCALE_WORDS for f in lows
+        )
         flags["currency"] = (
             flags["currency"]
-            or l in wordlists.CURRENCY_WORDS or tok in wordlists.CURRENCY_CODES
+            or any(f in wordlists.CURRENCY_WORDS for f in lows)
+            or any(f in wordlists.CURRENCY_CODES for f in forms)
         )
-        flags["commit"] = flags["commit"] or l in wordlists.COMMIT_WORDS
+        flags["commit"] = flags["commit"] or any(
+            f in wordlists.COMMIT_WORDS for f in lows
+        )
     runs = _LETTERS.findall(masked.lower())
     flags["scale"] = flags["scale"] or any(
         _scale_word_hit(run) for run in runs

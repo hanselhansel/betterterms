@@ -6,20 +6,18 @@ agent must send verbatim (None on block).
 The gate has two tiers (decision 0009). Hard blocks are code
 guarantees and fail closed:
 
-1. invalid brief (direction, mode, autonomy), an invalid ``period``
-   or ``floor_period`` key anywhere (a valid ``floor_period`` never
-   excuses a shadowed one), an inbound ``period`` naming no known
-   period, or a conflicting plan -> error, exit 2
+1. invalid brief (direction, mode, autonomy) or a conflicting
+   plan, or a ``period`` or ``floor_period`` key that names no
+   known period, even shadowed, inbound included -> error, exit 2
 2. missing, unreadable or invalid ``.floor`` -> block
-3. missing or unknown ``action`` -> block
-4. unknown draft keys or a legacy ``text`` key -> block
-5. ``offer`` present but not a plain number or not positive, or
-   ``period`` outside once|month|year, or template not a string ->
-   block; a non-positive inbound ``offer`` or ``amounts`` entry
-   blocks too
-6. unknown, malformed or unresolvable placeholder -> block, naming
+3. missing or unknown ``action``, unknown draft keys or a legacy
+   ``text`` key -> block
+4. ``offer`` or an inbound ``offer``/``amounts`` entry present but
+   not a positive number, ``period`` outside once|month|year, or
+   template not a string -> block
+5. unknown, malformed or unresolvable placeholder -> block, naming
    the placeholder
-7. offer worse than the floor, compared in the floor's declared
+6. offer worse than the floor, compared in the floor's declared
    period -> block; ``accept``, ``sign`` and ``pay`` also require a
    numeric offer inside the band, and ``accept`` requires an inbound
    offer inside the band equal to the draft offer, both read in the
@@ -28,7 +26,7 @@ guarantees and fail closed:
    ``send`` routes to the user (``period differs from your limit``),
    the agreeing actions block, and the same rule covers the inbound
    offer's period on ``accept``
-8. any rendered placeholder value equal to the floor -> block,
+7. any rendered placeholder value equal to the floor -> block,
    except the in-band offer itself; a value equal only to the
    floor's x12 or /12 conversion is a review hit (``amount matches
    a converted limit``, no numbers). A ``send`` offer equal to the
@@ -44,10 +42,9 @@ guarantees and fail closed:
    the counterparty named is not the agent's offer. Bonus and fee
    options are not offers, so only the equal-to-floor rule reaches
    them
-9. rendered message over 64 KB, checked after fact expansion and
-   before any text scanning -> block
-10. any claim id (draft or auto-claimed by ``{fact:id}``) not in
-    ``plan.facts`` -> block
+8. rendered message over 64 KB, checked after fact expansion and
+   before any text scanning, or a claim id (draft or auto-claimed
+   by ``{fact:id}``) not in ``plan.facts`` -> block
 
 The review tier never blocks but never passes silently either: a
 draft whose rendered text (placeholder outputs masked, fact text
