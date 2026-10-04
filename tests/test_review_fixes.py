@@ -225,6 +225,23 @@ class HostileScanTimingTest(ReviewFixCase):
         self.assertEqual(proc.returncode, 3, out)
         self.assertLess(elapsed, 1.0)
 
+    def test_never_disclose_numeric_items_stay_set_linear(self):
+        # Thousands of numeric never-disclose items each search the
+        # fused digit groups and the rendered placeholder values:
+        # linear scans per item are quadratic on a 64 KB input.
+        # The groups are a set and the values a sorted list, so each
+        # item costs a lookup and a bisect.
+        find = render.render(
+            "{offer}x" * 8000,
+            1100.0, "once", {}, "once", [],
+        )
+        items = [str(200000 + i) for i in range(8000)]
+        start = time.process_time()
+        reasons = review.review(find, items)
+        elapsed = time.process_time() - start
+        self.assertIn("text touches a rendered amount", reasons)
+        self.assertLess(elapsed, 1.0)
+
 
 class FactExpansionTest(ReviewFixCase):
     def test_oversized_render_never_materializes(self):

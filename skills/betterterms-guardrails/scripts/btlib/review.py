@@ -17,6 +17,7 @@ match, never a number to read, so nothing here can crash on
 ``int()`` or stall on a huge token.
 """
 
+import bisect
 import re
 
 from . import FLOOR_TOL, cases, render, wordlists
@@ -177,6 +178,7 @@ def review(find, never_items):
 
     low = render.normalize(masked).lower()
     groups = None
+    values = None
     for item in never_items:
         s = render.normalize(str(item)).strip().lower()
         if not s:
@@ -184,14 +186,18 @@ def review(find, never_items):
         num = _numeric_item(item)
         if num is not None:
             if groups is None:
-                groups = _digit_groups(masked, toks)
+                groups = frozenset(_digit_groups(masked, toks))
+                values = sorted(v.value for v in find.values)
             # The item's digits match a fused text run as a whole
             # string ("42" hits "42" and "4.2", not "420"), and its
             # value matches a rendered placeholder amount behind the
-            # mask.
-            hit = re.sub(r"[^0-9]", "", s) in groups or any(
-                abs(num - v.value) <= FLOOR_TOL for v in find.values
-            )
+            # mask. A set lookup and a bisect keep thousands of items
+            # linear on a 64 KB input; the value within tolerance is
+            # always the left or right bisection neighbour.
+            i = bisect.bisect_left(values, num)
+            hit = re.sub(r"[^0-9]", "", s) in groups or (
+                i < len(values) and values[i] - num <= FLOOR_TOL
+            ) or (i > 0 and num - values[i - 1] <= FLOOR_TOL)
         else:
             hit = s in low
         if hit:
