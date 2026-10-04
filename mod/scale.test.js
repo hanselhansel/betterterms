@@ -300,6 +300,47 @@ describe("savings tab", () => {
     assert.match(flat, /chart shows USD/);
   });
 
+  test("one-time savings show as once, never fold into per-year", () => {
+    const once = {
+      total: {
+        cases: 2,
+        by_currency: { USD: 120 },
+        once_by_currency: { USD: 100 },
+        by_pack: {}, warnings: 0,
+      },
+      records: [
+        { case_id: "a-20260101-aaaa", saved_per_year: 120, saved_once: 0, recorded_at: "2026-09-07T00:00:00Z" },
+        { case_id: "b-20260201-bbbb", saved_per_year: 0, saved_once: 100, recorded_at: "2026-09-14T00:00:00Z" },
+      ],
+    };
+    const flat = JSON.stringify(V.savingsBody(ELSR, once, "vscode"));
+    assert.match(flat, /saved \$120\/yr/);
+    assert.match(flat, /\$100 once/);
+    assert.doesNotMatch(flat, /\$220/);
+    // The per-year average does not count the once amount either.
+    assert.match(flat, /\$120\/yr average/);
+  });
+
+  test("parseRecords carries saved_once on its own field", () => {
+    const recs = V.parseRecords([
+      '{"case_id":"a-20260101-aaaa","saved_once":100,"currency":"EUR"}',
+      '{"case_id":"b-20260101-bbbb","saved_per_year":1200}',
+      '{"case_id":"c-20260101-cccc"}',
+    ].join("\n"));
+    assert.equal(recs.length, 2);
+    assert.equal(recs[0].saved_once, 100);
+    assert.equal(recs[0].saved_per_year, 0);
+    assert.equal(recs[0].currency, "EUR");
+    assert.equal(recs[1].saved_once, 0);
+    assert.equal(recs[1].saved_per_year, 1200);
+  });
+
+  test("the chart alt text names the currency it draws", () => {
+    const desk = V.savingsBody(ELSSVG, data, "desktop");
+    const svg = findNode(desk, byTag("Svg"));
+    assert.match(svg.props.alt, /USD/);
+  });
+
   test("empty ledger draws a real empty state, not $0 scaffolding", () => {
     const empty = { total: { cases: 0, by_currency: {} }, records: [] };
     const tree = V.savingsBody(ELSR, empty, "terminal");

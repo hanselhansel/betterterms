@@ -78,11 +78,18 @@ as `held/<hash>.approved`, and written only by a user action:
 
 The gate accepts `--approved` only when an approval file matches the
 hash of the newly rendered text, and it consumes the file after one
-use. Edit the text and the old approval no longer matches: the send is
+use: the marker is claimed by an atomic rename, so two racing sends
+can never share one approval. Edit the text and the old approval no
+longer matches: the send is
 denied and the draft is held again. Typing "yes" in chat approves
 nothing. `bt.py held disarm <case_id> <hash8>` removes only the
 marker: the mod runs it when a marker it re-armed was not spent by the
 re-gate, so a leftover marker never waits on disk for a later call.
+
+Held records from before tuple-bound names (the filename hashed the
+rendered text alone) still list, flagged `legacy: true`. They cannot
+be approved or spent; re-run the gate to hold the draft under the
+current hash.
 
 In mod mode the file alone never authorizes a send. Consent lives in
 the mod's `$.state`, written by the pane press or by the mod's own

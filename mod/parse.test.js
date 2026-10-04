@@ -80,4 +80,16 @@ describe("parseLedger", () => {
     ].join("\n"));
     assert.deepEqual(saved, { EUR: 240, USD: 1200 });
   });
+
+  test("one-time savings land in once, never in the yearly sums", () => {
+    const { closed, saved, once } = parseLedger([
+      '{"case_id":"a-20260101-aaaa","saved_once":100,"currency":"EUR"}',
+      '{"case_id":"b-20260101-bbbb","saved_once":50}',
+      '{"case_id":"c-20260101-cccc","saved_per_year":1200}',
+      '{"case_id":"d-20260101-dddd","saved_once":"not a number"}',
+    ].join("\n"));
+    assert.equal(closed.has("a-20260101-aaaa"), true);
+    assert.deepEqual(saved, { USD: 1200 });
+    assert.deepEqual(once, { EUR: 100, USD: 50 });
+  });
 });

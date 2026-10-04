@@ -16,7 +16,7 @@ stdout.
   bt.py held disarm <case_id> <hash8>   (drop only the .approved marker)
   bt.py widget cases | widget approval <case_id> <hash8> | widget terms <case_id> | widget savings
   bt.py score <case_id> --inbound <inbound.yaml>
-  bt.py ledger add <case_id> --before N --after N --period month|year
+  bt.py ledger add <case_id> --before N --after N --period once|month|year
   bt.py ledger total
   bt.py source add <case_id>         (record read as YAML from stdin)
   bt.py source list <case_id>
@@ -42,11 +42,7 @@ from btlib import (
 def _blocked_input(e):
     """A draft or inbound file refused on size or depth fails closed:
     the gate or the scorer reports a block, never a usage error."""
-    return 1, {
-        "result": "block",
-        "reasons": [str(e)],
-        "rendered": None,
-    }
+    return "block", [str(e)], None
 
 
 def cmd_case_new(args):
@@ -76,6 +72,7 @@ def cmd_case_show(args):
 
 def cmd_gate(args):
     d = cases.require_case(args.case_id)
+    draft = None
     try:
         draft = inputs.load_yaml_file(args.draft, "draft")
         inbound = (
@@ -84,8 +81,9 @@ def cmd_gate(args):
             else None
         )
     except inputs.UnsafeInput as e:
-        return _blocked_input(e)
-    result, reasons, rendered = gate.check(d, draft, approved=args.approved, inbound=inbound)
+        result, reasons, rendered = _blocked_input(e)
+    else:
+        result, reasons, rendered = gate.check(d, draft, approved=args.approved, inbound=inbound)
     out = {
         "result": result,
         "reasons": reasons,
@@ -94,8 +92,9 @@ def cmd_gate(args):
     if result == "needs_approval" and rendered is not None:
         out["hash"] = held.draft_hash(held.draft_record(d, draft, rendered))
     # The verdict is recorded in the case folder itself so the pane
-    # and widgets read the same answer the agent got; the write is
-    # best-effort because stdout carries the contract.
+    # and widgets read the same answer the agent got, on every call
+    # including refused inputs; the write is best-effort because
+    # stdout carries the contract.
     try:
         held.atomic_write(d / "gate.json", json.dumps(out))
     except OSError:
@@ -109,13 +108,19 @@ def cmd_score(args):
         inbound = inputs.load_yaml_file(args.inbound, "inbound")
         return 0, score.classify(d, inbound)
     except inputs.UnsafeInput as e:
-        return _blocked_input(e)
+        result, reasons, rendered = _blocked_input(e)
+        return 1, {
+            "result": result,
+            "reasons": reasons,
+            "rendered": rendered,
+        }
 
 
 def cmd_ledger_add(args):
     d = cases.require_case(args.case_id)
     saved = ledger.add(d, args.before, args.after, args.period)
-    return 0, {"saved_per_year": saved}
+    key = "saved_once" if args.period == "once" else "saved_per_year"
+    return 0, {key: saved}
 
 
 def cmd_ledger_total(args):

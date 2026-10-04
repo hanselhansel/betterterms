@@ -5,6 +5,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { resetScan } from "./lib/scan.js";
+import { resetBt } from "./lib/hostio.js";
 
 // The element factory the engine injects. Hooks call it only when a
 // render hook runs; tests stub it before firing those hooks.
@@ -203,8 +204,10 @@ export function caseDirs(over = {}) {
 
 export function fakeDollar(opts = {}) {
   // Each fake $ is a fresh session, so the module-level scan cache
-  // resets exactly as register() resets it for the engine.
+  // and the resolved-bt cache reset exactly as register() resets them
+  // for the engine.
   resetScan();
+  resetBt();
   const env = opts.env ?? { BETTERTERMS_HOME: HOME };
   const files = opts.files ?? {};
   const dirs = opts.dirs ?? {};
@@ -228,6 +231,15 @@ export function fakeDollar(opts = {}) {
   // them appears or goes (the fake counts files below the path).
   const bumps = new Map();
   const bump = (p) => bumps.set(p, (bumps.get(p) ?? 1) + 1);
+  // Inodes move on every write too: the runtime saves files atomically
+  // (temp + replace), so a rewrite is always a fresh inode even when
+  // bytes and mtime happen to stay equal.
+  const inos = new Map();
+  let inoSeq = 0;
+  const inoOf = (p) => {
+    if (!inos.has(p)) inos.set(p, (inoSeq += 10));
+    return inos.get(p);
+  };
   const dirMtime = (p) =>
     (opts.stats ?? {})[p]?.mtimeMs ??
     1 + Object.keys(files).filter((f) => f.startsWith(`${p}/`)).length
@@ -245,6 +257,7 @@ export function fakeDollar(opts = {}) {
         calls.write.push({ path: p, text });
         bump(p);
         bump(p.slice(0, p.lastIndexOf("/")));
+        inos.set(p, inoOf(p) + 1);
       },
       exists: async (p) => p in files || p in dirs,
       list: async (p) => {
@@ -264,9 +277,9 @@ export function fakeDollar(opts = {}) {
         calls.stat.push(p);
         const st = (opts.stats ?? {})[p];
         if (p in files)
-          return { kind: "file", size: files[p].length, mtimeMs: st?.mtimeMs ?? bumps.get(p) ?? 1, isLink: false, realPath: st?.realPath ?? p };
+          return { kind: "file", size: files[p].length, mtimeMs: st?.mtimeMs ?? bumps.get(p) ?? 1, ino: st?.ino ?? inoOf(p), isLink: false, realPath: st?.realPath ?? p };
         if (p in dirs)
-          return { kind: "dir", size: 0, mtimeMs: dirMtime(p), isLink: false, realPath: st?.realPath ?? p };
+          return { kind: "dir", size: 0, mtimeMs: dirMtime(p), ino: st?.ino ?? inoOf(p), isLink: false, realPath: st?.realPath ?? p };
         throw new Error(`ENOENT ${p}`);
       },
     },

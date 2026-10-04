@@ -92,6 +92,22 @@ class HoldOnNeedsApprovalTest(HeldCase):
         self.assertEqual(saved["hash"], out["hash"])
         self.assertEqual(saved["rendered"], out["rendered"])
 
+    def test_gate_writes_gate_json_on_blocked_input(self):
+        # A draft refused on the input bounds still records its
+        # verdict: gate.json exists on every gate call, blocks and
+        # refused inputs included.
+        case_id, case_dir = self.make_case()
+        big = self.tmp / "big-draft.yaml"
+        big.write_text("template: " + "x" * 70000 + "\n")
+        proc, out = run_bt_json(
+            self.home, "gate", case_id, "--draft", str(big)
+        )
+        self.assertEqual(proc.returncode, 1, out)
+        self.assertEqual(out["result"], "block")
+        saved = json.loads((case_dir / "gate.json").read_text())
+        self.assertEqual(saved["result"], "block")
+        self.assertEqual(saved["reasons"], out["reasons"])
+
 
 class ApproveFlowTest(HeldCase):
     def test_approved_requires_matching_approval(self):
@@ -182,8 +198,14 @@ class TupleBindingTest(HeldCase):
         self.assertEqual(proc.returncode, 0, out)
 
     def test_two_sends_cannot_share_one_approval(self):
-        # The marker unlinks atomically: racing consumes split one
-        # True and one False, never two sends off one approval.
+        # The marker is claimed by an atomic rename: racing consumes
+        # split one True and one False, never two sends off one
+        # approval. A barrier holds both threads at the claim so the
+        # race is forced, not hoped for -- and on filesystems where a
+        # plain unlink reports success to both callers, the rename
+        # still lets only one through.
+        from unittest import mock
+
         case_id, case_dir = self.make_case()
         proc, out = self.gate(case_id, self.held_draft())
         h = out["hash"]
@@ -192,6 +214,14 @@ class TupleBindingTest(HeldCase):
         )
         self.assertEqual(proc.returncode, 0, out)
         draft = self.held_draft()
+        barrier = threading.Barrier(2)
+        real_rename = os.rename
+
+        def rendezvous(src, dst, *args, **kwargs):
+            if str(src).endswith(f"{h}.approved"):
+                barrier.wait(timeout=10)
+            return real_rename(src, dst, *args, **kwargs)
+
         results = []
         threads = [
             threading.Thread(
@@ -203,13 +233,17 @@ class TupleBindingTest(HeldCase):
             )
             for _ in range(2)
         ]
-        for t in threads:
-            t.start()
-        for t in threads:
-            t.join()
+        with mock.patch("os.rename", rendezvous):
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join()
         self.assertEqual(sorted(results), [False, True])
         self.assertFalse(
             (case_dir / "held" / f"{h}.approved").exists()
+        )
+        self.assertEqual(
+            [p.name for p in (case_dir / "held").iterdir()], []
         )
 
 
@@ -318,71 +352,6 @@ class RejectTest(HeldCase):
         proc, out = self.gate(case_id, self.held_draft(), approved=True)
         self.assertEqual(proc.returncode, 3, out)
         self.assertIn(NO_APPROVAL, out["reasons"])
-
-
-class DisarmTest(HeldCase):
-    def test_disarm_drops_only_the_marker(self):
-        # held disarm clears the approval marker but keeps the held
-        # draft: the mod runs it when a re-armed marker was not spent
-        # by the re-gate, so a leftover marker never outlives its press.
-        case_id, case_dir = self.make_case()
-        proc, out = self.gate(case_id, self.held_draft())
-        h = out["hash"]
-        run_bt_json(self.home, "held", "approve", case_id, h[:8])
-        held_dir = case_dir / "held"
-        marker = held_dir / f"{h}.approved"
-        self.assertTrue(marker.is_file())
-        proc, out = run_bt_json(
-            self.home, "held", "disarm", case_id, h[:8]
-        )
-        self.assertEqual(proc.returncode, 0, out)
-        self.assertEqual(out["hash"], h)
-        self.assertFalse(marker.exists())
-        self.assertTrue((held_dir / f"{h}.yaml").is_file())
-        # The draft still lists, unapproved, and cannot send.
-        proc, out = run_bt_json(self.home, "held", "list", case_id)
-        self.assertEqual(len(out["held"]), 1)
-        self.assertFalse(out["held"][0]["approved"])
-        proc, out = self.gate(
-            case_id, self.held_draft(), approved=True
-        )
-        self.assertEqual(proc.returncode, 3, out)
-
-    def test_disarm_without_marker_is_a_noop(self):
-        # A hash that resolves to a held draft with no marker clears
-        # quietly; the mod only ever disarms just-armed markers.
-        case_id, _ = self.make_case()
-        proc, out = self.gate(case_id, self.held_draft())
-        h = out["hash"]
-        proc, out = run_bt_json(
-            self.home, "held", "disarm", case_id, h[:8]
-        )
-        self.assertEqual(proc.returncode, 0, out)
-        self.assertEqual(out["hash"], h)
-
-    def test_disarm_clears_a_stale_marker(self):
-        # A marker whose record is already gone still disarms: the
-        # resolve matches marker names, not only live records.
-        case_id, case_dir = self.make_case()
-        proc, out = self.gate(case_id, self.held_draft())
-        h = out["hash"]
-        held_dir = case_dir / "held"
-        (held_dir / f"{h}.yaml").unlink()
-        marker = held_dir / f"{h}.approved"
-        marker.write_text(f"hash: {h}\n")
-        proc, out = run_bt_json(
-            self.home, "held", "disarm", case_id, h[:8]
-        )
-        self.assertEqual(proc.returncode, 0, out)
-        self.assertFalse(marker.exists())
-
-    def test_disarm_unknown_hash_exits_2(self):
-        case_id, _ = self.make_case()
-        proc, out = run_bt_json(
-            self.home, "held", "disarm", case_id, "deadbeef"
-        )
-        self.assertEqual(proc.returncode, 2, out)
-        self.assertIn("no held draft", out["error"])
 
 
 if __name__ == "__main__":

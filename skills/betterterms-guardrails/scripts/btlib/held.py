@@ -19,6 +19,7 @@ import hashlib
 import json
 import os
 import re
+import secrets
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
@@ -26,6 +27,7 @@ from pathlib import Path
 from . import BtError, cases, minor, yaml
 
 NO_APPROVAL = "no approval recorded for this exact text"
+LEGACY = "held by an older version; re-run the gate"
 
 _HASH64 = re.compile(r"[0-9a-f]{64}")
 _PREFIX = re.compile(r"[0-9a-f]{8,64}")
@@ -82,11 +84,8 @@ def draft_hash(record):
     offer = cases.num(record.get("offer"))
     canon = json.dumps(
         {
-            "action": record.get("action"),
+            **{k: record.get(k) for k in _TUPLE_KEYS},
             "offer": None if offer is None else f"{minor(offer):.2f}",
-            "period": record.get("period"),
-            "currency": record.get("currency"),
-            "rendered": record.get("rendered"),
         },
         ensure_ascii=True,
         sort_keys=True,
@@ -104,6 +103,21 @@ def _record_ok(data, stem):
     if not _HASH64.fullmatch(stem):
         return False
     return draft_hash({k: data.get(k) for k in _TUPLE_KEYS}) == stem
+
+
+def _legacy_ok(data, stem):
+    """A record from before approvals bound the send tuple: its name
+    is the SHA-256 of the rendered text alone. It may list (flagged
+    ``legacy`` so the mod skips it) and it may be rejected, but it can
+    never be approved or spent: the answer is to re-run the gate."""
+    if not isinstance(data, dict) or data.get("hash") != stem:
+        return False
+    if not _HASH64.fullmatch(stem):
+        return False
+    rendered = data.get("rendered")
+    if not isinstance(rendered, str):
+        return False
+    return hashlib.sha256(rendered.encode("utf-8")).hexdigest() == stem
 
 
 def _dir(case_dir):
@@ -163,7 +177,10 @@ def hold(case_dir, draft, rendered, reasons):
 
 def list_held(case_dir):
     """Held drafts, oldest first, each with an ``approved`` flag. A
-    record whose stored fields do not hash to its name is skipped."""
+    record whose stored fields do not hash to its name is skipped;
+    one whose name is the old text-only hash lists flagged
+    ``legacy`` with a re-run-the-gate note, since an approval for it
+    can never match a current tuple."""
     d = _dir(case_dir)
     out = []
     if d.is_dir():
@@ -171,7 +188,12 @@ def list_held(case_dir):
             if not _HASH64.fullmatch(path.stem):
                 continue
             data = yaml.load(path.read_text(encoding="utf-8"))
-            if not _record_ok(data, path.stem):
+            if _record_ok(data, path.stem):
+                pass
+            elif _legacy_ok(data, path.stem):
+                data["legacy"] = True
+                data["note"] = LEGACY
+            else:
                 continue
             data["approved"] = (d / f"{path.stem}.approved").is_file()
             out.append(data)
@@ -214,11 +236,14 @@ def approve(case_dir, hash8):
     """Record the user's approval for the held draft: writes
     ``held/<hash>.approved`` and returns the full hash. A record whose
     stored fields no longer hash to its name is corrupt and cannot be
-    approved."""
+    approved; one from before tuple-bound hashes gets the re-run
+    answer instead."""
     h = resolve(case_dir, hash8)
     d = _dir(case_dir)
     data = yaml.load((d / f"{h}.yaml").read_text(encoding="utf-8"))
     if not _record_ok(data, h):
+        if _legacy_ok(data, h):
+            raise BtError(f"held draft {h[:8]} is {LEGACY}")
         raise BtError(f"held draft {h[:8]} is corrupt")
     atomic_write(
         d / f"{h}.approved",
@@ -283,17 +308,22 @@ def disarm(case_dir, hash8):
 
 def consume_approval(case_dir, draft, rendered):
     """True once when an approval exists for this exact send tuple:
-    the ``.approved`` marker unlinks atomically, so two racing sends
-    can never share one approval, and the held record goes with it."""
+    the ``.approved`` marker is claimed by renaming it to a unique
+    name, an atomic take on POSIX -- a plain unlink can report success
+    to two racing callers on filesystems that resolve the deletion
+    lazily -- so two racing sends can never share one approval. The
+    held record goes with the claimed marker."""
     record = draft_record(case_dir, draft, rendered)
     h = draft_hash(record)
     d = _dir(case_dir)
+    claim = d / f".{h}.{os.getpid()}.{secrets.token_hex(4)}.claimed"
     try:
-        (d / f"{h}.approved").unlink()
+        os.rename(d / f"{h}.approved", claim)
     except OSError:
         return False
-    try:
-        (d / f"{h}.yaml").unlink()
-    except OSError:
-        pass
+    for path in (claim, d / f"{h}.yaml"):
+        try:
+            path.unlink()
+        except OSError:
+            pass
     return True

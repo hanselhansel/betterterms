@@ -287,19 +287,33 @@ class SessionStartHookTest(ScriptTestCase):
 
     def test_remote_session_warns_when_home_is_ephemeral(self):
         # Decision F: a cloud home vanishes with the VM, so the
-        # default ~/.betterterms location gets a one-line warning.
+        # default ~/.betterterms location gets a one-line warning
+        # when a case exists to lose.
+        (self.home / ".betterterms" / "cases" / "case-1").mkdir(
+            parents=True
+        )
         proc = self.hook({"CLAUDE_CODE_REMOTE": "true"})
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertIn("vanish", proc.stdout)
-        self.assertNotIn("betterterms-start", proc.stdout)
+        self.assertIn("betterterms-start", proc.stdout)
 
     def test_remote_session_warns_with_home_relative_bt_home(self):
+        bt_home = self.home / ".betterterms"
+        (bt_home / "cases" / "case-1").mkdir(parents=True)
         proc = self.hook({
             "CLAUDE_CODE_REMOTE": "true",
-            "BETTERTERMS_HOME": str(self.home / ".betterterms"),
+            "BETTERTERMS_HOME": str(bt_home),
         })
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertIn("vanish", proc.stdout)
+
+    def test_remote_session_no_warning_without_cases(self):
+        # Nothing exists to lose yet, so the vanish warning stays
+        # quiet until a first case lands.
+        proc = self.hook({"CLAUDE_CODE_REMOTE": "true"})
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertNotIn("vanish", proc.stdout)
+        self.assertEqual(proc.stdout.strip(), "")
 
     def test_remote_session_no_warning_for_persistent_home(self):
         # A BETTERTERMS_HOME outside the ephemeral home (a mounted

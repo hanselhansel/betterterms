@@ -3,7 +3,8 @@
 the outcome is better than before: ``before - after`` for ``pay`` cases,
 ``after - before`` for ``receive`` cases, times the periods per year,
 rounded to the currency minor unit. A ``once`` deal records the delta
-as it stands, one saving rather than a rate.
+as ``saved_once`` instead: a one-time saving is never a rate, so it
+stays out of the per-year totals entirely.
 """
 
 import fcntl
@@ -51,8 +52,13 @@ def _parse_records(data):
         if not isinstance(record, dict):
             skipped += 1
             continue
-        raw = record.get("saved_per_year")
-        if raw is not None and cases.num(raw) is None:
+        bad = False
+        for key in ("saved_per_year", "saved_once"):
+            raw = record.get(key)
+            if raw is not None and cases.num(raw) is None:
+                bad = True
+                break
+        if bad:
             skipped += 1
             continue
         records.append(record)
@@ -126,7 +132,9 @@ def add(case_dir, before, after, period):
         "before": _clean_number(before),
         "after": _clean_number(after),
         "period": period,
-        "saved_per_year": saved,
+        # A one-time deal is a delta taken once: it lands under
+        # ``saved_once`` and never inflates the per-year figures.
+        "saved_once" if period == "once" else "saved_per_year": saved,
         "recorded_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
     }
     # The ledger holds per-case savings; like .floor it is created
@@ -152,26 +160,45 @@ def add(case_dir, before, after, period):
 
 def total():
     """Totals grouped by currency: 240 USD a year and 240 EUR a year
-    are two answers, never 480. A record without a ``currency`` lands
-    in ``unknown`` rather than being guessed into one."""
+    are two answers, never 480. One-time savings stay in their own
+    ``once_by_*`` maps rather than masquerading as a yearly rate. A
+    record without a ``currency`` lands in ``unknown`` rather than
+    being guessed into one."""
     records, skipped = _parse_records(_read_locked(exclusive=False)[1])
     by_currency = {}
     by_pack = {}
+    once_by_currency = {}
+    once_by_pack = {}
+
+    def bump(table, cur, pack_table, pack, value):
+        table[cur] = table.get(cur, 0) + value
+        pack_table.setdefault(pack, {})
+        pack_table[pack][cur] = pack_table[pack].get(cur, 0) + value
+
     for r in records:
-        saved = cases.num(r.get("saved_per_year")) or 0
         cur = str(r.get("currency") or "unknown")
-        by_currency[cur] = by_currency.get(cur, 0) + saved
         pack = str(r.get("pack") or "unknown")
-        by_pack.setdefault(pack, {})
-        by_pack[pack][cur] = by_pack[pack].get(cur, 0) + saved
+        saved = cases.num(r.get("saved_per_year"))
+        if saved is not None:
+            bump(by_currency, cur, by_pack, pack, saved)
+        once = cases.num(r.get("saved_once"))
+        if once is not None:
+            bump(once_by_currency, cur, once_by_pack, pack, once)
     return {
         "cases": len(records),
         "by_currency": {
             c: _clean_number(v) for c, v in sorted(by_currency.items())
         },
+        "once_by_currency": {
+            c: _clean_number(v) for c, v in sorted(once_by_currency.items())
+        },
         "by_pack": {
             p: {c: _clean_number(v) for c, v in sorted(cs.items())}
             for p, cs in sorted(by_pack.items())
+        },
+        "once_by_pack": {
+            p: {c: _clean_number(v) for c, v in sorted(cs.items())}
+            for p, cs in sorted(once_by_pack.items())
         },
         "warnings": skipped,
     }

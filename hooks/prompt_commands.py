@@ -56,7 +56,9 @@ _GRAMMAR = (
 _TERMS_KV = re.compile(r"(\w+)=(\S+)")
 _TERMS_KEYS = ("target", "alternative")
 
-_OPENER = re.compile(r"bt\s+(approve|reject|floor|terms)\b", re.I)
+# The command token must stand alone: `debt terms` or `doubt floor`
+# carry no command, so `bt` cannot follow a word, dot or dash.
+_OPENER = re.compile(r"(?<![\w.-])bt\s+(approve|reject|floor|terms)\b", re.I)
 _MESSAGE = re.compile(r"<message\b([^>]*)>(.*?)</message>", re.DOTALL)
 _ATTR = re.compile(r'([\w-]+)="([^"]*)"')
 _ENTITIES = (
@@ -162,7 +164,9 @@ def _run_bt(args, stdin_text=None):
         input=stdin_text,
         capture_output=True,
         text=True,
-        timeout=30,
+        # The hook's own budget is 10s; a wedged bt.py must still
+        # fail closed inside it.
+        timeout=7,
     )
     try:
         out = json.loads(proc.stdout)

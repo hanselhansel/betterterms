@@ -17,7 +17,7 @@
 // it. The entry is spent on read; the marker is spent by the gate.
 
 export const GATE_TIMEOUT_MS = 30000;
-export const EMPTY_SNAP = { home: null, root: null, resolvedRoot: null, cases: [], saved: {} };
+export const EMPTY_SNAP = { home: null, root: null, resolvedRoot: null, cases: [], saved: {}, savedOnce: {} };
 
 // "$486" for USD, "EUR 200" otherwise: only USD gets the sign.
 export function money(currency, v) {
@@ -30,6 +30,14 @@ export function savedText(saved) {
   const keys = Object.keys(saved ?? {});
   if (keys.length === 0) return "$0/yr";
   return keys.map((k) => `${money(k, saved[k])}/yr`).join(" · ");
+}
+
+// One-time savings stay out of the per-year figure: "$100 once ·
+// EUR 50 once", or "" when the ledger has none.
+export function onceText(once) {
+  return Object.keys(once ?? {})
+    .map((k) => `${money(k, once[k])} once`)
+    .join(" · ");
 }
 
 // The card in edit mode, by held hash. Module scope: it is UI-local
@@ -57,8 +65,10 @@ export function approvePromptText(hash, caseId) {
     "nothing added. The send guard re-runs the gate; do not run it yourself.";
 }
 
-export function statusText(nCases, saved) {
-  return `bt: ${nCases} case${nCases === 1 ? "" : "s"} · ${savedText(saved)} saved`;
+export function statusText(nCases, saved, once) {
+  const base = `bt: ${nCases} case${nCases === 1 ? "" : "s"} · ${savedText(saved)} saved`;
+  const o = onceText(once);
+  return o === "" ? base : `${base} · ${o}`;
 }
 
 // draft.yaml rewritten with the edited message as the template. The

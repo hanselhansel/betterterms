@@ -1,13 +1,17 @@
 // The case-folder scan, cached on stat fingerprints. A case's parsed
 // form is reused while the files it was derived from are unchanged --
-// mtime and size move on every write -- and the ledger parses once per
-// fingerprint instead of once per call. Held/ and sources/ fingerprint
-// on their entry names: a held .yaml never mutates after its single
-// atomic write, so a name appearing or vanishing is the only change.
-// A short burst window lets ui.render reuse the whole snapshot so a
-// redraw or drag storm stats the tree once, not once per frame. The
-// pre-send guard asks for a fresh scan (burst is off) and the gate
-// re-runs regardless, so a stale fingerprint can only ever deny.
+// inode, mtime and size move on every atomic replace -- and the ledger
+// parses once per fingerprint instead of once per call. Held/ and
+// sources/ fingerprint on their entry names and kinds: a held .yaml
+// never mutates after its single atomic write, so a name appearing or
+// vanishing (a marker written, a record spent) is the only change. A
+// case whose held list could not be read -- bt.py missing or the call
+// failing -- is never cached: caching an empty held list would hide
+// real drafts until some other file happened to move. A short burst
+// window lets ui.render reuse the whole snapshot so a redraw or drag
+// storm stats the tree once, not once per frame. The pre-send guard
+// asks for a fresh scan (burst is off) and the gate re-runs
+// regardless, so a stale fingerprint can only ever deny.
 //
 // The module holds $-free state; register.js resets it per session.
 
@@ -29,12 +33,17 @@ export function resetScan() {
   caseCache.clear();
 }
 
-// "mtimeMs:size" per path, joined. Missing files fingerprint as "x".
+// "ino:mtimeMs:size" per path, joined. Missing files fingerprint as
+// "x". The inode is first because atomic replace (temp + rename, the
+// only way case files are written) always moves it, even when a test
+// or a fast rewrite leaves mtime and size equal.
 async function fileFp(host, dir, names) {
   const st = await Promise.all(
     names.map((n) => IO.statIf(host, `${dir}/${n}`))
   );
-  return st.map((s) => `${s?.mtimeMs ?? "x"}:${s?.size ?? "x"}`).join("|");
+  return st
+    .map((s) => `${s?.ino ?? "x"}:${s?.mtimeMs ?? "x"}:${s?.size ?? "x"}`)
+    .join("|");
 }
 
 async function namesFp(host, dir) {
@@ -46,15 +55,19 @@ async function namesFp(host, dir) {
 
 // Held drafts for one case, via `bt.py held list`: the CLI reports
 // only records whose stored fields hash back to the filename, so a
-// corrupt or tampered held file never reaches a card.
+// corrupt or tampered held file never reaches a card. Records from
+// before tuple-bound names list with `legacy: true`; the mod never
+// counts them. null -- not an empty list -- answers any failure, so
+// the caller knows not to cache the miss.
 async function heldForCase(host, home, bt, id) {
-  if (bt === null) return [];
+  if (bt === null) return null;
   const proc = await IO.runProc(host, home, ["python3", bt, "held", "list", id]);
-  if (proc.error) return [];
+  if (proc.error) return null;
   let out;
-  try { out = JSON.parse(proc.stdout); } catch { return []; }
-  if (!Array.isArray(out?.held)) return [];
+  try { out = JSON.parse(proc.stdout); } catch { return null; }
+  if (!Array.isArray(out?.held)) return null;
   return out.held
+    .filter((h) => h?.legacy !== true)
     .map((h) => ({
       hash: typeof h?.hash === "string" ? h.hash : "",
       rendered: typeof h?.rendered === "string" ? h.rendered : "",
@@ -92,15 +105,18 @@ async function scanCase(host, home, bt, dir, name, ledger) {
     threadMtimeMs: fpPart(fp, 4),
     sourceCount: sourcesFp === "" ? 0 : sourcesFp.split(",").length,
     closed: ledger.closed.has(name),
-    held,
+    held: held ?? [],
   });
-  caseCache.set(dir, { fp: full, c });
+  // A held answer that could not be computed -- bt.py missing or the
+  // list call failing -- is not cacheable: the next scan must try
+  // again rather than freeze an empty pane.
+  if (bt !== null && held !== null) caseCache.set(dir, { fp: full, c });
   return c;
 }
 
-// The mtime half of one "mtimeMs:size" segment of a fingerprint.
+// The mtime of one "ino:mtimeMs:size" segment of a fingerprint.
 function fpPart(fp, i) {
-  const m = fp.split("|")[i]?.split(":")[0];
+  const m = fp.split("|")[i]?.split(":")[1];
   const n = Number(m);
   return Number.isFinite(n) ? n : 0;
 }
@@ -129,17 +145,19 @@ export async function scanCases(host, { burst = false } = {}) {
   const root = `${home}/cases`;
   const rootStat = await IO.statIf(host, root, { resolve: true });
   if (rootStat?.kind !== "dir") {
-    return { home, root, resolvedRoot: null, cases: [], saved: ledger.saved };
+    return { home, root, resolvedRoot: null, cases: [], saved: ledger.saved, savedOnce: ledger.once };
   }
   const bt = await IO.findBt(host);
-  const cases = [];
-  for (const ent of await IO.listIf(host, root)) {
-    if (ent.kind !== "dir" || ent.isLink || !C.safeCaseId(ent.name)) continue;
-    cases.push(
-      await scanCase(host, home, bt, `${root}/${ent.name}`, ent.name, ledger)
-    );
-  }
-  const snap = { home, root, resolvedRoot: rootStat.realPath ?? root, cases, saved: ledger.saved };
+  const cases = await Promise.all(
+    (await IO.listIf(host, root))
+      .filter((ent) => ent.kind === "dir" && !ent.isLink && C.safeCaseId(ent.name))
+      .map((ent) => scanCase(host, home, bt, `${root}/${ent.name}`, ent.name, ledger))
+  );
+  const snap = {
+    home, root,
+    resolvedRoot: rootStat.realPath ?? root,
+    cases, saved: ledger.saved, savedOnce: ledger.once,
+  };
   burstSnap = snap;
   burstAt = Date.now();
   return snap;

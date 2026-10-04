@@ -65,8 +65,31 @@
   freshly re-gated rendered text, other string leaves are
   whitespace-free address/id fields or a short digit-free
   subject/title, numeric leaves deny, and a Bash call is never a send.
-- `bt.py ledger add` accepts `--period once` for one-time savings.
+- `bt.py ledger add` accepts `--period once` for one-time savings,
+  recorded as `saved_once` and totaled in `once_by_currency` /
+  `once_by_pack`, never folded into the per-year figures; widgets,
+  the mod status line and the Savings tab show them as "$N once".
+  `ledger total` groups records without a currency under `unknown`.
   `case new` validates `config.yaml` before touching the case tree.
+- `gate.json` is written on every `bt.py gate` call, blocked input
+  included, so the case folder always holds the last verdict.
+- Held records written by builds before tuple-bound names (the
+  filename hashed the rendered text alone) still list, flagged
+  `legacy: true` with the note "held by an older version; re-run the
+  gate". They cannot be approved or spent: re-run the gate on each
+  case's `draft.yaml` to hold it under the current hash. The mod
+  never counts them.
+- The prompt hook treats `bt` as a command only at a token boundary
+  (`debt terms`, `doubt floor` pass through) and fails closed when
+  `bt.py` does not answer inside 7 seconds, within the 10-second hook
+  budget. The cloud session-start warning prints only when a case
+  exists to lose.
+- An approval is spent by claiming the marker with an atomic rename
+  before unlinking: on filesystems where a racing `unlink` can report
+  success twice, two sends still cannot share one approval. The mod's
+  scan fingerprints case files by inode with mtime and size, never
+  caches a case whose held list could not run, revalidates a cached
+  `bt.py` path, and scans case folders in parallel.
 - `scripts/vendor-into-repo` enables the plugin without copying the
   skills (a copy would load each skill twice); `--no-plugin` vendors
   the skills alone.

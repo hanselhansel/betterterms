@@ -30,15 +30,18 @@ export async function listIf(host, path) {
 }
 
 // bt.py lives in the core plugin's skill tree, probed once per call.
-// Resolved bt.py paths are stable for the session, so a hit is cached
-// per plugin root. A miss is re-probed each call: the core plugin may
-// be installed or upgraded while the session is live.
+// A resolved path is cached per plugin root but revalidated on every
+// call with fsExists: an upgrade or uninstall mid-session swaps the
+// file out from under the hit, and the probe then runs again. A miss
+// is likewise re-probed each call: the core plugin may be installed
+// while the session is live.
 const btFound = new Map();
 
 export async function findBt(host) {
   const root = host.pluginRoot;
   const hit = btFound.get(root);
-  if (hit !== undefined) return hit;
+  if (hit !== undefined && await host.fsExists(hit)) return hit;
+  btFound.delete(root);
   const sibs = C.normPath(`${root}/../../betterterms`);
   const versions = (await listIf(host, sibs))
     .filter((e) => e.kind === "dir")

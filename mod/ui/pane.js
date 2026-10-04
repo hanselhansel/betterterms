@@ -14,7 +14,7 @@
 // hotkey press.
 
 import * as C from "../lib/cases.js";
-import { hash8, savedText } from "../lib/approvals.js";
+import { hash8, onceText, savedText } from "../lib/approvals.js";
 import { termsTree } from "./terms.js";
 import { savingsBody } from "./savings.js";
 
@@ -186,10 +186,11 @@ function savingsTab(el, snap, view) {
   // The full view once act.savingsData() lands (ledger total + records).
   if (view.savings) return savingsBody(el, view.savings, view.surface);
   const closed = snap.cases.filter((c) => c.stage === "closed").length;
+  const once = onceText(snap.savedOnce);
   return h(
     Box,
     { key: "savings", flexDirection: "column" },
-    h(Text, null, `saved ${savedText(snap.saved)}`),
+    h(Text, null, `saved ${savedText(snap.saved)}${once === "" ? "" : ` · ${once}`}`),
     h(Text, { dimColor: true }, `${closed} case${closed === 1 ? "" : "s"} closed`),
   );
 }

@@ -23,14 +23,16 @@ runs in place from the repository.
   held draft: the rendered text with the money spans lit, the gate's
   reasons, and Approve and send (`a`), Edit (`e`), Reject (`r`) on the
   top card. `3 Savings` shows the ledger's `saved_per_year` totals per
-  currency plus a cumulative chart. Opens itself at session start when
+  currency, one-time savings as `$N once`, plus a cumulative chart.
+  Opens itself at session start when
   cases exist; `/betterterms` or `/betterterms-cases` reopens it.
 - **AbovePrompt band**: `Comcast replied, 1 draft waiting` while a
   reply is unanswered or a draft waits (held, or a `gate.json` verdict
   of `pass`/`needs_approval` not yet logged in `thread.md`). The
   Review button (hotkey `2`, the tab it opens) jumps to Approvals.
 - **Status line**: `bt: <n> cases · $<saved>/yr saved`, refreshed by
-  the poll; mixed currencies list each total separately.
+  the poll; mixed currencies list each total separately, and one-time
+  savings trail as `· $<n> once`.
 - **Toasts**: `New reply in <case>.` when `thread.md` gains an inbound
   entry, `draft ... sent` when the guard lets a send through, and
   `draft ... blocked` when the gate refuses. Polled every 3 s.
@@ -97,8 +99,10 @@ baselines in module memory. The only other filesystem touch is a
 to tell a bookkeeping write inside a case dir apart from a send.
 
 The scan caches each case's parsed form on a fingerprint of its files
-(mtime and size), and UI renders may reuse a snapshot for 250 ms so a
-drag or redraw storm stats the tree once. The pre-send guard never
+(inode, mtime and size; held/ and sources/ on entry names), and UI
+renders may reuse a snapshot for 250 ms so a
+drag or redraw storm stats the tree once. A case whose held list
+could not run is never cached. The pre-send guard never
 uses the burst: it stats fresh and re-runs the gate anyway.
 
 ## What "send" means

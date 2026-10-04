@@ -235,7 +235,9 @@ def terms_widget(d, case_id):
 
 def savings_widget():
     """The savings view: totals per currency and per pack from the
-    ledger, plus the recorded-case count."""
+    ledger, plus the recorded-case count. One-time savings sit in
+    ``once_by_*`` and display as their own "once" amounts, never
+    folded into the per-year figures."""
     totals = ledger.total()
     rows = []
     for currency, saved in totals["by_currency"].items():
@@ -248,12 +250,29 @@ def savings_widget():
             f"<div class='bt-card'><b>{_esc(amount)}</b>"
             f" saved per year <span class='bt-muted'>{_esc(currency)}</span></div>"
         )
+    for currency, saved in totals.get("once_by_currency", {}).items():
+        amount = (
+            render.money_text(saved, None, currency)
+            if len(currency) == 3 and currency.isalpha()
+            else str(saved)
+        )
+        rows.append(
+            f"<div class='bt-card'><b>{_esc(amount)}</b>"
+            f" saved once <span class='bt-muted'>{_esc(currency)}</span></div>"
+        )
     for pack, amounts in totals["by_pack"].items():
         parts = ", ".join(
             f"{_esc(c)} {_esc(v)}" for c, v in amounts.items()
         )
         rows.append(
             f"<div class='bt-muted'>{_esc(pack)}: {parts}</div>"
+        )
+    for pack, amounts in totals.get("once_by_pack", {}).items():
+        parts = ", ".join(
+            f"{_esc(c)} {_esc(v)} once" for c, v in amounts.items()
+        )
+        rows.append(
+            f"<div class='bt-muted'>{_esc(pack)} (once): {parts}</div>"
         )
     n = totals["cases"]
     summary = f"{n} case{'s' if n != 1 else ''} recorded"

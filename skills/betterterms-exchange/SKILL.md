@@ -46,7 +46,7 @@ The full turn procedure is in `references/turn-procedure.md`. Follow it.
   returns, verbatim.
 - `gate.json` in the case folder: the last gate response verbatim
   (`{result, reasons, rendered}`, plus `hash` on `needs_approval`),
-  saved on every gate call, blocks included.
+  saved on every gate call, blocks included. Read it; never write it.
 - One appended entry per message in `thread.md`, stamped `in` or `out`
   with ISO time and `approved_by_user: yes|no`.
 
@@ -122,7 +122,9 @@ or ask for their offer when it is not. Then gate, send, and log as below.
      changed text or a second send is held again. With the mod
      loaded the send check handles the re-gate itself: approve the
      draft, then send the held text verbatim and do not re-run the
-     gate yourself.
+     gate yourself. A record `held list` reports as `legacy: true`
+     was held by an older version and cannot be approved: re-run the
+     gate on `draft.yaml` to hold it under the current hash.
    - Exit 1, `block`: when the reason is "outside your limits; escalate
      to the user", escalate to the user and do not redraft toward a
      guessed limit. When the reason is "the message contains your

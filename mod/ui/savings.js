@@ -12,7 +12,9 @@ import * as IO from "../lib/hostio.js";
 import { money, savedText } from "../lib/approvals.js";
 
 // ledger.jsonl lines -> records the chart needs. Junk lines skip.
-// currency defaults to USD, matching `bt ledger add`.
+// currency defaults to USD, matching `bt ledger add`. saved_once
+// stays its own field: a one-time saving never enters the per-year
+// series.
 export function parseRecords(text) {
   const out = [];
   for (const line of String(text ?? "").split(/\r?\n/)) {
@@ -20,10 +22,13 @@ export function parseRecords(text) {
     try {
       const r = JSON.parse(line);
       const saved = Number(r?.saved_per_year);
-      if (!r || typeof r.case_id !== "string" || !Number.isFinite(saved)) continue;
+      const once = Number(r?.saved_once);
+      if (!r || typeof r.case_id !== "string"
+          || (!Number.isFinite(saved) && !Number.isFinite(once))) continue;
       out.push({
         case_id: r.case_id,
-        saved_per_year: saved,
+        saved_per_year: Number.isFinite(saved) ? saved : 0,
+        saved_once: Number.isFinite(once) ? once : 0,
         currency: typeof r.currency === "string" && r.currency !== "" ? r.currency : "USD",
         recorded_at: r.recorded_at ?? null,
       });
@@ -38,6 +43,16 @@ export function byCurrency(records) {
   for (const r of records) {
     const cur = r.currency || "USD";
     out[cur] = (out[cur] ?? 0) + r.saved_per_year;
+  }
+  return out;
+}
+
+// currency -> summed saved_once, the one-time counterpart.
+export function onceByCurrency(records) {
+  const out = {};
+  for (const r of records) {
+    const cur = r.currency || "USD";
+    if (r.saved_once) out[cur] = (out[cur] ?? 0) + r.saved_once;
   }
   return out;
 }
@@ -98,6 +113,7 @@ export async function savingsData(host, snap) {
     total = {
       cases: records.length,
       by_currency: byCurrency(records),
+      once_by_currency: onceByCurrency(records),
     };
   }
   return { total, records };
@@ -119,7 +135,7 @@ function chartModel(data) {
 // weekly cumulative, a baseline. Colors are muted, labels live in the
 // summary line beneath.
 function svgChart(data) {
-  const { wks, bars, maxBar, maxCum } = chartModel(data);
+  const { wks, bars, maxBar, maxCum, currency } = chartModel(data);
   const W = 240;
   const H = 72;
   const top = 6;
@@ -148,7 +164,7 @@ function svgChart(data) {
     "</svg>";
   return {
     source,
-    alt: `savings over ${wks.length} weeks, one bar per closed case`,
+    alt: `savings over ${wks.length} weeks in ${currency}, one bar per closed case`,
   };
 }
 
@@ -216,7 +232,12 @@ export function savingsBody(el, data, surface) {
   const recSums = byCurrency(data.records);
   const byCur = data?.total?.by_currency ?? {};
   const sums = Object.keys(byCur).length ? byCur : recSums;
-  rows.push(h(Text, { key: "sav-total" }, `saved ${savedText(sums)}`));
+  const onceSums = data?.total?.once_by_currency ?? onceByCurrency(data.records);
+  const oncePart = Object.keys(onceSums)
+    .map((k) => `${money(k, onceSums[k])} once`)
+    .join(" · ");
+  rows.push(h(Text, { key: "sav-total" },
+    `saved ${savedText(sums)}${oncePart === "" ? "" : ` · ${oncePart}`}`));
   const m = chartModel(data);
   if (surface === "desktop" && el.Svg) {
     const { source, alt } = svgChart(data);
@@ -236,9 +257,11 @@ export function savingsBody(el, data, surface) {
       `chart shows ${m.currency} only`));
   }
   const closed = data.records.length;
-  const walked = data.records.filter((r) => !(r.saved_per_year > 0)).length;
+  const walked = data.records
+    .filter((r) => !(r.saved_per_year > 0) && !(r.saved_once > 0)).length;
   const counts = {};
   for (const r of data.records) {
+    if (!r.saved_per_year) continue; // once-only records do not move the yearly average
     const cur = r.currency || "USD";
     counts[cur] = (counts[cur] ?? 0) + 1;
   }

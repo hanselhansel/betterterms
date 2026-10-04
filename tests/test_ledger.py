@@ -1,8 +1,9 @@
+import json
 import os
 import stat
 import unittest
 
-from bt_helpers import BtTestCase, new_case, run_bt_json
+from bt_helpers import REPO, BtTestCase, new_case, run_bt_json
 from btlib import yaml
 
 
@@ -28,19 +29,72 @@ class LedgerTest(BtTestCase):
         self.assertEqual(out["saved_per_year"], 240)
 
     def test_ledger_add_once_period(self):
-        # Review finding 11: a one-time deal is a delta taken once,
-        # not a monthly or yearly rate.
-        case_id, _ = new_case(self.home, pack="bills")
+        # A one-time deal is a delta taken once, stored as
+        # saved_once and never counted into saved_per_year.
+        case_id, case_dir = new_case(self.home, pack="bills")
         proc, out = run_bt_json(
             self.home,
             "ledger", "add", case_id,
             "--before", "1000", "--after", "900", "--period", "once",
         )
         self.assertEqual(proc.returncode, 0, proc.stdout)
-        self.assertEqual(out["saved_per_year"], 100)
+        self.assertEqual(out["saved_once"], 100)
+        self.assertNotIn("saved_per_year", out)
+        line = (self.home / "ledger.jsonl").read_text()
+        record = json.loads(line)
+        self.assertEqual(record["saved_once"], 100)
+        self.assertNotIn("saved_per_year", record)
         proc, out = run_bt_json(self.home, "ledger", "total")
-        self.assertEqual(out["by_currency"], {"USD": 100})
-        self.assertEqual(out["by_pack"], {"bills": {"USD": 100}})
+        self.assertEqual(out["by_currency"], {})
+        self.assertEqual(out["once_by_currency"], {"USD": 100})
+        self.assertEqual(out["by_pack"], {})
+        self.assertEqual(
+            out["once_by_pack"], {"bills": {"USD": 100}}
+        )
+
+    def test_once_and_yearly_total_separately(self):
+        c1, _ = new_case(self.home, pack="bills")
+        c2, _ = new_case(self.home, pack="subscriptions")
+        run_bt_json(
+            self.home, "ledger", "add", c1,
+            "--before", "80", "--after", "60", "--period", "month",
+        )
+        run_bt_json(
+            self.home, "ledger", "add", c2,
+            "--before", "1000", "--after", "900", "--period", "once",
+        )
+        proc, out = run_bt_json(self.home, "ledger", "total")
+        self.assertEqual(proc.returncode, 0, proc.stdout)
+        self.assertEqual(out["by_currency"], {"USD": 240})
+        self.assertEqual(out["once_by_currency"], {"USD": 100})
+
+    def test_record_without_currency_counts_as_unknown(self):
+        # A line with no currency field is reported under "unknown",
+        # never guessed into USD or dropped.
+        case_id, _ = new_case(self.home)
+        run_bt_json(
+            self.home, "ledger", "add", case_id,
+            "--before", "80", "--after", "60", "--period", "month",
+        )
+        ledger = self.home / "ledger.jsonl"
+        ledger.write_text(
+            ledger.read_text()
+            + '{"case_id": "old-1", "pack": "p", "saved_per_year": 10}\n'
+            + '{"case_id": "old-2", "pack": "p", "saved_once": 30}\n'
+        )
+        proc, out = run_bt_json(self.home, "ledger", "total")
+        self.assertEqual(proc.returncode, 0, out)
+        self.assertEqual(
+            out["by_currency"], {"USD": 240, "unknown": 10}
+        )
+        self.assertEqual(
+            out["once_by_currency"], {"unknown": 30}
+        )
+
+    def test_usage_line_names_once(self):
+        # The usage block documents every period ledger add accepts.
+        text = (REPO / "skills/betterterms-guardrails/scripts/bt.py").read_text()
+        self.assertIn("--period once|month|year", text)
 
     def test_ledger_add_receive_direction(self):
         case_id, _ = new_case(self.home, pack="job-offer", direction="receive")

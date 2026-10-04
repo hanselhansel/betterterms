@@ -156,6 +156,28 @@ class SavingsWidgetTest(WidgetCase):
         self.assertIn("120", html)
         self.assertIn("saved", html)
 
+    def test_savings_widget_shows_once_separately(self):
+        # A one-time saving is never folded into the per-year figure:
+        # it displays as its own "$N once" amount.
+        c1, _ = self.make_case("bills-0001")
+        c2, _ = self.make_case("bills-0002")
+        for cid, before, after, period in (
+            (c1, "90", "80", "month"),
+            (c2, "1000", "900", "once"),
+        ):
+            proc, out = run_bt_json(
+                self.home, "ledger", "add", cid,
+                "--before", before, "--after", after,
+                "--period", period,
+            )
+            assert proc.returncode == 0, out
+        proc, out = self.widget("savings")
+        self.assertEqual(proc.returncode, 0, out)
+        html = out["html"]
+        self.assertIn("120", html)
+        self.assertIn("once", html)
+        self.assertIn("100", html)
+
 
 class WidgetShapeTest(WidgetCase):
     def all_widgets(self, case_id, h=None):

@@ -71,7 +71,7 @@ export function hostOf($) {
 
 // Exported for the unit suites (they drive the same facade the engine
 // sees): the scan every hook shares and the pane's action set.
-export const scanCases = ($) => W.scanCases(hostOf($));
+export const scanCases = ($) => S.scanCases(hostOf($));
 export const paneActions = ($, snap) => W.paneActions(hostOf($), snap);
 
 // Strings worth scanning: long enough to carry a draft, or naming a case id.
@@ -92,7 +92,7 @@ export function register(on) {
     const strings = C.collectStrings(C.callArgs(e));
     if (!plausible(strings)) return next(e);
     const host = hostOf($);
-    const snap = await W.scanCases(host);
+    const snap = await S.scanCases(host);
     if (snap.cases.length === 0) return next(e);
     if (await W.isCaseWrite(host, snap, e)) return next(e);
     const hit = C.findSend(strings, snap.cases);
@@ -115,7 +115,7 @@ export function register(on) {
     const host = hostOf($);
     // A redraw or drag storm may call this many times inside the
     // burst window; the scan is fingerprint-cached anyway.
-    const snap = await W.scanCases(host, { burst: true }).catch(() => A.EMPTY_SNAP);
+    const snap = await S.scanCases(host, { burst: true }).catch(() => A.EMPTY_SNAP);
     const counts = {
       held: C.heldTotal(snap.cases),
       pending: C.pendingWithoutHeld(snap.cases),
@@ -130,7 +130,7 @@ export function register(on) {
   on("ui.render", { component: "Pane", requestId: PANE_ID }, async ($, e) => {
     const el = $.ui.resolve(e);
     const host = hostOf($);
-    const snap = await W.scanCases(host, { burst: true }).catch(() => A.EMPTY_SNAP);
+    const snap = await S.scanCases(host, { burst: true }).catch(() => A.EMPTY_SNAP);
     const act = W.paneActions(host, snap);
     const view = {
       tab: await W.getTab(host),

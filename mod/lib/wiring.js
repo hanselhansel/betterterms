@@ -10,7 +10,7 @@ import * as A from "./approvals.js";
 import * as IO from "./hostio.js";
 import * as T from "../ui/terms.js";
 import * as V from "../ui/savings.js";
-import { scanCases as scan } from "./scan.js";
+import { scanCases } from "./scan.js";
 
 const PANE_ID = "betterterms";
 const POLL_MS = 3000;
@@ -21,10 +21,6 @@ const seen = new Map();
 const replied = new Set();
 let lastPrint = "";
 let lastStatus = "";
-
-// The case scan lives in lib/scan.js behind stat-fingerprint caching;
-// `burst` reuses the snapshot inside a redraw storm.
-export const scanCases = scan;
 
 // A write whose path resolves inside a case dir is bookkeeping, not a
 // send; the resolve stops a link under cases/ masquerading as one.
@@ -271,7 +267,7 @@ export async function tick(host) {
     // Once the agent answers, the case drops out of the band's reply bit.
     if (c.lastDir === "out") replied.delete(c.id);
   }
-  const status = A.statusText(snap.cases.length, snap.saved);
+  const status = A.statusText(snap.cases.length, snap.saved, snap.savedOnce);
   if (snap.home !== null && status !== lastStatus) {
     lastStatus = status;
     host.status(status);
@@ -306,7 +302,7 @@ export async function sessionStart(host, e, next) {
   lastPrint = "";
   lastStatus = "";
   if (snap.home !== null) {
-    lastStatus = A.statusText(snap.cases.length, snap.saved);
+    lastStatus = A.statusText(snap.cases.length, snap.saved, snap.savedOnce);
     host.status(lastStatus);
   }
   host.every(POLL_MS, () => tick(host).catch(() => {}));

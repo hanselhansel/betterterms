@@ -222,12 +222,15 @@ export function parseThread(text) {
   return entries;
 }
 
-// saved stays a per-currency map: USD and EUR never sum into one
-// figure (finding 12). A record without a currency counts as USD,
-// matching bt.py ledger add's default.
+// `saved` and `once` stay per-currency maps: USD and EUR never sum
+// into one figure (finding 12), and a one-time saving (saved_once,
+// from `ledger add --period once`) never inflates the per-year
+// totals. A record without a currency counts as USD, matching
+// bt.py ledger add's default.
 export function parseLedger(text) {
   const closed = new Set();
   const saved = {};
+  const once = {};
   for (const line of String(text ?? "").split(/\r?\n/)) {
     const s = line.trim();
     if (!s) continue;
@@ -235,15 +238,15 @@ export function parseLedger(text) {
     try { rec = JSON.parse(s); } catch { continue; }
     if (rec && typeof rec === "object") {
       if (typeof rec.case_id === "string") closed.add(rec.case_id);
+      const cur = typeof rec.currency === "string" && rec.currency !== ""
+        ? rec.currency : "USD";
       const v = Number(rec.saved_per_year);
-      if (Number.isFinite(v)) {
-        const cur = typeof rec.currency === "string" && rec.currency !== ""
-          ? rec.currency : "USD";
-        saved[cur] = (saved[cur] ?? 0) + v;
-      }
+      if (Number.isFinite(v)) saved[cur] = (saved[cur] ?? 0) + v;
+      const o = Number(rec.saved_once);
+      if (Number.isFinite(o)) once[cur] = (once[cur] ?? 0) + o;
     }
   }
-  return { closed, saved };
+  return { closed, saved, once };
 }
 
 export function safeCaseId(name) {
