@@ -60,9 +60,9 @@ I can pay $1,000 a year for this plan. If that works, say the word and I will se
 `;
 
 export const LEDGER = [
-  '{"case_id":"bills-20260901-aaaa","saved_per_year":240,"pack":"bills"}',
+  '{"case_id":"bills-20260901-aaaa","saved_per_year":240,"pack":"bills","currency":"USD"}',
   "not json",
-  '{"case_id":"offer-20260902-bbbb","saved_per_year":1200,"pack":"offers"}',
+  '{"case_id":"offer-20260902-bbbb","saved_per_year":1200,"pack":"offers","currency":"USD"}',
 ].join("\n");
 
 export const CASE_ID = "bills-20261003-a1b2";

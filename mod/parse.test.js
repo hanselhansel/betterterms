@@ -73,12 +73,12 @@ describe("parseLedger", () => {
     assert.deepEqual(saved, { USD: 1440 });
   });
 
-  test("sums stay per currency; a missing currency is USD", () => {
+  test("sums stay per currency; a missing currency is unknown", () => {
     const { saved } = parseLedger([
       '{"case_id":"a-20260101-aaaa","saved_per_year":240,"currency":"EUR"}',
       '{"case_id":"b-20260101-bbbb","saved_per_year":1200}',
     ].join("\n"));
-    assert.deepEqual(saved, { EUR: 240, USD: 1200 });
+    assert.deepEqual(saved, { EUR: 240, unknown: 1200 });
   });
 
   test("one-time savings land in once, never in the yearly sums", () => {
@@ -89,7 +89,7 @@ describe("parseLedger", () => {
       '{"case_id":"d-20260101-dddd","saved_once":"not a number"}',
     ].join("\n"));
     assert.equal(closed.has("a-20260101-aaaa"), true);
-    assert.deepEqual(saved, { USD: 1200 });
-    assert.deepEqual(once, { EUR: 100, USD: 50 });
+    assert.deepEqual(saved, { unknown: 1200 });
+    assert.deepEqual(once, { EUR: 100, unknown: 50 });
   });
 });

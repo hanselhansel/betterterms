@@ -34,7 +34,7 @@ const HELD_REC = {
   reasons: ["action 'cancel' requires --approved"],
   held_at: '2026-10-04T12:00:00+00:00',
 };
-const LEDGER = '{"case_id":"x-20260101-aaaa","saved_per_year":1440}\n';
+const LEDGER = '{"case_id":"x-20260101-aaaa","saved_per_year":1440,"currency":"USD"}\n';
 
 type Files = Record<string, string>;
 type Dirs = Record<string, unknown[]>;

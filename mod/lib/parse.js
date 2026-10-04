@@ -225,8 +225,8 @@ export function parseThread(text) {
 // `saved` and `once` stay per-currency maps: USD and EUR never sum
 // into one figure (finding 12), and a one-time saving (saved_once,
 // from `ledger add --period once`) never inflates the per-year
-// totals. A record without a currency counts as USD, matching
-// bt.py ledger add's default.
+// totals. A record without a currency lands in `unknown`, matching
+// `bt.py ledger total`, which never guesses one.
 export function parseLedger(text) {
   const closed = new Set();
   const saved = {};
@@ -239,7 +239,7 @@ export function parseLedger(text) {
     if (rec && typeof rec === "object") {
       if (typeof rec.case_id === "string") closed.add(rec.case_id);
       const cur = typeof rec.currency === "string" && rec.currency !== ""
-        ? rec.currency : "USD";
+        ? rec.currency : "unknown";
       const v = Number(rec.saved_per_year);
       if (Number.isFinite(v)) saved[cur] = (saved[cur] ?? 0) + v;
       const o = Number(rec.saved_once);
