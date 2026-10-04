@@ -2,23 +2,37 @@
 """PreToolUse guard (spec 6.8), best effort.
 
 Scoped to the betterterms data folder (``$BETTERTERMS_HOME``, default
-``~/.betterterms``). A tool call whose input names a path under that
-home is denied, with two exceptions: the case files the skills write
-themselves (``brief.yaml``, ``plan.yaml``, ``draft.yaml``,
-``inbound.yaml``, ``gate.json``, ``thread.md``, ``sources/*``), and a
-Bash command that is one whole ``bt.py`` invocation. ``.floor``,
-``held/``, ``ledger.jsonl`` and ``config.yaml`` stay denied either
-way, and ``held approve``, ``held reject`` and ``case set-floor``
-spelled as bt.py commands are denied outright: those are user
-actions, not agent ones. The session transcript's own ``*.jsonl``
-files are denied; the folder itself and ``memory/`` under it are
-not. Outside the home nothing applies, so an unrelated project's
-``held/`` or ``.floor`` is untouched.
+``~/.betterterms``). Only path-bearing input fields are scanned --
+``file_path``, ``path``, ``notebook_path``, the ``pattern``/``glob``
+selectors and the Bash ``command``/``argv`` -- never free-text fields
+like ``content``, ``prompt`` or ``description``, and no shell syntax
+is parsed: the raw text itself decides.
 
-Text is normalized before matching: quotes, backslashes and
-``$IFS``-style splits collapse, ``~`` and ``$HOME``-style variables
-expand, and ``..`` segments resolve, so a disguised path cannot slip
-past. The guard is best effort: outside the mod the agent runs as the
+A file path under the home passes only for reads of the skills' own
+case files (``brief.yaml``, ``plan.yaml``, ``draft.yaml``,
+``inbound.yaml``, ``gate.json``, ``thread.md``, ``sources/*``) and of
+user drops in ``cases/<id>/inbox/``, and for writes to the files the
+agent owns (``draft.yaml``, ``inbound.yaml``, ``thread.md``,
+``sources/*``). ``gate.json`` is read-only: ``bt.py gate`` writes it.
+``.floor``, ``held/``, ``ledger.jsonl`` and ``config.yaml`` are
+private to bt.py at any depth, and everything else under the home is
+denied. The session transcript's own ``*.jsonl`` files are denied;
+the folder itself and ``memory/`` under it are not. Outside the home
+nothing applies, so an unrelated project's ``held/`` or ``.floor``
+file is untouched.
+
+A command that names the home in any spelling (its absolute path,
+``~/.betterterms``, ``$BETTERTERMS_HOME``, the ``.betterterms``
+basename) or any of ``held``, ``.floor``, ``set-floor``, ``bt.py`` is
+allowed only as one whole raw
+``python3 <.../betterterms-guardrails/scripts/bt.py> <args>`` call
+whose characters stay inside [A-Za-z0-9._/=:@+,-] and single spaces.
+``held approve``, ``held reject`` and ``case set-floor`` are user
+actions and deny even inside the strict shape; variables, globs,
+quotes, separators, newlines, ``$(``, backticks, ``cd``, pipes and
+redirects are all outside the shape, so they deny.
+
+The guard is best effort: outside the mod the agent runs as the
 user, so a determined one can still reach the data; only the mod's
 in-memory approval resists that. Input the guard cannot parse lets
 the call through: a broken guard must not wedge every tool call.
@@ -32,66 +46,52 @@ from pathlib import Path
 
 _CASE_ID = re.compile(r"[a-z0-9-]+")
 
-# Commands only a user action may run; anywhere they appear, deny.
-_USER_ONLY = re.compile(
-    r"\bbt(?:\.py)?\s+(?:held\s+(?:approve|reject)|case\s+set-floor)\b",
-    re.I,
-)
-
-# A command that is only a bt.py call: optional VAR=value prefixes and
-# a python launcher, the bt.py path, then arguments -- but no shell
-# chaining, piping or redirection.
-_BT_WHOLE = re.compile(
-    r"^\s*(?:\w+=\S+\s+)*(?:python[\d.]*\s+)?\S*?/?bt\.py"
-    r"(?:\s+[^;&|<>]*)?\s*$",
-    re.I,
-)
-
-_TOKENS = re.compile(r"[\s;|&<>=(){}]+")
-
-# The names inside a case folder the agent reads and writes itself.
-_CASE_FILES = {
-    "brief.yaml",
-    "plan.yaml",
-    "draft.yaml",
-    "inbound.yaml",
-    "gate.json",
-    "thread.md",
+# Path-bearing tool_input fields. Free-text fields are never scanned.
+_PATH_KEYS = ("file_path", "path", "notebook_path")
+_SELECTOR_KEYS = ("pattern", "glob")
+_COMMAND_KEYS = ("command", "argv")
+_FREE_KEYS = {
+    "content", "new_string", "old_string", "description", "prompt",
 }
 
-# Under the home these never pass, not even as a bt.py argument:
-# the walk-away file, the held-draft records and approval markers,
-# the savings ledger and the user config.
-_PROTECTED_NAMES = {"ledger.jsonl", "config.yaml"}
+# Tools that only read; any other tool touching a path under the home
+# is judged by the write allowlist.
+_READ_TOOLS = {"Read", "Glob", "Grep", "LS"}
+
+# The names inside a case folder. gate.json is verdict output: reads
+# are fine, writes belong to bt.py gate alone. ``inbox/`` holds user
+# drops: the agent reads them, never writes them.
+_READ_FILES = {
+    "brief.yaml", "plan.yaml", "draft.yaml", "inbound.yaml",
+    "gate.json", "thread.md",
+}
+_READ_DIRS = {"sources", "inbox"}
+_WRITE_FILES = {"draft.yaml", "inbound.yaml", "thread.md"}
+_WRITE_DIRS = {"sources"}
+
+# Under the home these never pass in a path field, at any depth.
+_PRIVATE_NAMES = {"held", ".floor", "ledger.jsonl", "config.yaml"}
+
+# A command naming the home in any spelling, or any of these names,
+# is allowed only as the strict bt.py shape below.
+_MARKERS = (
+    "held", ".floor", "set-floor", "bt.py", ".betterterms",
+    "$betterterms_home", "${betterterms_home}",
+)
+
+_SAFE = r"[A-Za-z0-9._/=:@+,-]"
+_BT_CALL = re.compile(rf"python3 {_SAFE}+( {_SAFE}+)*")
+_BT_SUFFIX = "/betterterms-guardrails/scripts/bt.py"
+_USER_ONLY = {
+    ("held", "approve"), ("held", "reject"), ("case", "set-floor"),
+}
 
 
-def _normalize(text):
-    """Collapse quoting tricks before matching: ``$IFS`` variants to
-    spaces, quotes and backslashes away, whitespace runs to one."""
-    t = re.sub(r"\$\{IFS[^}]*\}|\$IFS\b", " ", text)
-    t = t.replace("\\", "").replace("'", "").replace('"', "")
-    t = t.replace("`", "")
-    return re.sub(r"\s+", " ", t)
-
-
-def _strings(value):
-    """Every string inside a tool_input structure."""
-    if isinstance(value, str):
-        yield value
-    elif isinstance(value, dict):
-        for v in value.values():
-            yield from _strings(v)
-    elif isinstance(value, (list, tuple)):
-        yield " ".join(str(v) for v in value)
-        for v in value:
-            yield from _strings(v)
-
-
-def _expand(token, cwd, home):
-    """Resolve ``token`` to an absolute path guess: our env vars and
-    ``~`` expand, relative tokens join the call's cwd, and ``..`` and
-    ``.`` segments normalize out."""
-    t = token
+def _resolve(text, cwd, home):
+    """Resolve a path-field value: our env vars and ``~`` expand,
+    relative values join the call's cwd, and ``..``/``.`` segments
+    normalize out."""
+    t = text
     for var, val in (
         ("${BETTERTERMS_HOME}", home),
         ("$BETTERTERMS_HOME", home),
@@ -108,38 +108,128 @@ def _expand(token, cwd, home):
     return os.path.normpath(t)
 
 
-def _classify(path, homes):
-    """``protected`` / ``file`` / ``other`` for a path under the
-    betterterms home, or None when it is outside every spelling."""
-    for home in homes:
-        if path == home:
-            return "other"
-        if not path.startswith(home + "/"):
-            continue
-        rel = path[len(home) + 1:]
-        parts = rel.split("/")
-        if "held" in parts or ".floor" in parts:
-            return "protected"
-        if rel in _PROTECTED_NAMES:
-            return "protected"
-        if (
-            len(parts) >= 3
-            and parts[0] == "cases"
-            and _CASE_ID.fullmatch(parts[1])
-            and (
-                (len(parts) == 3 and parts[2] in _CASE_FILES)
-                or (len(parts) == 4 and parts[2] == "sources")
-            )
-        ):
-            return "file"
-        return "other"
+def _fields(tool_input, cwd, tool):
+    """``(kind, value, read_only)`` for each path-bearing field, with
+    selectors joined onto their sibling ``path`` when one sits beside
+    them. Everything else -- free text above all -- is skipped."""
+    stack = [tool_input]
+    while stack:
+        value = stack.pop()
+        if isinstance(value, dict):
+            base = value.get("path")
+            base = base if isinstance(base, str) else cwd
+            for k, v in value.items():
+                if k in _FREE_KEYS:
+                    continue
+                if k in _SELECTOR_KEYS and isinstance(v, str):
+                    joined = v if v.startswith(("/", "~", "$")) \
+                        else f"{base.rstrip('/')}/{v}"
+                    yield "path", joined, True
+                elif k in _PATH_KEYS and isinstance(v, str):
+                    yield "path", v, tool in _READ_TOOLS
+                elif k in _COMMAND_KEYS and isinstance(v, str):
+                    yield "cmd", v, False
+                elif (
+                    k in _COMMAND_KEYS
+                    and isinstance(v, list)
+                    and all(isinstance(x, str) for x in v)
+                ):
+                    yield "cmd", " ".join(v), False
+                else:
+                    stack.append(v)
+        elif isinstance(value, list):
+            stack.extend(value)
+
+
+def _check_command(raw, homes, tdir):
+    """A deny reason for a command string, or None. The raw text is
+    matched as-is: no quoting, expansion or separator parsing."""
+    if tdir is not None and tdir in raw and ".jsonl" in raw:
+        return "betterterms: the session log is off limits"
+    low = raw.lower()
+    if not any(m in low for m in _MARKERS) and not any(
+        h.lower() in low for h in homes
+    ):
+        return None
+    deny = (
+        "betterterms: a command naming the betterterms home, held/, "
+        ".floor, set-floor or bt.py passes only as one plain "
+        "`python3 <.../betterterms-guardrails/scripts/bt.py> <args>` call"
+    )
+    if _BT_CALL.fullmatch(raw) is None:
+        return deny
+    tokens = raw.split(" ")
+    if not tokens[1].endswith(_BT_SUFFIX):
+        return deny
+    args = tokens[2:]
+    if tuple(args[:2]) in _USER_ONLY or any(
+        "set-floor" in a for a in args
+    ):
+        return (
+            "betterterms: held approve, held reject and "
+            "case set-floor run only from a user action"
+        )
     return None
 
 
-def _transcript(event):
-    """``(dir, file)`` for the session transcript; the dir is only
-    trusted when it is deep enough to be a real session location, and
-    only direct ``*.jsonl`` children of it are off limits."""
+def _check_path(text, cwd, home, homes, tdir, transcript, read_only):
+    """A deny reason for a resolved path field, or None."""
+    resolved = _resolve(text, cwd, home)
+    if _is_transcript(resolved, tdir, transcript):
+        return "betterterms: the session log is off limits"
+    rel = None
+    for h in homes:
+        if resolved == h:
+            rel = ""
+            break
+        if resolved.startswith(h + "/"):
+            rel = resolved[len(h) + 1:]
+            break
+    if rel is None:
+        return None
+    parts = rel.split("/")
+    if any(p in _PRIVATE_NAMES for p in parts):
+        return (
+            "betterterms: .floor, held/ records, ledger.jsonl and "
+            "config.yaml are private to bt.py"
+        )
+    ok = False
+    if (
+        len(parts) >= 3
+        and parts[0] == "cases"
+        and _CASE_ID.fullmatch(parts[1])
+    ):
+        inner = parts[2:]
+        if read_only:
+            ok = (len(inner) == 1 and inner[0] in _READ_FILES) or \
+                inner[0] in _READ_DIRS
+        else:
+            ok = (len(inner) == 1 and inner[0] in _WRITE_FILES) or (
+                inner[0] in _WRITE_DIRS and len(inner) >= 2
+            )
+    if ok:
+        return None
+    if read_only:
+        return (
+            "betterterms: reads under the home reach only the case "
+            "files and cases/<id>/inbox/ drops"
+        )
+    return (
+        "betterterms: writes under the home land only on draft.yaml, "
+        "inbound.yaml, thread.md and sources/"
+    )
+
+
+def _is_transcript(resolved, tdir, transcript):
+    if transcript is not None and resolved == transcript:
+        return True
+    if tdir is None or not resolved.startswith(tdir + "/"):
+        return False
+    rel = resolved[len(tdir) + 1:]
+    return "/" not in rel and rel.endswith(".jsonl")
+
+
+def _transcript_dir(event):
     raw = event.get("transcript_path")
     if not isinstance(raw, str) or not raw:
         return None, None
@@ -148,59 +238,6 @@ def _transcript(event):
     if len(Path(parent).parts) < 3:
         return None, path
     return parent, path
-
-
-def _is_transcript(path, tdir, transcript):
-    if transcript is not None and path == transcript:
-        return True
-    if tdir is None or not path.startswith(tdir + "/"):
-        return False
-    rel = path[len(tdir) + 1:]
-    return "/" not in rel and rel.endswith(".jsonl")
-
-
-def _pathish(token):
-    """A token worth resolving as a path: separators, expansions or
-    a dot mark it, or it is a bare ``held``/``cases`` name that only
-    matters when the call already runs inside the home."""
-    return (
-        "/" in token
-        or "." in token
-        or token.startswith(("~", "$"))
-        or token in ("held", "cases")
-    )
-
-
-def _check(text, cwd, homes, tdir, transcript):
-    """A deny reason for one input string, or None."""
-    norm = _normalize(text)
-    if _USER_ONLY.search(norm):
-        return (
-            "betterterms: held approve, held reject and "
-            "case set-floor run only from a user action"
-        )
-    whole_bt = _BT_WHOLE.fullmatch(norm) is not None
-    names_home = False
-    for tok in _TOKENS.split(norm):
-        if not _pathish(tok):
-            continue
-        path = _expand(tok, cwd, homes[0])
-        if _is_transcript(path, tdir, transcript):
-            return "betterterms: the session log is off limits"
-        cls = _classify(path, homes)
-        if cls == "protected":
-            return (
-                "betterterms: .floor, held/ records, ledger.jsonl "
-                "and config.yaml are private to bt.py"
-            )
-        if cls == "other":
-            names_home = True
-    if names_home and not whole_bt:
-        return (
-            "betterterms: files under the betterterms home are "
-            "private to bt.py and the skills' own case files"
-        )
-    return None
 
 
 def _deny(reason):
@@ -221,7 +258,7 @@ def _homes():
     raw = os.environ.get("BETTERTERMS_HOME") or "~/.betterterms"
     base = os.path.normpath(os.path.expanduser(raw))
     real = os.path.normpath(os.path.realpath(base))
-    return [base] + ([real] if real != base else [])
+    return base, [base] + ([real] if real != base else [])
 
 
 def main():
@@ -229,11 +266,23 @@ def main():
         event = json.loads(sys.stdin.read() or "{}")
     except json.JSONDecodeError:
         return 0
-    homes = _homes()
+    if not isinstance(event, dict):
+        return 0
+    tool_input = event.get("tool_input")
+    if not isinstance(tool_input, dict):
+        return 0
     cwd = str(event.get("cwd") or "/")
-    tdir, transcript = _transcript(event)
-    for s in _strings(event.get("tool_input")):
-        reason = _check(s, cwd, homes, tdir, transcript)
+    tool = event.get("tool_name")
+    tool = tool if isinstance(tool, str) else ""
+    home, homes = _homes()
+    tdir, transcript = _transcript_dir(event)
+    for kind, value, read_only in _fields(tool_input, cwd, tool):
+        if kind == "cmd":
+            reason = _check_command(value, homes, tdir)
+        else:
+            reason = _check_path(
+                value, cwd, home, homes, tdir, transcript, read_only
+            )
         if reason is not None:
             _deny(reason)
             return 0
