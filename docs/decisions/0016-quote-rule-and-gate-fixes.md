@@ -22,16 +22,21 @@ A. Quoting is not offering (spec 4.4). `{quote:n}` renders the n-th
    unconvertible-period check on any action (it used to keep only a
    `send` carve-out). It may still not equal the floor: a rendered
    value equal to the walk-away number leaks it regardless of who
-   wrote it. The counterparty's own text can carry their numbers
-   back to them, so verbatim spans join `find.quote_spans` and the
-   `never_disclose` checks still read them.
+   wrote it. A verbatim string quote is NOT masked for the review
+   tier: inbound.yaml is written by the agent, not by the
+   counterparty, so the words it carries are the agent's to vouch
+   for and every review rule (digits, commitment wording, unusual
+   characters, the allowlist) applies to them exactly as to the
+   agent's own text. Masking them would let a smuggled string bypass
+   review entirely.
 
 B. A `never_disclose` item with letters is a hard block wherever it
-   appears in the rendered text, quote spans included. A listed term
-   is never a coincidence, so routing it to review would only offer
-   a rubber stamp. Numeric items stay review-tier: they compare
-   against fused digit runs, rendered placeholder values, and the
-   amounts inside quote spans (`quotes.quote_amounts`).
+   appears in the rendered text, verbatim quote text included. A
+   listed term is never a coincidence, so routing it to review would
+   only offer a rubber stamp. Numeric items stay review-tier: they
+   compare against fused digit runs (which now include quote text,
+   since string quotes stay in the masked scan) and rendered
+   placeholder values.
 
 C. A `period` key present but null on an option, a ladder step, a
    fact, the plan, the brief or the inbound file is a broken file:
@@ -65,7 +70,7 @@ F. Shipped templates pass their own gate (spec 4.3).
 ## Layout
 
 `btlib/quotes.py` owns the quote-amount rule (`check_values`,
-`converted_match`, `floor_digits`, `quote_amounts`) so `gate.py`
+`converted_match`, `floor_digits`) so `gate.py`
 stays under the file cap; the floor helpers it shares
 (`worse`, `same`, `in_floor_period`) moved with it. `review.py`
 keeps the text scan plus the lettered-item `disclosed` probe the

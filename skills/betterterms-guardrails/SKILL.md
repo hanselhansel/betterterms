@@ -69,7 +69,10 @@ through placeholders the gate renders itself:
   counterparty's words verbatim. A quote is never the agent's
   offer, so it never meets the worse-than-floor or
   unconvertible-period check on any action; it may still not equal
-  the floor, and the `never_disclose` checks still read it.
+  the floor, and the `never_disclose` checks still read it. A
+  verbatim string is reviewed like the agent's own text, because
+  inbound.yaml is agent-written: digits, commitment wording and the
+  rest of the review allowlist all apply to it.
 - Anything else inside braces blocks, naming the placeholder.
 
 The gate has two tiers. Hard blocks are code guarantees and fail
@@ -118,12 +121,13 @@ Hard blocks, in order:
 9. A claim id missing from `plan.yaml` facts: block. `{fact:<id>}`
    placeholders claim the id automatically.
 10. A `never_disclose` item with letters anywhere in the rendered
-    text, verbatim quote spans included: block. A listed term is
+    text, verbatim quote text included: block. A listed term is
     never a coincidence, so it is not a review item.
 
 The review tier scans the rendered message with every non-fact
-placeholder output replaced by a mask sentinel (fact text stays
-visible and is scanned by the same rules). It does not try to prove
+placeholder output replaced by a mask sentinel (fact text and
+verbatim string quotes stay visible and are scanned by the same
+rules). It does not try to prove
 free text is safe: it runs an allowlist, so anything unusual routes
 to the user. A hit returns `needs_approval` with a plain-word reason
 that carries no numbers:
@@ -156,8 +160,8 @@ that carries no numbers:
   "no longer works for me" does not route.
 - Any `never_disclose` term, matched on normalized text with format
   characters stripped; numeric items match fused digit runs in the
-  text and also compare against rendered placeholder values and the
-  amounts inside verbatim quote spans. An item with letters is a
+  text and also compare against rendered placeholder values. An
+  item with letters is a
   hard block (rule 10 above), so this review hit only ever reports
   for numeric items.
 - A rendered non-offer value equal to the floor only after an x12 or

@@ -3,10 +3,12 @@
 A ``{quote:n}`` restates what the counterparty wrote, so its amount is
 never the agent's offer: the worse-than-floor and unconvertible-period
 checks never reach a quote on any action. A string entry in the
-inbound ``amounts`` list renders their words verbatim and is still
-checked against ``never_disclose`` (a listed term inside a quote is a
-hard block). A rendered quote equal to the floor still blocks, and
-every rule outside quotes is unchanged.
+inbound ``amounts`` list renders their words verbatim, and because
+inbound.yaml is written by the agent the verbatim text is reviewed
+like the agent's own: digits, commitment wording and every other
+review rule apply, and a listed ``never_disclose`` term inside a
+quote is a hard block. A rendered quote equal to the floor still
+blocks, and every rule outside quotes is unchanged.
 """
 
 import unittest
@@ -94,16 +96,61 @@ class QuoteNotAnOfferTest(QuoteRuleCase):
 class VerbatimQuoteTest(QuoteRuleCase):
     def test_quote_renders_inbound_text_verbatim(self):
         # A string amounts entry is the counterparty's words as they
-        # wrote them, not a reformatted price.
+        # wrote them, not a reformatted price. A clean string passes;
+        # one carrying digits still renders untouched in the text the
+        # user approves.
         case_id = self.quote_case()
+        proc, out = self.gate(
+            case_id,
+            send_draft(offer=50, template="you said {quote:1}"),
+            inbound=inbound_msg(text="as discussed",
+                                amounts=["as discussed"]),
+        )
+        self.assertEqual(proc.returncode, 0, out)
+        self.assertIn("as discussed", out["rendered"])
         proc, out = self.gate(
             case_id,
             send_draft(offer=50, template="you said {quote:1}"),
             inbound=inbound_msg(text="CHF 90 flat",
                                 amounts=["CHF 90 flat"]),
         )
-        self.assertEqual(proc.returncode, 0, out)
+        self.assertEqual(proc.returncode, 3, out)
         self.assertIn("CHF 90 flat", out["rendered"])
+
+    def test_string_quote_digits_need_approval(self):
+        # inbound.yaml is written by the agent, so a verbatim string
+        # is agent-authored text: digits inside it route to the user
+        # like digits anywhere else, at autonomy 3 and 4.
+        for autonomy in (3, 4):
+            case_id = self.quote_case(brief={"autonomy": autonomy})
+            proc, out = self.gate(
+                case_id,
+                send_draft(offer=50, template="you said {quote:1}"),
+                inbound=inbound_msg(text="the rate is 75",
+                                    amounts=["the rate is 75"]),
+            )
+            with self.subTest(autonomy=autonomy):
+                self.assertEqual(proc.returncode, 3, out)
+                self.assertEqual(out["result"], "needs_approval")
+                self.assertIn(
+                    "numbers in the message", out["reasons"])
+
+    def test_string_quote_commitment_words_need_approval(self):
+        # Same layer, different rule: commitment wording inside a
+        # verbatim string is the agent's to vouch for too.
+        for autonomy in (3, 4):
+            case_id = self.quote_case(brief={"autonomy": autonomy})
+            proc, out = self.gate(
+                case_id,
+                send_draft(offer=50, template="you said {quote:1}"),
+                inbound=inbound_msg(text="yes, i agree",
+                                    amounts=["yes, i agree"]),
+            )
+            with self.subTest(autonomy=autonomy):
+                self.assertEqual(proc.returncode, 3, out)
+                self.assertEqual(out["result"], "needs_approval")
+                self.assertIn(
+                    "commitment", " ".join(out["reasons"]))
 
     def test_quote_checked_against_never_disclose(self):
         # A verbatim quote is still their words: a listed term inside

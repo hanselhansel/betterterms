@@ -4,8 +4,10 @@
 A ``{quote:n}`` placeholder restates something the counterparty
 wrote: a numeric entry in the inbound ``amounts`` list renders as
 money like any structured value; a string entry renders the words
-verbatim and joins ``find.quote_spans``. Either way a quote is never
-the agent's own offer, so the worse-than-floor and
+verbatim and stays visible in ``find.masked``, because inbound.yaml
+is written by the agent so those words are the agent's to vouch for
+and the review tier reads them like the agent's own text. Either way
+a quote is never the agent's own offer, so the worse-than-floor and
 unconvertible-period checks never reach it on any action. Equality
 with the floor still blocks: a rendered value equal to the walk-away
 number leaks it regardless of who wrote it. The rendered text is
@@ -18,9 +20,6 @@ placed, ``converted_match`` and ``floor_digits`` back the review
 tier's converted-limit and same-digits reasons.
 """
 
-import re
-from decimal import Decimal
-
 from . import FLOOR_TOL, LIMITS, minor, render
 
 # Placeholder value kinds whose amount is the agent's own price:
@@ -28,9 +27,6 @@ from . import FLOOR_TOL, LIMITS, minor, render
 # agreeing action (on ``send`` a fact restates what was already on
 # the table). Quotes are absent by design (spec 4.4).
 PRICE_KINDS = ("target", "ladder", "option:price", "fact")
-
-_DIGIT_RUN = re.compile(r"[0-9]+")
-_SEP = ",. \n"
 
 
 def worse(value, floor, direction):
@@ -119,32 +115,3 @@ def floor_digits(find, floor, plan_period, action):
 
 
 OFFERED = {"accept", "pay", "sign"}
-
-
-def quote_amounts(rendered_spans):
-    """The amounts inside rendered quote spans, as Decimals: each
-    maximal run of digit tokens fused over ``,`` ``.`` and whitespace
-    separators becomes one amount ("CHF 90" -> 90, "$1,200" -> 1200,
-    "4.2" -> 42, the same over-match the text scan accepts). A
-    numeric ``never_disclose`` item compares against these so a
-    listed amount inside a verbatim quote still matches."""
-    amounts = []
-    for span in rendered_spans:
-        pos = 0
-        while True:
-            m = _DIGIT_RUN.search(span, pos)
-            if m is None:
-                break
-            text = m.group(0)
-            end = m.end()
-            while True:
-                nxt = _DIGIT_RUN.search(span, end)
-                if nxt is None or not all(
-                    c in _SEP for c in span[end:nxt.start()]
-                ):
-                    break
-                text += nxt.group(0)
-                end = nxt.end()
-            amounts.append(Decimal(text))
-            pos = end
-    return amounts

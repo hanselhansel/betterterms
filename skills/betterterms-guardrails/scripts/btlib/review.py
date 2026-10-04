@@ -1,8 +1,10 @@
 """The review-tier text scan: an allowlist, not a blacklist.
 
 ``review(find, never_items)`` reads ``find.masked`` (each non-fact
-placeholder output replaced by :data:`render._MASK`, fact text
-visible) and ``find.values``, and returns one plain-word reason per
+placeholder output replaced by :data:`render._MASK`, fact text and
+verbatim string quotes visible: inbound.yaml is agent-written, so a
+quoted string is the agent's to vouch for) and ``find.values``, and
+returns one plain-word reason per
 tripped check; reasons carry no numbers. The 0010 amendment keeps
 the tier simple and strict: any ASCII digit in the free text or in a
 rendered fact's text, any number word or scale word stem inside a
@@ -11,8 +13,7 @@ exceptions), any scale word, currency word or code, any commitment
 word or phrase, characters off the allowed set, glue on a rendered
 amount and every ``never_disclose`` term all route to the user. A numeric
 ``never_disclose`` item also compares against the rendered
-placeholder values and the amounts inside quote spans, so the term
-still matches behind the mask. There
+placeholder values, so the term still matches behind the mask. There
 is no digit parsing in this tier: a digit run of any length is a
 match, never a number to read, so nothing here can crash on
 ``int()`` or stall on a huge token.
@@ -153,7 +154,7 @@ def _numeric_item(item):
 
 def disclosed(rendered, never_items):
     """True when a ``never_disclose`` item with letters appears in the
-    rendered text, quote spans included: a listed term like
+    rendered text, verbatim quote text included: a listed term like
     "CHF 90" or "$85/month" is never a coincidence, so the gate
     treats the hit as a hard block, not a review item. Numeric items
     stay in the review tier: they compare against digit runs and
@@ -255,11 +256,7 @@ def review(find, never_items):
         if num is not None:
             if groups is None:
                 groups = frozenset(_digit_groups(masked, toks))
-                values = sorted(
-                    [float(a) for a in
-                     quotes.quote_amounts(find.quote_spans)]
-                    + [v.value for v in find.values]
-                )
+                values = sorted(v.value for v in find.values)
             # The item's digits match a fused text run as a whole
             # string ("42" hits "42" and "4.2", not "420"), and its
             # value matches a rendered placeholder amount behind the

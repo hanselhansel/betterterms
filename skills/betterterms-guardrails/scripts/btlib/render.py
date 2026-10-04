@@ -17,8 +17,11 @@ reaches a draft:
 
 ``Find.masked`` is the rendered text with every non-fact placeholder
 output replaced by a mask character; fact text stays visible because it
-is user data, not a guaranteed price. ``btlib.review`` scans that
-masked text for the needs_approval tier.
+is user data, not a guaranteed price, and a verbatim string quote
+stays visible too: inbound.yaml is written by the agent, so those
+words are the agent's to vouch for and the review tier reads them
+like any other free text. ``btlib.review`` scans that masked text for
+the needs_approval tier.
 """
 
 import math
@@ -57,12 +60,10 @@ class Find:
     marks a mask character found in the template or a fact body;
     ``oversized`` marks a render that crossed ``MAX_TEXT``: resolution
     stops, ``text`` stays None and the oversized string is never
-    materialized. ``quote_spans`` holds each verbatim string a
-    ``{quote:n}`` rendered, so the review tier can still read the
-    counterparty's words for ``never_disclose`` matches."""
+    materialized."""
 
     __slots__ = ("text", "values", "masked", "fact_ids", "errors",
-                 "sentinel", "oversized", "quote_spans")
+                 "sentinel", "oversized")
 
     def __init__(self):
         self.text = None
@@ -72,7 +73,6 @@ class Find:
         self.errors = []
         self.sentinel = False
         self.oversized = False
-        self.quote_spans = []
 
 
 def normalize(text):
@@ -289,14 +289,15 @@ def _resolve(tag, find, offer, offer_period, plan, plan_period,
             return "", ""
         entry = in_amounts[n - 1]
         if isinstance(entry, str):
-            # A string entry is the counterparty's own words: they
-            # render verbatim, join quote_spans for the
-            # never_disclose checks, and carry no amount, so the
-            # floor rules never read them as an offer (spec 4.4).
+            # A string entry is the counterparty's words as the agent
+            # recorded them: it renders verbatim and stays visible in
+            # the masked text like a fact body, because inbound.yaml
+            # is agent-written and the review tier must read those
+            # words like the agent's own. It carries no amount, so
+            # the floor rules never read it as an offer (spec 4.4).
             if _MASK in entry:
                 find.sentinel = True
-            find.quote_spans.append(entry)
-            return entry, _MASK
+            return entry, entry
         v = cases.positive(entry)
         if v is None or not math.isfinite(v):
             find.errors.append(f"inbound amount {n} is not a number")

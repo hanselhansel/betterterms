@@ -50,12 +50,14 @@ guarantees and fail closed:
    before any text scanning, or a claim id (draft or auto-claimed
    by ``{fact:id}``) not in ``plan.facts`` -> block
 9. a ``never_disclose`` item with letters anywhere in the rendered
-   text, quote spans included -> block: a listed term is never a
-   coincidence, so it is not a review item
+   text, verbatim quote text included -> block: a listed term is
+   never a coincidence, so it is not a review item
 
 The review tier never blocks but never passes silently either: a
 draft whose rendered text (placeholder outputs masked, fact text
-visible) trips a check in ``btlib.review`` returns
+and verbatim string quotes visible: inbound.yaml is agent-written,
+so a quoted string is reviewed like the agent's own words) trips a
+check in ``btlib.review`` returns
 ``needs_approval`` with plain-word reasons that carry no numbers.
 The text scan is an allowlist (decisions 0009 amendment, 0010):
 characters off the permitted set, any ASCII digit anywhere, any
@@ -63,7 +65,7 @@ number word inside a letter run outside the listed exceptions,
 currency or scale words and codes, listed commitment words and
 phrases, sentinel glue and every ``never_disclose`` term all route
 to the user; numeric ``never_disclose`` items also compare against
-the rendered placeholder values and the amounts inside quote spans.
+the rendered placeholder values.
 A ``send`` offer whose digits equal
 the floor's digits in a different period routes too (``amount
 matches your limit's digits``): the converted value clears the band
