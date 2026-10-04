@@ -191,8 +191,8 @@ class AcceptConversionTest(PeriodCase):
                      "amounts": []},
         )
         self.assertEqual(proc.returncode, 2, out)
-        self.assertIn("period must be once, month or year",
-                      out["error"])
+        self.assertIn("inbound.yaml period: must be once, month or"
+                      " year", out["error"])
 
 
 class FloorPeriodKeyTest(PeriodCase):

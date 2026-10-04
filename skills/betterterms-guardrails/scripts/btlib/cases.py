@@ -222,27 +222,35 @@ def autonomy_of(brief):
     return a
 
 
-def _period(mapping, key, default, what):
+def period_error(field, value):
+    """The broken-period input error, naming the file and key so the
+    agent knows exactly what to fix, like ``plan.yaml
+    options[1].period``. A null gets the reminder spelled out: only
+    inbound.yaml lets an explicit ``period: null`` mean "not
+    stated"; everywhere else it is a broken key."""
+    msg = f"{field}: must be once, month or year"
+    if value is None:
+        msg += " (null is not allowed here)"
+    return msg
+
+
+def _period(mapping, key, default, field):
     """``mapping[key]`` as a period. A ``period`` key that is present
     must be a string naming a known period; only an absent key falls
     back to ``default``. A falsy non-string (``null``, ``0``,
-    ``false``, ``[]``) is a broken plan, not a default."""
+    ``false``, ``[]``) is a broken plan, not a default. ``field``
+    names the file and key for the error."""
     if not isinstance(mapping, dict) or key not in mapping:
         return default
     value = mapping[key]
     if not isinstance(value, str) or value.lower() not in PERIODS:
-        raise BtError(what)
+        raise BtError(period_error(field, value))
     return value.lower()
 
 
 def plan_period(plan):
     """The period the plan's values (and the floor) are expressed in."""
-    return _period(
-        plan,
-        "period",
-        "once",
-        "plan period must be once, month or year",
-    )
+    return _period(plan, "period", "once", "plan.yaml period")
 
 
 def floor_period(plan, brief):
@@ -253,14 +261,11 @@ def floor_period(plan, brief):
     present on either file validates even when ``floor_period``
     wins; a broken key cannot hide behind the one that selects."""
     p = _period(
-        plan,
-        "floor_period",
-        None,
-        "floor period must be once, month or year",
+        plan, "floor_period", None, "plan.yaml floor_period"
     )
     periods = [
-        plan_period(doc)
-        for doc in (plan, brief)
+        _period(doc, "period", "once", f"{name} period")
+        for doc, name in ((plan, "plan.yaml"), (brief, "brief.yaml"))
         if isinstance(doc, dict) and "period" in doc
     ]
     return p or (periods[0] if periods else "once")
@@ -309,22 +314,19 @@ def check_plan_limits(plan, floor, direction, brief=None):
         return
     period = floor_period(plan, brief)
     values = [_plan_value(plan.get("target"))]
-    for item in as_list(plan.get("options")):
+    for i, item in enumerate(as_list(plan.get("options"))):
         if isinstance(item, dict):
             kind = option_kind(item)
             item_period = _period(
-                item, "period", period, "invalid option period"
+                item, "period", period, f"plan.yaml options[{i}].period"
             )
             v = _plan_value(item.get("value"))
             if kind == "price" and item_period == period:
                 values.append(v)
-    for item in as_list(plan.get("ladder")):
+    for i, item in enumerate(as_list(plan.get("ladder"))):
         if isinstance(item, dict):
             item_period = _period(
-                item,
-                "period",
-                period,
-                "ladder period must be once, month or year",
+                item, "period", period, f"plan.yaml ladder[{i}].period"
             )
             v = _plan_value(item.get("value"))
             if item_period == period:
@@ -335,13 +337,10 @@ def check_plan_limits(plan, floor, direction, brief=None):
     # But a malformed amount must fail closed here, not parse to null
     # downstream where render and the floor rules would read it as
     # "no structured amount".
-    for item in as_list(plan.get("facts")):
+    for i, item in enumerate(as_list(plan.get("facts"))):
         if isinstance(item, dict):
             _period(
-                item,
-                "period",
-                "once",
-                "fact period must be once, month or year",
+                item, "period", "once", f"plan.yaml facts[{i}].period"
             )
             amount = item.get("amount")
             n = num(amount)

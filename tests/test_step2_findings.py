@@ -4,7 +4,8 @@
   appears in the rendered text: a listed term is never a coincidence,
   so it is not a review item
 - a ``period`` key present but null on an option or a fact is a
-  broken plan: exit 2, never a silent default
+  broken plan: exit 2, never a silent default; on inbound.yaml it
+  means "not stated" and defaults like an absent key
 - a blocked draft never reports ``offer is at your limit``: on a
   block the reason would leak the floor's equality bit
 - the ledger reads a deeply nested line without a recursion crash,
@@ -19,6 +20,7 @@ import sys
 import unittest
 
 from bt_helpers import (
+    BRIEF_PAY,
     BtTestCase,
     PriceCase,
     BT,
@@ -79,6 +81,114 @@ class NullPeriodTest(PriceCase):
         )
         proc, out = self.gate(case_id, send_draft(offer=95, template="hi"))
         self.assertEqual(proc.returncode, 2, out)
+
+    def _piano_case(self):
+        """The evals piano-sale fixture shape: a marketplace receive
+        case, floor 700, asking 900."""
+        return self.make_case(
+            direction="receive",
+            floor=700,
+            plan=dict(plan_for("receive", 700, target=900),
+                      period="once"),
+            brief={"pack": "marketplace"},
+        )
+
+    def test_inbound_period_null_scores_like_absent(self):
+        # inbound.yaml is written by the agent from a counterparty
+        # message that often states no period, so ``period: null``
+        # means "not stated" and scores exactly like an absent key:
+        # the near-floor band reports instead of an exit-2 error.
+        case_id = self._piano_case()
+        inbound = {"offer": 720, "text": "best I can do, cash",
+                   "amounts": [720]}
+        proc, absent = self.score(case_id, inbound)
+        self.assertEqual(proc.returncode, 0, absent)
+        proc, out = self.score(case_id, dict(inbound, period=None))
+        self.assertEqual(proc.returncode, 0, out)
+        self.assertEqual(out, absent)
+        self.assertEqual(out["band"], "near_floor")
+
+    def test_inbound_period_null_gate_ok(self):
+        # The gate's inbound checks read the same null as "not
+        # stated": the draft passes instead of the exit-2 regression.
+        case_id = self._piano_case()
+        proc, out = self.gate(
+            case_id,
+            send_draft(offer=720, period="once",
+                       template="thanks for the update"),
+            inbound={"offer": 720, "period": None, "text": "x",
+                     "amounts": []},
+        )
+        self.assertEqual(proc.returncode, 0, out)
+        self.assertEqual(out["result"], "pass")
+
+    def test_option_period_null_still_exit_2(self):
+        # Only inbound.yaml relaxes the null rule: a null period on a
+        # plan option is still a broken plan (exit 2).
+        case_id = self.make_case(
+            plan=dict(
+                plan_for("pay", 100, target=80),
+                options=[{"label": "a", "value": 90, "period": None}],
+            )
+        )
+        proc, out = self.gate(case_id, send_draft(offer=95, template="hi"))
+        self.assertEqual(proc.returncode, 2, out)
+        self.assertIn("options[0].period", out["error"])
+
+    def test_period_error_names_field(self):
+        # Each strict period error names the file and the key so the
+        # agent knows exactly what to fix.
+        case_id = self.make_case(
+            plan=dict(
+                plan_for("pay", 100, target=80),
+                options=[
+                    {"label": "a", "value": 90},
+                    {"label": "b", "value": 95, "period": None},
+                ],
+            )
+        )
+        proc, out = self.gate(case_id, send_draft(template="hi"))
+        self.assertEqual(proc.returncode, 2, out)
+        self.assertEqual(
+            out["error"],
+            "plan.yaml options[1].period: must be once, month or year"
+            " (null is not allowed here)",
+        )
+        # A present non-null bad value names the same field without
+        # the null aside; other files and keys report likewise.
+        for extra, field in (
+            ({"options": [{"label": "a", "value": 90,
+                           "period": "weekly"}]},
+             "plan.yaml options[0].period"),
+            ({"ladder": [{"value": 90, "reason": "r",
+                          "period": None}]},
+             "plan.yaml ladder[0].period"),
+            ({"facts": [{"id": "f1", "text": "x", "source": "x",
+                         "period": None}]},
+             "plan.yaml facts[0].period"),
+            ({"period": None}, "plan.yaml period"),
+            ({"floor_period": "weekly"}, "plan.yaml floor_period"),
+        ):
+            with self.subTest(field=field):
+                plan = dict(plan_for("pay", 100, target=80), **extra)
+                case_id = self.make_case(plan=plan)
+                proc, out = self.gate(case_id, send_draft(template="hi"))
+                self.assertEqual(proc.returncode, 2, out)
+                self.assertIn(
+                    f"{field}: must be once, month or year",
+                    out["error"],
+                )
+        # The brief's own period key names brief.yaml.
+        case_id = self.make_case(
+            plan=plan_for("pay", 100, target=80),
+            brief={"period": None},
+        )
+        proc, out = self.gate(case_id, send_draft(template="hi"))
+        self.assertEqual(proc.returncode, 2, out)
+        self.assertIn(
+            "brief.yaml period: must be once, month or year",
+            out["error"],
+        )
 
 
 class AtLimitReasonTest(PriceCase):

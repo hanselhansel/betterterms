@@ -9,7 +9,9 @@ guarantees and fail closed:
 1. invalid brief (direction, mode, autonomy) or a conflicting
    plan, or a ``period`` or ``floor_period`` key present but not a
    string naming a known period (a null is a broken key, not a
-   default), even shadowed, inbound included -> error, exit 2
+   default), even shadowed -> error, exit 2. On inbound.yaml an
+   explicit ``period: null`` means "not stated" and defaults like
+   an absent key; only a present non-null value can be broken
 2. missing, unreadable or invalid ``.floor`` -> block
 3. missing or unknown ``action``, unknown draft keys or a legacy
    ``text`` key -> block
@@ -160,9 +162,11 @@ def check(case_dir, draft, approved=False, inbound=None):
         findings.append(("block", "offer must be a positive number"))
         offer = None
 
-    # A null draft period means "not set" and defaults to once; the
-    # plan-side and inbound period keys are stricter and fail on a
-    # present null as a broken file (exit 2).
+    # A null draft period means "not set" and defaults to once, and
+    # inbound.yaml follows the same rule (the agent writes it from a
+    # message that often states no period); the plan-side period keys
+    # are stricter and fail on a present null as a broken file
+    # (exit 2).
     raw_period = draft.get("period")
     if raw_period is None:
         period = "once"
@@ -199,14 +203,17 @@ def check(case_dir, draft, approved=False, inbound=None):
     # declares one, else in the floor's period; either way it is
     # converted to the floor's period before any comparison.
     in_period = plan_period
-    if inbound and "period" in inbound:
+    if inbound:
         raw_in = inbound.get("period")
-        # A present inbound period naming no known period is a
-        # broken input file like a bad plan period: exit 2, same as
+        # A present non-null inbound period naming no known period is
+        # a broken input file like a bad plan period: exit 2, same as
         # the score path, never a negotiation block.
-        if not isinstance(raw_in, str) or raw_in.lower() not in PERIODS:
-            raise BtError("period must be once, month or year")
-        in_period = raw_in.lower()
+        if raw_in is not None:
+            if not isinstance(raw_in, str) or raw_in.lower() not in PERIODS:
+                raise BtError(
+                    cases.period_error("inbound.yaml period", raw_in)
+                )
+            in_period = raw_in.lower()
 
     find = render.render(
         template, offer, period, plan, plan_period, in_amounts, currency

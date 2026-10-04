@@ -195,7 +195,11 @@ class OptionPeriodTest(GluedTest):
                     case_id, send_draft(template="note {option:x}")
                 )
                 self.assertEqual(proc.returncode, 2, out)
-                self.assertIn("invalid option period", out["error"])
+                self.assertIn(
+                    "plan.yaml options[0].period: must be once,"
+                    " month or year",
+                    out["error"],
+                )
                 self.assertNotIn("KeyError", out["error"])
 
 

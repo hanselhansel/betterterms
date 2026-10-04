@@ -87,13 +87,18 @@ def classify(case_dir, inbound):
     cases.check_plan_limits(plan, floor, direction, brief)
     floor_period = cases.floor_period(plan, brief)
     # An inbound offer is read in its declared period, else the
-    # floor's; a present non-string or unknown period is a broken
-    # inbound file, never a default.
+    # floor's. inbound.yaml is written by the agent from a
+    # counterparty message that often states no period, so an
+    # explicit ``period: null`` means "not stated" and defaults like
+    # an absent key; only a present non-null value naming no known
+    # period is a broken inbound file.
     in_period = floor_period
-    if "period" in inbound:
-        raw_in = inbound.get("period")
+    raw_in = inbound.get("period")
+    if raw_in is not None:
         if not isinstance(raw_in, str) or raw_in.lower() not in PERIODS:
-            raise BtError("period must be once, month or year")
+            raise BtError(
+                cases.period_error("inbound.yaml period", raw_in)
+            )
         in_period = raw_in.lower()
     target = cases.num(plan.get("target"))
     offer = cases.num(inbound.get("offer"))
