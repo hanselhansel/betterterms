@@ -71,11 +71,16 @@ drafted: misreading them is the biggest source of lost value.
    - In a session with a tool that posts interactive widgets (a
      Projects cloud thread), post the `html` from
      `python3 <bt> widget terms <case_id>`
-     as is. Its walk-away field types `bt floor <case_id> <amount>`
+     as is, but only when the plugin's session-start line
+     ("betterterms is installed.") is present in this context: it
+     means the prompt hook is live to catch the typed command. Its
+     walk-away field types `bt floor <case_id> <amount>`
      as the user's own message, and the prompt hook writes it like
      the terminal command. That value stays visible in the thread,
      so the terminal command stays the better path whenever the
-     user has a terminal.
+     user has a terminal. When the session-start line is absent the
+     hook is not running and a typed `bt floor` would reach the
+     model: point the user to the terminal command above instead.
    - In Claude Code with the `betterterms-mod` plugin, the terms
      editor in the BetterTerms pane (`t` on the case) sets the same
      value by drag, nudge, or a typed field, and writes it through

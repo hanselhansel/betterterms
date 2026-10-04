@@ -116,19 +116,25 @@ export function btRoute(opts, files) {
   });
   return (argv) => {
     if (argv[2] === "gate") {
-      const g = typeof opts.gate === "function" ? opts.gate(argv) : opts.gate;
-      if (g === undefined || g === null) {
-        return wrap({ result: "pass", reasons: [], rendered: RENDERED });
-      }
-      if ("stdout" in g || "exitCode" in g) return g; // a proc result
       const id = argv[3];
-      if (g.result === "needs_approval" && argv.includes("--approved")
+      const g = typeof opts.gate === "function" ? opts.gate(argv) : opts.gate;
+      let out;
+      if (g === undefined || g === null) {
+        out = wrap({ result: "pass", reasons: [], rendered: RENDERED });
+      } else if ("stdout" in g || "exitCode" in g) {
+        out = g; // a proc result
+      } else if (g.result === "needs_approval" && argv.includes("--approved")
           && typeof g.hash === "string"
           && `${HOME}/cases/${id}/held/${g.hash}.approved` in files) {
         dropRecord(id, g.hash);
-        return wrap({ result: "pass", reasons: [], rendered: g.rendered });
+        out = wrap({ result: "pass", reasons: [], rendered: g.rendered });
+      } else {
+        out = wrap(g);
       }
-      return wrap(g);
+      // The real bt.py gate writes its verdict to gate.json on every
+      // call, blocks and refused inputs included.
+      files[`${HOME}/cases/${id}/gate.json`] = out.stdout;
+      return out;
     }
     if (argv[2] === "held" && argv[3] === "list") {
       const id = argv[4];
@@ -163,7 +169,7 @@ export function btRoute(opts, files) {
       delete files[`${heldDir}/${h}.approved`];
       return wrap({ ok: true, hash: h });
     }
-    if (argv[2] === "held" && (argv[3] === "approve" || argv[3] === "reject")) {
+    if (argv[2] === "held" && ["approve", "reject", "drop"].includes(argv[3])) {
       const id = argv[4];
       const h8 = String(argv[5] ?? "");
       const recs = opts.held?.[id] ?? [];
@@ -175,6 +181,8 @@ export function btRoute(opts, files) {
       if (argv[3] === "approve") {
         files[`${HOME}/cases/${id}/held/${h}.approved`] = `hash: ${h}\n`;
       } else {
+        // reject and drop both remove the record and marker; drop
+        // writes no thread.md marker (the fake does not model one).
         opts.held[id] = recs.filter((r) => heldHash(r) !== h);
         dropRecord(id, h);
       }

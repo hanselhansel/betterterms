@@ -77,6 +77,11 @@ export const paneActions = ($, snap) => W.paneActions(hostOf($), snap);
 // Strings worth scanning: long enough to carry a draft, or naming a case id.
 const plausible = (ss) => ss.some((s) => s.length >= C.SEND_MIN_CHARS || /-\d{8}-/.test(s));
 
+// File-path tools write to disk, not to a counterparty: the send
+// guard never treats them as a send and never toasts "sent" for one,
+// even when the content equals the gated text.
+const FILE_TOOLS = new Set(["Write", "Edit", "NotebookEdit", "MultiEdit"]);
+
 export function register(on) {
   IO.resetBt();
   S.resetScan();
@@ -87,8 +92,9 @@ export function register(on) {
 
   on("tool.call", async ($, e, next) => {
     // The agent's own approval question is not a send; gating it would
-    // put our ask in front of its ask.
-    if (e.tool === "AskUserQuestion") return next(e);
+    // put our ask in front of its ask. File-path tools are never a
+    // send either: they pass through untouched.
+    if (e.tool === "AskUserQuestion" || FILE_TOOLS.has(e.tool)) return next(e);
     const strings = C.collectStrings(C.callArgs(e));
     if (!plausible(strings)) return next(e);
     const host = hostOf($);

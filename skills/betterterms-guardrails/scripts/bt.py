@@ -13,6 +13,7 @@ stdout.
   bt.py held list <case_id>
   bt.py held approve <case_id> <hash8>
   bt.py held reject <case_id> <hash8>
+  bt.py held drop <case_id> <hash8>     (drop the record, no thread marker)
   bt.py held disarm <case_id> <hash8>   (drop only the .approved marker)
   bt.py widget cases | widget approval <case_id> <hash8> | widget terms <case_id> | widget savings
   bt.py score <case_id> --inbound <inbound.yaml>

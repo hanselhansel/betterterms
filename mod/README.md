@@ -67,17 +67,23 @@ records anything for the agent's own call. The flow is:
    the re-gate does not spend the marker, the mod removes it again
    with `bt.py held disarm`. The `$.state` entry is spent on read and
    the marker on use, so a second identical send holds again. A typed
-   `bt approve` works too: the mod's own `prompt.submit` hook resolves
-   the hash through `held list` and records it in `$.state`. A
+   `bt approve` works too: the mod's own `prompt.submit` hook records
+   it in `$.state` only when the typed hash8 prefixes the case's
+   current `gate.json` hash; a stale hash is refused with a toast and
+   records nothing. A
    `.approved` marker on disk never counts by itself; only `$.state`
    authorizes the send.
 4. Different rendered text hashes to a different value, so an edited
-   draft must re-pass the gate and be re-approved.
+   draft must re-pass the gate and be re-approved. An Approve press or
+   a typed `bt approve` for a hash that is not the case's current
+   `gate.json` hash refuses with a plain reason, so an old card or a
+   stale widget can never approve the new text.
 
 Reject runs `bt.py held reject <case> <hash8>`, which drops the held
 draft and appends `## rejected <time> <hash>` to `thread.md`. The mod
 reads those markers as markers, not turns. Edit opens an `Input`;
-saving rewrites `draft.yaml` with the new text and re-runs the gate,
+saving drops the old held record quietly (`bt.py held drop`, no thread
+marker), rewrites `draft.yaml` with the new text and re-runs the gate,
 so the card re-lists under the new hash only after the gate sees it.
 
 ## What it reads and writes
@@ -92,8 +98,9 @@ the approval cards, `sources/` listing for the researched stage, and
 gate.
 
 The writes: an Edit save rewrites `draft.yaml`, and the `held`
-approve/reject subprocesses maintain `held/` and `thread.md` through
-`bt.py`. Approval state lives in `$.state` for the session and inbound
+approve/reject/drop/disarm subprocesses maintain `held/` and
+`thread.md` through `bt.py`. Approval state lives in `$.state` for the
+session and inbound
 baselines in module memory. The only other filesystem touch is a
 `stat` resolve on a tool call's own `file_path` when one is present,
 to tell a bookkeeping write inside a case dir apart from a send.
@@ -113,14 +120,31 @@ case's `gate.json` appears inside one of its string arguments (for
 renders under 24 chars the call must also name the case id). A send
 then passes only when the gate is re-run on the draft on disk and one
 string argument equals the freshly rendered text exactly, with every
-other string argument either a whitespace-free token (addresses,
-channel, message and thread ids under any key name) or a subject/title
-of at most 80 characters with no digits: extra message body is
-denied, and an edited draft is
-denied until it is re-gated. It covers `Bash` commands, MCP tool
+other argument following its key class (keys normalize by lowering
+case and stripping `_` and `-`):
+
+- an address or id key (`to`, `cc`, `bcc`, `from`, `recipient(s)`,
+  `email`, `channel`, `references`, `inreplyto`, or any key ending in
+  `id`, `ids` or `ts`) takes one whitespace-free token and still
+  refuses whitespace, links, entities and invisible characters;
+- a `subject` or `title` is checked before any other shortcut: at most
+  80 characters, no digits, no `<`, `&`, `%` or `://`, no Unicode
+  format characters, and none of the words accept, agree, deal, sign,
+  cancel, pay or offer;
+- a content key (`attachments`, `content`, `html`, `htmlbody`,
+  `blocks`, `body2`, or any key containing `html`) denies when
+  non-empty;
+- every other non-empty string or numeric leaf denies, and a string
+  that parses as a number counts as numeric.
+
+Extra message body is denied, and an edited draft is denied until it
+is re-gated. `Bash` is never a send however it carries the text. The
+file-path tools (`Write`, `Edit`, `NotebookEdit`, `MultiEdit`) are
+never sends either: they pass through untouched, even when the content
+equals the gated text, and never toast "sent". It covers MCP tool
 arguments and agent prompts alike. Writes whose target resolves inside
 the case dir (`draft.yaml`, `inbound.yaml`, `gate.json`, `thread.md`
-bookkeeping) are excluded. Known holes, by design at v1: a send that
+bookkeeping) are excluded for the other tools. Known holes, by design at v1: a send that
 reads the rendered text indirectly (`cat gate.json | mail ...`)
 carries no text to match, and a paraphrased render is not the render.
 The guard protects the normal flow; it is not a sandbox.

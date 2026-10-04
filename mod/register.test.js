@@ -71,26 +71,30 @@ describe("register", () => {
     assert.equal(calls.run.length, 0);
   });
 
-  test("a write whose path resolves outside the case dir is a send", async () => {
+  test("file-path tools are never sends, even outside the case dir", async () => {
+    // Write, Edit, NotebookEdit and MultiEdit may carry the gated text
+    // to any path: the send guard lets them through untouched and
+    // never toasts "sent". A link inside the case dir pointing out
+    // makes no difference.
     const files = caseFiles({ [`${DIR}/draft.yaml`]: DRAFT, [`${DIR}/gate.json`]: GATE });
     const { $, calls } = fakeDollar({
-      files, dirs: caseDirs(),
-      // A link inside the case dir pointing out: the lexical path says
-      // bookkeeping, the resolved path says send.
+      files, dirs: caseDirs(), answer: "Send",
       stats: { [`${DIR}/draft.yaml`]: { realPath: "/tmp/escape/draft.yaml" } },
     });
     const on = fakeOn();
     register(on.on);
-    const { next, calls: went } = fired();
-    const out = await on.get("tool.call")($, {
-      tool: "Write", tool_use_id: "t2b", file_path: `${DIR}/draft.yaml`, content: RENDERED,
-    }, next);
-    // Not bookkeeping: the gate ran. The shape rule accepts file_path
-    // (a single token), so at autonomy 2 the write waits on the same
-    // approval ask as any send and the refused answer denies it.
-    assert.equal(calls.run.length, 1);
-    assert.equal(went.length, 0);
-    assert.match(out.deny, /not approved|held/);
+    for (const [tool, extra] of [
+      ["Write", { file_path: "/tmp/outside/reply.txt", content: RENDERED }],
+      ["Edit", { file_path: "/tmp/outside/reply.txt", old_string: "x", new_string: RENDERED }],
+      ["MultiEdit", { file_path: "/tmp/outside/r.txt", edits: [{ new_string: RENDERED }] }],
+      ["NotebookEdit", { notebook_path: "/tmp/outside/r.ipynb", new_source: RENDERED }],
+    ]) {
+      const { next, marker } = fired();
+      const out = await on.get("tool.call")($, { tool, tool_use_id: `t-${tool}`, ...extra }, next);
+      assert.equal(out, marker, tool);
+    }
+    assert.equal(calls.run.length, 0);
+    assert.equal(calls.toast.every((t) => !/sent/.test(t)), true);
   });
 
   test("autonomy 2: a passing gate still asks the user first", async () => {

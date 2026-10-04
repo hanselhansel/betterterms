@@ -15,15 +15,25 @@
   do not hash back to their filename never list.
 - `bt.py held disarm <case_id> <hash8>` removes only the `.approved`
   marker and keeps the held draft; `betterterms-mod` runs it when a
-  marker it re-armed was not spent by the re-gate. In mod mode an
-  approval lives in `$.state` only, recorded by the pane press or the
-  mod's `prompt.submit` hook on a typed `bt approve`; a `.approved`
-  file on disk never authorizes a send by itself.
+  marker it re-armed was not spent by the re-gate. `bt.py held drop
+  <case_id> <hash8>` removes the record and marker with no thread
+  marker; the mod runs it when an edited draft replaces the held one.
+  In mod mode an approval lives in `$.state` only, recorded by the
+  pane press or the mod's `prompt.submit` hook on a typed `bt approve`,
+  and only while the hash is the case's current `gate.json` hash: a
+  stale hash is refused plainly. A `.approved` file on disk never
+  authorizes a send by itself.
 - Typed commands through a `UserPromptSubmit` hook
   (`hooks/prompt_commands.py`): `bt approve`, `bt reject`, `bt floor`,
   `bt terms` with `target=` and `alternative=` keys in either order.
   `bt floor` writes on stdin and blocks the prompt so the model never
-  receives the walk-away; malformed or embedded lookalikes block too.
+  receives the walk-away; `bt approve`, `bt reject` and `bt terms`
+  are handled first, then passed through with a note. A `bt <verb>`
+  lookalike blocks only when the message starts with it (one leading
+  backtick or a leading slash allowed) and still carries the piece
+  the verb needs: a digit for floor, a hex token of six or more
+  characters for approve and reject, `=` for terms. Anything else is
+  prose and passes untouched.
   In a cloud session the session-start hook warns when the betterterms
   home sits in the ephemeral VM home.
 - `betterterms-mod`, an optional Claude Code cockpit plugin: pane with
@@ -56,11 +66,23 @@
   display modes (mod, widget, chat) and what each guarantees.
 - The mod finds the core `bt.py` through the marketplace cache layout,
   scans case folders on stat fingerprints with burst reuse, and its
-  send guard applies one strict shape: exactly one argument equals the
-  freshly re-gated rendered text, other string leaves are
-  whitespace-free tokens under any key name (addresses, channel,
-  message and thread ids) or a subject/title of at most 80 characters
-  with no digits, numeric leaves deny, and a Bash call is never a send.
+  send guard applies one strict shape by key class: exactly one
+  string argument equals the freshly re-gated rendered text; an
+  address or id key (`to`, `cc`, `bcc`, `from`, `recipient(s)`,
+  `email`, `channel`, `references`, `inreplyto`, or any key ending in
+  `id`, `ids` or `ts`) takes one whitespace-free token; a `subject`
+  or `title` takes at most 80 characters, no digits, no `<`, `&`, `%`
+  or `://`, no Unicode format characters and none of the words
+  accept, agree, deal, sign, cancel, pay or offer; a content key
+  (`attachments`, `content`, `html`, `htmlbody`, `blocks`, `body2`,
+  or any key containing `html`) denies when non-empty; every other
+  non-empty string or numeric leaf denies, a string that parses as a
+  number counting as numeric. A Bash call is never a send, and the
+  file-path tools (Write, Edit, NotebookEdit, MultiEdit) pass through
+  untouched and never toast "sent". Editing a held draft in the pane
+  drops the old record quietly before the re-gate, and an approval
+  pressed or typed for a hash that is not the case's current
+  `gate.json` hash refuses as stale.
 - `bt.py ledger add` accepts `--period once` for one-time savings,
   recorded as `saved_once` and totaled in `once_by_currency` /
   `once_by_pack`, never folded into the per-year figures; widgets,

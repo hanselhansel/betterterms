@@ -45,6 +45,11 @@ describe("deriveCase", () => {
     const flagged = { ...gated, gateText: GATE_NEEDS_APPROVAL };
     assert.equal(C.deriveCase(flagged).pending, true);
     assert.equal(C.deriveCase(flagged).needsApproval, true);
+    // gate.json's hash is the case's current held-draft hash: the
+    // pane's approve refuses any held record that does not match it.
+    const held = `{"result":"needs_approval","reasons":[],"rendered":"x","hash":"${"f".repeat(64)}"}`;
+    assert.equal(C.deriveCase({ ...gated, gateText: held }).gateHash, "f".repeat(64));
+    assert.equal(C.deriveCase(gated).gateHash, null);
     // A block, a missing verdict and a gate that ran before the last
     // draft write all leave the draft out of the band.
     assert.equal(C.deriveCase({ ...gated, gateText: GATE_BLOCK }).pending, false);
@@ -148,147 +153,9 @@ describe("decideSend", () => {
   });
 });
 
-describe("sendShapeError", () => {
-  const send = (tool, args) => ({ tool, tool_use_id: "t", ...args });
-
-  test("one verbatim argument plus address fields passes", () => {
-    const e = send("gmail.send", { to: "v@x", subject: "re: plan", body: RENDERED });
-    assert.equal(C.sendShapeError(e, RENDERED), null);
-    // Address fields sit in arrays too, each a single token.
-    const list = send("chat.post", {
-      channel: "C1234", recipients: ["a@x", "b@y"], text: RENDERED,
-    });
-    assert.equal(C.sendShapeError(list, RENDERED), null);
-    // An empty leaf carries nothing, so it does not deny.
-    assert.equal(
-      C.sendShapeError(send("gmail.send", { body: RENDERED, note: "" }), RENDERED),
-      null,
-    );
-  });
-
-  test("real connector shapes pass", () => {
-    // Gmail reply: the message id is a single token under a camelCase
-    // key; the rendered text is the only prose argument.
-    assert.equal(
-      C.sendShapeError(
-        send("gmail.reply", { messageId: "<abc123@mail.gmail.com>", body: RENDERED }),
-        RENDERED,
-      ),
-      null,
-    );
-    // Gmail send inside a thread: recipient, subject and the camelCase
-    // thread id are all envelope fields.
-    assert.equal(
-      C.sendShapeError(
-        send("gmail.send", {
-          to: "vendor@x", subject: "re: renewal", body: RENDERED,
-          replyThreadId: "thread-9917",
-        }),
-        RENDERED,
-      ),
-      null,
-    );
-    // Slack thread reply: snake_case channel and thread ids.
-    assert.equal(
-      C.sendShapeError(
-        send("slack.post", {
-          channel_id: "C0123AB", thread_ts: "1728000000.000100",
-          message: RENDERED,
-        }),
-        RENDERED,
-      ),
-      null,
-    );
-    // Any single-token key name counts as an id, in_reply_to included.
-    assert.equal(
-      C.sendShapeError(
-        send("mail.send", { in_reply_to: "<m-1@x>", body: RENDERED }),
-        RENDERED,
-      ),
-      null,
-    );
-  });
-
-  test("a Bash call carrying the text is never a send", () => {
-    for (const command of [
-      `mail v@x <<EOF\n${RENDERED}\nEOF`,
-      RENDERED,
-    ]) {
-      const err = C.sendShapeError(send("Bash", { command }), RENDERED);
-      assert.match(err, /send tool/);
-      assert.match(err, /hand .* to the user/);
-    }
-  });
-
-  test("the text inside a longer argument denies", () => {
-    assert.match(
-      C.sendShapeError(
-        send("gmail.send", { command: `mail v@x <<EOF\n${RENDERED}\nEOF` }),
-        RENDERED,
-      ),
-      /whole argument/,
-    );
-  });
-
-  test("whitespace in a non-subject field denies as unseen text", () => {
-    for (const args of [
-      { to: "v@x or whoever", body: RENDERED },
-      { to: ["a@x", "b @y"], body: RENDERED },
-      { conversation_id: "conv 42", body: RENDERED },
-    ]) {
-      assert.match(C.sendShapeError(send("gmail.send", args), RENDERED), /carries text/);
-    }
-  });
-
-  test("subject and title take a short line with no digits", () => {
-    assert.equal(
-      C.sendShapeError(send("gmail.send", { subject: "re: the plan", body: RENDERED }), RENDERED),
-      null,
-    );
-    // A whitespace-free subject is just another token; the title rule
-    // bites only once the value carries spaces.
-    assert.equal(
-      C.sendShapeError(send("gmail.send", { subject: "s".repeat(81), body: RENDERED }), RENDERED),
-      null,
-    );
-    for (const args of [
-      { subject: "invoice 42", body: RENDERED },
-      { subject: `s ${"s ".repeat(40)}s`, body: RENDERED },
-      { title: "offer 3", body: RENDERED },
-    ]) {
-      assert.match(C.sendShapeError(send("gmail.send", args), RENDERED), /subject|title|digit|characters/i);
-    }
-  });
-
-  test("a second prose argument or a numeric leaf denies", () => {
-    assert.match(
-      C.sendShapeError(send("gmail.send", { to: "v@x", body: RENDERED, note: "and a word more" }), RENDERED),
-      /carries text/,
-    );
-    for (const args of [
-      { body: RENDERED, retries: 2 },
-      { body: RENDERED, chat_id: -1001 },
-    ]) {
-      assert.match(C.sendShapeError(send("gmail.send", args), RENDERED), /carries|number/i);
-    }
-  });
-
-  test("no verbatim carrier, or two, denies", () => {
-    assert.match(
-      C.sendShapeError(send("gmail.send", { to: "v@x", subject: "re: plan" }), RENDERED),
-      /verbatim/,
-    );
-    assert.match(
-      C.sendShapeError(send("gmail.send", { body: RENDERED, text: RENDERED }), RENDERED),
-      /more than one/,
-    );
-  });
-
-  test("whitespace-only differences still match the render", () => {
-    const ragged = RENDERED.replace("\n", "   ");
-    assert.equal(C.sendShapeError(send("gmail.send", { body: ragged }), RENDERED), null);
-  });
-});
+// The sendShapeError key-class suite moved to sendshape.test.js when
+// the rule gained key classes (subject/title, address/id, content,
+// everything else).
 
 describe("bt.py resolution", () => {
   const REL = "skills/betterterms-guardrails/scripts/bt.py";

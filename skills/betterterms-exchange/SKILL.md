@@ -100,13 +100,20 @@ or ask for their offer when it is not. Then gate, send, and log as below.
 
    - Exit 0, `pass`: send the `rendered` text verbatim per the autonomy
      level, through a send tool with the text as its own argument and
-     nothing added anywhere else in the call. Every other argument
-     must be a single token with no whitespace (recipients, channel,
-     message and thread ids of any key name, such as messageId,
-     replyThreadId, thread_ts or in_reply_to) or a subject/title of
-     at most 80 characters with no digits. Never send through a
-     shell command: with betterterms-mod loaded the send check
-     denies it, so use a send tool or hand the text to the user.
+     nothing added anywhere else in the call. With betterterms-mod
+     loaded the send check reads every other argument by its key
+     class: an address or id key (to, cc, bcc, from, recipient(s),
+     email, channel, references, inreplyto, or any key ending in id,
+     ids or ts) takes one whitespace-free token; a subject or title
+     takes at most 80 characters, no digits, no `<`, `&`, `%` or
+     `://`, no invisible characters, and none of the words accept,
+     agree, deal, sign, cancel, pay or offer; a content key
+     (attachments, content, html, htmlbody, blocks, body2, or any key
+     containing html) must be absent or empty; every other non-empty
+     argument denies, numbers included. Never send through a
+     shell command: the send check denies it, so use a send tool or
+     hand the text to the user. Write, Edit and the other file-path
+     tools are never sends and pass untouched.
    - Exit 3, `needs_approval`: the action is irreversible, or coach
      mode, autonomy 1, or the review scan flagged the rendered text.
      The draft is held: `held/<hash>.yaml` in the case folder, `hash`
@@ -121,9 +128,9 @@ or ask for their offer when it is not. Then gate, send, and log as below.
      user replies `bt approve`. Then re-run the gate with
      `--approved`: it consumes the approval once and passes. A
      changed text or a second send is held again. With the mod
-     loaded the send check handles the re-gate itself: approve the
-     draft, then send the held text verbatim and do not re-run the
-     gate yourself. A record `held list` reports as `legacy: true`
+     loaded the send check re-gates on the send itself and re-arms
+     the marker, so an extra `gate --approved` run is harmless.
+     A record `held list` reports as `legacy: true`
      was held by an older version and cannot be approved: re-run the
      gate on `draft.yaml` to hold it under the current hash.
    - Exit 1, `block`: when the reason is "outside your limits; escalate

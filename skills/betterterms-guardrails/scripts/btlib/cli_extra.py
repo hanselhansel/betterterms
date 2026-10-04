@@ -1,7 +1,8 @@
 """The smaller subcommands, kept out of bt.py: ``where``, ``config
-show|set``, ``case set-terms``, ``held list|approve|reject|disarm``,
-and ``widget cases|approval|terms|savings``. Each command function
-returns ``(exit_code, dict)`` like the ones in bt.py.
+show|set``, ``case set-terms``, ``held
+list|approve|reject|drop|disarm``, and ``widget
+cases|approval|terms|savings``. Each command function returns
+``(exit_code, dict)`` like the ones in bt.py.
 """
 
 import math
@@ -123,6 +124,12 @@ def cmd_held_reject(args):
     return 0, {"ok": True, "hash": h}
 
 
+def cmd_held_drop(args):
+    d = cases.require_case(args.case_id)
+    h = held.drop(d, args.hash8)
+    return 0, {"ok": True, "hash": h}
+
+
 def cmd_held_disarm(args):
     d = cases.require_case(args.case_id)
     h = held.disarm(d, args.hash8)
@@ -202,6 +209,12 @@ def register(sub, case_sub):
     p_rej.add_argument("case_id")
     p_rej.add_argument("hash8")
     p_rej.set_defaults(fn=cmd_held_reject)
+    p_drop = held_sub.add_parser(
+        "drop", help="drop a held draft quietly (no thread.md marker)"
+    )
+    p_drop.add_argument("case_id")
+    p_drop.add_argument("hash8")
+    p_drop.set_defaults(fn=cmd_held_drop)
     p_dis = held_sub.add_parser(
         "disarm", help="drop only the .approved marker, keep the draft"
     )

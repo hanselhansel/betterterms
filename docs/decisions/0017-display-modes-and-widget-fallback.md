@@ -1,7 +1,7 @@
 # 0017. Display modes and the widget fallback for cloud sessions
 
-Status: accepted (release lanes R4 and R7, spec 6.8). Date:
-2026-10-09.
+Status: accepted (release lanes R4 and R7, spec 6.8). Amended by
+0019. Date: 2026-10-09.
 
 ## Context
 
@@ -41,22 +41,25 @@ each prompt before the model and looks only at the user's own text: in
 a Projects wake envelope, the body of the triggering `from="human"`
 message, never text an agent or a counterparty wrote. `bt floor`
 writes the walk-away through `case set-floor` on stdin and blocks the
-prompt so the model never receives it. `bt approve` writes
-`held/<hash>.approved` for that exact rendered-text hash and lets the
-prompt through so the agent resends. `bt reject` and `bt terms` write
-their change and let the prompt through. The floor message stays
+prompt so the model never receives it. `bt approve`, `bt reject` and
+`bt terms` are handled first, then let the prompt through with a
+note: `bt approve` writes `held/<hash>.approved` for that exact
+rendered-text hash so the agent resends; `bt reject` and `bt terms`
+write their change. The floor message stays
 visible in the thread to project members and in the session log
 (anthropics/claude-code#96891), so terminal floor entry stays the
-better path; a `PreToolUse` hook denies agent reads of `.floor`,
-`held/`, and the session log.
+better path. The `PreToolUse` file guard named here was removed in
+0.10.0; see 0019.
 
 ## Consequences
 
 Strength, stated plainly (spec 6.8): mod approval is the strongest,
 because a keypress lands in `$.state` the agent cannot write. Widget
-and chat approval rely on the `PreToolUse` guard denying agent writes
-under `held/`; the agent can write files, so that guard is best
-effort. All modes share the guarantee that counts most: text inside an
+and chat approval land as an `.approved` file the agent could also
+write: it runs as the user, so nothing technical stops a forged
+marker; the skills' rule never to write one is the boundary there
+(0019 removed the `PreToolUse` guard that tried to enforce it). All
+modes share the guarantee that counts most: text inside an
 inbound message can never become a user message, so nothing a
 counterparty writes can approve a draft. Codex has no prompt hook in
 this release, so Codex users set the walk-away in the terminal and

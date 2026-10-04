@@ -14,9 +14,12 @@ grammar is handled here:
                                   case set-terms, pass with a note
 
 ``bt floor`` always blocks, so the walk-away is never forwarded to
-the model; its reason never carries the amount. ``bt <verb>``
-anywhere in the text -- backticked, mid-sentence, trailing words --
-blocks with the usage line rather than reaching the model as text.
+the model; its reason never carries the amount. A message that only
+resembles a command blocks with the usage line when the trimmed text
+starts with ``bt <verb>`` -- one leading backtick or a leading slash
+allowed -- and still carries the piece the verb needs: a digit for
+floor, a hex token of six or more characters for approve and reject,
+``=`` for terms. Everything else is prose and passes to the model.
 The hook fails closed: input it cannot read, or a command that raises,
 blocks instead of passing through, because the text may carry a
 walk-away.
@@ -56,9 +59,11 @@ _GRAMMAR = (
 _TERMS_KV = re.compile(r"(\w+)=(\S+)")
 _TERMS_KEYS = ("target", "alternative")
 
-# The command token must stand alone: `debt terms` or `doubt floor`
-# carry no command, so `bt` cannot follow a word, dot or dash.
-_OPENER = re.compile(r"(?<![\w.-])bt\s+(approve|reject|floor|terms)\b", re.I)
+# A lookalike counts only at the start of the trimmed text, after at
+# most one backtick or a leading slash. A `bt <verb>` mention inside
+# prose is chat text, not a command attempt.
+_LOOKALIKE = re.compile(r"[`/]?bt\s+(approve|reject|floor|terms)\b", re.I)
+_HEX_TOKEN = re.compile(r"\b[0-9a-f]{6,}\b", re.I)
 _MESSAGE = re.compile(r"<message\b([^>]*)>(.*?)</message>", re.DOTALL)
 _ATTR = re.compile(r'([\w-]+)="([^"]*)"')
 _ENTITIES = (
@@ -134,6 +139,24 @@ def parse(text):
             out.update(args)
         return out
     return None
+
+
+def _lookalike_verb(text):
+    """The verb a non-command message resembles, or None. The trimmed
+    text must start with ``bt <verb>`` -- one leading backtick or a
+    leading slash allowed -- and still carry the piece the verb
+    needs: a digit for floor, a hash-like token for approve and
+    reject, ``=`` for terms. Anything else is prose."""
+    t = text.strip()
+    m = _LOOKALIKE.match(t)
+    if m is None:
+        return None
+    verb = m.group(1).lower()
+    if verb == "floor":
+        return verb if re.search(r"\d", t) else None
+    if verb in ("approve", "reject"):
+        return verb if _HEX_TOKEN.search(t) else None
+    return verb if "=" in t else None
 
 
 def _emit(obj):
@@ -216,11 +239,11 @@ def _held(verb, case_id, hash8):
     if verb == "approve":
         _pass(
             f"betterterms: the user approved draft {short} for "
-            f"{case_id}. Send it now with the same text verbatim as "
-            "its own argument, nothing added; do not run the gate "
-            "yourself. With betterterms-mod loaded the mod re-runs it "
-            "with --approved; without the mod, run `bt.py gate "
-            f"{case_id} --approved` once, then send."
+            f"{case_id}. Run `bt.py gate {case_id} --approved` once, "
+            "then send the rendered text it returns verbatim as its "
+            "own argument, nothing added. With betterterms-mod "
+            "loaded an extra gate run is harmless: the mod's send "
+            "check re-arms the marker."
         )
     else:
         _pass(
@@ -278,10 +301,9 @@ def main():
         if cmd is not None:
             _handle(cmd)
             return 0
-        opener = _OPENER.search(text)
-        if opener:
-            verb = opener.group(1).lower()
-            _block(f"betterterms: expected '{USAGE[verb]}'")
+        lookalike = _lookalike_verb(text)
+        if lookalike is not None:
+            _block(f"betterterms: expected '{USAGE[lookalike]}'")
     except Exception:
         # Fail closed: a prompt this hook cannot read or handle may
         # carry a walk-away, so it must never fall through to the

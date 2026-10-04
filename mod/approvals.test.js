@@ -111,8 +111,9 @@ describe("tool.call held drafts", () => {
 
   test("a typed bt approve lands in $.state through prompt.submit", async () => {
     // The user's own typed `bt approve` reaches the mod's prompt.submit
-    // hook: it resolves the hash8 through `held list` and records the
-    // full hash in $.state. The resend then spends it once.
+    // hook: the typed hash8 must prefix-match the case's current
+    // gate.json hash, and the full hash lands in $.state. The resend
+    // then spends it once.
     const { $, calls, state } = fakeDollar({
       files: heldFiles(), dirs: caseDirs(), gate: heldGate(), held: heldOpt(),
     });
@@ -125,12 +126,39 @@ describe("tool.call held drafts", () => {
     }, next);
     assert.equal(out, marker);
     assert.equal(state.get("approvals")?.[HASH], true);
-    assert.equal(calls.run.some((r) => r.argv[3] === "list"), true);
+    assert.equal(
+      calls.read.some((p) => p.endsWith(`/cases/${CASE_ID}/gate.json`)), true);
     const sent = await on.get("tool.call")($, sendCall(), fired().next);
     assert.equal(sent.result, "ran");
     assert.equal(calls.run.some((r) => r.argv.includes("--approved")), true);
     const again = await on.get("tool.call")($, sendCall(), fired().next);
     assert.match(again.deny, /held for your approval/);
+  });
+
+  test("a typed bt approve for a stale hash records nothing", async () => {
+    // gate.json's hash names the draft the last gate verdict held; a
+    // typed hash8 that matches a held record but not the gate hash is
+    // a stale card: nothing is recorded.
+    const stale = heldFiles({
+      [`${DIR}/gate.json`]: JSON.stringify({
+        result: "needs_approval",
+        reasons: ["action 'cancel' requires --approved"],
+        rendered: "a different held text", hash: OTHER,
+      }),
+    });
+    const { $, calls, state } = fakeDollar({
+      files: stale, dirs: caseDirs(), gate: heldGate(), held: heldOpt(),
+    });
+    const on = fakeOn();
+    register(on.on);
+    const { next, marker } = fired();
+    const out = await on.get("prompt.submit")($, {
+      text: `bt approve ${CASE_ID} ${HASH8}`,
+      origin: { kind: "composer" },
+    }, next);
+    assert.equal(out, marker);
+    assert.equal(state.get("approvals"), undefined);
+    assert.match(calls.toast.join("\n"), /not the current held draft/);
   });
 
   test("a prompt.submit from a plugin origin is not an approval", async () => {

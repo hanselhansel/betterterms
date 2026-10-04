@@ -22,8 +22,9 @@ members, so the terminal stays the better path there.
 
 State the boundary plainly: outside the mod, the agent runs as your
 user, so nothing technical stops it from reading `.floor` if it
-tries. The skills instruct it never to, and the gate blocks any draft
-that states the walk-away.
+tries (decision [0019](../decisions/0019-guard-deferred.md) is why the
+limit is stated, not enforced). The skills instruct it never to, and
+the gate blocks any draft that states the walk-away.
 
 ## The gate's two tiers
 
@@ -102,7 +103,10 @@ what `gate --approved` spends on the resend.
 `bt reject <case_id> <hash8>` drops the held draft. `bt terms
 <case_id> target=<a> alternative=<b>` writes target and best
 alternative to `plan.yaml` (`bt terms` takes either key alone, in any
-order). Both come through the same prompt hook.
+order). Both come through the same prompt hook. Of the typed commands
+only `bt floor` is kept from the model where the hook runs; `bt
+approve`, `bt reject` and `bt terms` are handled first, then passed
+through with a note.
 
 ## Display modes, stated plainly
 
@@ -128,7 +132,8 @@ triggering body counts as you.
   marker if it tries; the skills instruct it never to, and the gate
   blocks any draft that states the walk-away. Only the mod's in-memory
   approval resists a determined agent, because it lives in state the
-  agent's file access cannot write.
+  agent's file access cannot write. Decision
+  [0019](../decisions/0019-guard-deferred.md) covers the limit.
 - It checks structure, not truth. A sourced fact can still be wrong; source
   records carry URLs and read dates so you can check them.
 - It does not rate-limit itself. The skills cap gate calls per turn and

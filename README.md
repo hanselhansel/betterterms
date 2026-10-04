@@ -96,8 +96,10 @@ The gate is a safety net, not a sandbox. The default autonomy asks before
 every send. One honest limit: outside the mod the agent runs as your
 user, so nothing technical stops it from reading the walk-away file or
 writing an approval marker if it tries. The skills instruct it never to,
-the gate blocks any draft that states the walk-away, and typed `bt`
-commands never reach the model where the prompt hook handles them. In
+the gate blocks any draft that states the walk-away, and of the typed
+`bt` commands only `bt floor` is kept from the model where the prompt
+hook runs; `bt approve`, `bt reject` and `bt terms` are handled first,
+then passed through with a note. In
 the mod, approval comes only from a pane press or a `bt approve` you
 type yourself. Full detail:
 [docs/guides/safety-model.md](docs/guides/safety-model.md).

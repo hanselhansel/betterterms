@@ -100,14 +100,16 @@ session.
 ## The four typed commands
 
 One command per message, wherever you type to the agent. A
-`UserPromptSubmit` hook reads it before the model does.
+`UserPromptSubmit` hook reads it before the model does. Only `bt
+floor` is kept from the model where the hook runs; the other commands
+are handled first, then passed through with a note.
 
 | Command | What it does |
 |---|---|
 | `bt approve <case_id> <hash8>` | Approves the held draft with that hash. The hook writes the approval and lets the prompt through with a note, so the agent resends the same text. |
-| `bt reject <case_id> <hash8>` | Drops the held draft and stamps `rejected` in `thread.md`. |
+| `bt reject <case_id> <hash8>` | Drops the held draft and stamps `rejected` in `thread.md`, then lets the prompt through with a note. |
 | `bt floor <case_id> <amount>` | Writes the walk-away on stdin to `case set-floor`, then blocks the message so the model never receives it. Only on surfaces with the prompt hook; on Codex and other hook-less hosts use the terminal `case set-floor` command instead. |
-| `bt terms <case_id> target=<amount> alternative=<amount>` | Writes target and best alternative to `plan.yaml`. Either key alone works, in any order. |
+| `bt terms <case_id> target=<amount> alternative=<amount>` | Writes target and best alternative to `plan.yaml`, then lets the prompt through with a note. Either key alone works, in any order. |
 
 Amounts accept `62`, `62.50`, `$62`, `1,200`. `hash8` is the first 8
 hex characters of the draft's hash, shown on the approval card or in

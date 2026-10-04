@@ -32,9 +32,12 @@ the agent it guards against is worse than stating the limit plainly.
 - Docs state the boundary plainly: outside the mod, nothing technical
   stops the agent from reading the walk-away file or writing an
   approval marker if it tries. The skills instruct it never to, the
-  gate blocks any draft that states the walk-away, and typed `bt`
-  commands never reach the model. In the mod, approval comes only from
-  a pane press or a `bt approve` the user types.
+  gate blocks any draft that states the walk-away, and of the typed
+  `bt` commands only `bt floor` is kept from the model where the
+  prompt hook runs; `bt approve`, `bt reject` and `bt terms` are
+  handled first and then passed through with a note. In the mod,
+  approval comes only from a pane press or a `bt approve` the user
+  types.
 - A real boundary needs a mechanism that does not run as the agent's
   user: an OS-level separate user, or a keychain-held secret for the
   floor. That design is a P1 TODO, not in this release.

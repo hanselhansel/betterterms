@@ -97,7 +97,7 @@ describe("session.start status line", () => {
 });
 
 describe("edit flow", () => {
-  test("saving an edit writes draft.yaml and re-runs the gate", async () => {
+  test("saving an edit drops the held record, writes draft.yaml, re-gates", async () => {
     const { $, calls } = fakeDollar({
       files: heldFiles(), dirs: heldDirs(), held: heldOpt(),
       gate: {
@@ -111,11 +111,96 @@ describe("edit flow", () => {
     const input = findNode(tree, (n) => n.tag === "Input");
     assert.equal(input.props.value, RENDERED);
     await input.props.onSubmit("I can pay $1,200 a year for this plan.");
+    // The old held record is dropped quietly before the re-gate: the
+    // card answered for the old text, so no approval for it may live
+    // on under a hash the edited draft can no longer match.
+    const dropIdx = calls.run.findIndex((r) => r.argv[3] === "drop");
+    const gateIdx = calls.run.findIndex((r) => r.argv[2] === "gate");
+    assert.ok(dropIdx !== -1, "held drop did not run");
+    assert.ok(gateIdx !== -1, "the re-gate did not run");
+    assert.ok(dropIdx < gateIdx, "held drop must run before the re-gate");
+    assert.deepEqual(calls.run[dropIdx].argv, ["python3", BT, "held", "drop", CASE_ID, HASH8]);
     const wrote = calls.write.find((w) => w.path === `${DIR}/draft.yaml`);
     assert.ok(wrote);
     assert.match(wrote.text, /template: \|-/);
     assert.match(wrote.text, /I can pay \$1,200 a year/);
     assert.match(wrote.text, /action: send/);
-    assert.equal(calls.run.some((r) => r.argv.includes("gate")), true);
+  });
+
+  test("edit then press a approves the new text only; the old card is gone", async () => {
+    const EDITED = "I can pay $1,200 a year for this plan.";
+    const NEW = { ...REC, rendered: EDITED };
+    const NEW_HASH = heldHash(NEW);
+    const NEW8 = NEW_HASH.slice(0, 8);
+    const files = heldFiles();
+    const opts = {
+      held: heldOpt(),
+      // The fake gate answers for whatever draft.yaml now holds and
+      // writes the new held record, like the real `bt.py gate`.
+      gate: () => {
+        const edited = String(files[`${DIR}/draft.yaml`]).includes("1,200");
+        if (edited) {
+          opts.held[CASE_ID] = [NEW];
+          files[`${DIR}/held/${NEW_HASH}.yaml`] = JSON.stringify(NEW);
+        }
+        return {
+          result: "needs_approval",
+          reasons: ["action 'cancel' requires --approved"],
+          rendered: edited ? EDITED : RENDERED,
+          hash: edited ? NEW_HASH : HASH,
+        };
+      },
+    };
+    const { $, calls, state } = fakeDollar({ files, dirs: heldDirs(), ...opts });
+    const snap1 = await R.scanCases($);
+    const tree1 = paneTree(
+      ELS, snap1, { tab: 2, selected: null, editing: HASH }, R.paneActions($, snap1));
+    await findNode(tree1, (n) => n.tag === "Input").props.onSubmit(EDITED);
+    // The old held record was dropped before the re-gate.
+    assert.equal(calls.run.some((r) => r.argv[3] === "drop"), true);
+    const snap2 = await R.scanCases($);
+    const tree2 = paneTree(
+      ELS, snap2, { tab: 2, selected: null, editing: null }, R.paneActions($, snap2));
+    // The old card is gone; the edited text sits under its new hash.
+    assert.equal(findNode(tree2, byKey(`approve-${HASH8}`)), null);
+    const card = findNode(tree2, byKey(`approve-${NEW8}`));
+    assert.ok(card, "no card for the edited draft");
+    await card.props.onPress();
+    assert.equal(
+      calls.run.some(
+        (r) => r.argv.join(" ") === `python3 ${BT} held approve ${CASE_ID} ${NEW8}`),
+      true,
+    );
+    assert.equal(state.get("approvals")?.[NEW_HASH], true);
+    assert.equal(state.get("approvals")?.[HASH], undefined);
+  });
+});
+
+describe("stale held drafts", () => {
+  // gate.json carries the hash of the draft the last gate verdict
+  // held; a held record whose hash does not match it is stale (the
+  // draft was edited, the card belongs to old text) and must never
+  // approve.
+  const staleFiles = () => heldFiles({
+    [`${DIR}/gate.json`]: JSON.stringify({
+      result: "needs_approval",
+      reasons: ["action 'cancel' requires --approved"],
+      rendered: "a different held text",
+      hash: heldHash({ ...REC, rendered: "a different held text" }),
+    }),
+  });
+
+  test("a press refuses a held hash that is not the gate.json hash", async () => {
+    const { $, calls, state } = fakeDollar({
+      files: staleFiles(), dirs: heldDirs(), held: heldOpt(),
+    });
+    const snap = await R.scanCases($);
+    const tree = paneTree(
+      ELS, snap, { tab: 2, selected: null, editing: null }, R.paneActions($, snap));
+    await findNode(tree, byKey(`approve-${HASH8}`)).props.onPress();
+    assert.equal(calls.run.every((r) => r.argv[3] !== "approve"), true);
+    assert.equal(calls.submit.length, 0);
+    assert.equal(state.size, 0);
+    assert.match(calls.toast.join("\n"), /not the current held draft/);
   });
 });

@@ -269,6 +269,21 @@ def reject(case_dir, hash8):
     return h
 
 
+def drop(case_dir, hash8):
+    """Drop the held draft and any approval marker, like reject but
+    with no thread.md entry: the record's content was edited or
+    superseded, not refused, so no marker is owed. Returns the full
+    hash."""
+    h = resolve(case_dir, hash8)
+    d = _dir(case_dir)
+    for suffix in (".yaml", ".approved"):
+        try:
+            (d / f"{h}{suffix}").unlink()
+        except FileNotFoundError:
+            pass
+    return h
+
+
 def disarm(case_dir, hash8):
     """Delete only the ``.approved`` marker for ``hash8`` and return
     the full hash. The mod runs this when a re-armed marker was not

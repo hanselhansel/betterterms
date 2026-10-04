@@ -75,7 +75,8 @@ paths:
 - a keypress or click on Approve in the `betterterms-mod` Approvals
   tab,
 - the user's own `bt approve <case_id> <hash8>` message, which the
-  prompt hook catches (a widget button can type it for them), or
+  prompt hook handles first and then passes through with a note (a
+  widget button can type it for them), or
 - `python3 <bt> held approve
   <case_id> <hash8>`, which the agent runs only in a host with no
   prompt hook and only after the user typed `bt approve` for that
@@ -96,8 +97,11 @@ authorizes the send. `held reject` is the matching drop:
 the held draft and stamps `rejected` in `thread.md`.
 `python3 <bt> held disarm <case_id> <hash8>` drops only the
 `.approved` marker and keeps the draft; the mod runs it when a
-marker it re-armed was not spent. Never run `held approve`,
-`held reject` or `held disarm` on your own initiative: outside the
+marker it re-armed was not spent. `python3 <bt> held drop
+<case_id> <hash8>` removes the record and marker with no thread
+marker; the mod runs it when an edited draft replaces the held one.
+Never run `held approve`, `held reject`, `held drop` or
+`held disarm` on your own initiative: outside the
 no-hook fallback above, those verbs record or remove user
 decisions.
 
@@ -316,8 +320,10 @@ holds, end the exchange with the user's yes.
 - Never read or print the floor, and never write or remove an approval
   marker yourself. You run as the user, so outside the mod nothing
   technical stops you: this instruction is the boundary there, the gate
-  blocks any draft that states the walk-away, and typed `bt` commands
-  never reach you where the prompt hook handles them. The user enters
+  blocks any draft that states the walk-away, and of the typed `bt`
+  commands only `bt floor` is kept from you where the prompt hook
+  runs; `bt approve`, `bt reject` and `bt terms` are handled first
+  and then passed through with a note. The user enters
   the floor themselves by running `bt.py case set-floor`; intake has
   the exact wording.
 - Nothing personal goes into the repo. Case files live in the user's

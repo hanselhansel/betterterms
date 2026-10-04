@@ -119,6 +119,14 @@ export function paneActions(host, snap) {
       host.invalidate("ui.render");
     },
     approve: async (c, held) => {
+      // The card must still name the draft the last gate verdict held:
+      // a held hash that is not the case's current gate.json hash is
+      // stale and refuses plainly.
+      if (held.hash !== c.gateHash) {
+        return host.toast(
+          `betterterms: ${A.hash8(held.hash) ?? "that hash"} is not ` +
+          `the current held draft for ${c.id}`);
+      }
       const res = await runHeld(host, snap, "approve", c.id, held.hash);
       if (!res.ok) return host.toast(`betterterms: approve failed: ${res.error}`);
       await markApproved(host, res.hash);
@@ -139,6 +147,13 @@ export function paneActions(host, snap) {
     },
     saveEdit: async (c, held, text) => {
       A.setEditing(null);
+      // The edited text is a new send tuple: the old held record is
+      // dropped quietly (no thread marker) before the re-gate re-lists
+      // the draft under its new hash.
+      const drop = await runHeld(host, snap, "drop", c.id, held.hash);
+      if (!drop.ok) {
+        host.toast(`betterterms: could not drop the old held draft: ${drop.error}`);
+      }
       await host.fsWrite(`${snap.root}/${c.id}/draft.yaml`, A.draftYaml(c, held, text)).catch(() => {});
       await runGate(host, snap, c, false);
       host.invalidate("ui.render");
@@ -221,11 +236,12 @@ export async function gateSend(host, snap, c, e, next) {
 
 // prompt.submit fires only on user prompts (the composer, or the
 // bridge when a session resumes on it). A typed `bt approve <case>
-// <hash8>` resolves its prefix through `held list` and records the
-// full hash in $.state: the one place the send check trusts. The
-// settings hook writes the marker on its own; the send check re-arms
-// it when the press arrives without one. A failed observer never
-// blocks the prompt.
+// <hash8>` counts only when the typed prefix matches the case's
+// current gate.json hash: the draft the last gate verdict held. A
+// stale hash is refused with a toast and records nothing; the same
+// press-side rule as the pane. The settings hook writes the marker
+// on its own; the send check re-arms it when the approval arrives
+// without one. A failed observer never blocks the prompt.
 const TYPED_APPROVE =
   /^\s*bt\s+approve\s+([a-z0-9-]+)\s+([0-9a-f]{8,64})\s*$/i;
 
@@ -236,18 +252,15 @@ export async function promptSubmit(host, e, next) {
       ? TYPED_APPROVE.exec(String(e?.text ?? ""))
       : null;
     if (m !== null) {
-      const bt = await IO.findBt(host);
-      if (bt !== null) {
-        const home = await IO.homeDir(host);
-        const proc = await IO.runProc(
-          host, home, ["python3", bt, "held", "list", m[1]]);
-        const held = proc.error ? null : JSON.parse(proc.stdout).held;
-        const hits = Array.isArray(held)
-          ? held.map((r) => r?.hash)
-              .filter((h) => typeof h === "string"
-                && h.startsWith(m[2].toLowerCase()))
-          : [];
-        if (hits.length === 1) await markApproved(host, hits[0]);
+      const home = await IO.homeDir(host);
+      const gate = home === null ? null : C.parseGate(
+        await IO.readIf(host, `${home}/cases/${m[1]}/gate.json`));
+      const hash = typeof gate?.hash === "string" ? gate.hash : null;
+      if (hash !== null && hash.startsWith(m[2].toLowerCase())) {
+        await markApproved(host, hash);
+      } else {
+        host.toast(
+          `betterterms: ${m[2]} is not the current held draft for ${m[1]}`);
       }
     }
   } catch { /* an observer never blocks the prompt */ }

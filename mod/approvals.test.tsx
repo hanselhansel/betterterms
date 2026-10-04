@@ -94,7 +94,10 @@ function wire(on: OpHook, w: Wired) {
     e.path in w.files || e.path in w.dirs
       ? { value: { kind: e.path in w.dirs ? 'dir' : 'file', size: 1, mtimeMs: 2, isLink: false, realPath: e.path } }
       : { deny: 'ENOENT' });
-  on('fs.write', () => ({ value: undefined }));
+  on('fs.write', (_$: never, e: { path: string; value: string }) => {
+    w.files[e.path] = e.value;
+    return { value: undefined };
+  });
   on('state.get', (_$: never, e: { plugin: string; key: string }) => {
     const cur = w.state.get(`${e.plugin}/${e.key}`);
     return { value: { value: cur?.value, version: cur?.version ?? 0 } };
@@ -137,7 +140,7 @@ function wire(on: OpHook, w: Wired) {
         .filter((e) => e.name !== `${h}.approved`);
       return { value: { exitCode: 0, stdout: `{"ok":true,"hash":"${h}"}`, stderr: '' } };
     }
-    if (argv[2] === 'held' && (argv[3] === 'approve' || argv[3] === 'reject')) {
+    if (argv[2] === 'held' && (argv[3] === 'approve' || argv[3] === 'reject' || argv[3] === 'drop')) {
       const h8 = String(argv[5] ?? '');
       const hits = w.held.filter((r) => r.hash.startsWith(h8));
       if (hits.length !== 1)
@@ -147,15 +150,20 @@ function wire(on: OpHook, w: Wired) {
         w.files[`${heldDir}/${h}.approved`] = `hash: ${h}\n`;
         (w.dirs[heldDir] as unknown[]).push({ name: `${h}.approved`, kind: 'file', isLink: false });
       } else {
+        // reject and drop both remove the record and marker; drop
+        // writes no thread.md marker (this fake does not model one).
         w.held = w.held.filter((r) => r.hash !== h);
         delete w.files[`${heldDir}/${h}.yaml`];
         delete w.files[`${heldDir}/${h}.approved`];
+        w.dirs[heldDir] = (w.dirs[heldDir] as { name: string }[])
+          .filter((e) => e.name !== `${h}.yaml` && e.name !== `${h}.approved`);
       }
       return { value: { exitCode: 0, stdout: `{"ok":true,"hash":"${h}"}`, stderr: '' } };
     }
     if (argv[2] === 'gate' && argv.includes('--approved')) {
       // Like the real CLI: --approved passes only on a live marker,
-      // and the marker plus its record are spent on use.
+      // and the marker plus its record are spent on use; the held
+      // dir entry goes with them so a rescan sees the spend.
       let hash: string | undefined;
       try { hash = JSON.parse(w.gateText()).hash; } catch { hash = undefined; }
       const marker = hash ? `${heldDir}/${hash}.approved` : '';
@@ -163,11 +171,17 @@ function wire(on: OpHook, w: Wired) {
         delete w.files[marker];
         delete w.files[`${heldDir}/${hash}.yaml`];
         w.held = w.held.filter((r) => r.hash !== hash);
-        return { value: { exitCode: 0, stdout: w.approvedText(), stderr: '' } };
+        w.dirs[heldDir] = (w.dirs[heldDir] as { name: string }[])
+          .filter((e) => e.name !== `${hash}.yaml` && e.name !== `${hash}.approved`);
+        const pass = w.approvedText();
+        w.files[`${DIR}/gate.json`] = pass;
+        return { value: { exitCode: 0, stdout: pass, stderr: '' } };
       }
     }
     const stdout = w.gateText();
     const code = stdout.includes('"needs_approval"') ? 3 : stdout.includes('"block"') ? 1 : 0;
+    // The real gate writes its verdict to gate.json on every call.
+    if (argv[2] === 'gate') w.files[`${DIR}/gate.json`] = stdout;
     return { value: { exitCode: code, stdout, stderr: '' } };
   });
   on('prompt.submit', (_$: never, e: { text: string }) => {
@@ -200,7 +214,10 @@ function fresh(over: Partial<Wired> = {}): Wired {
     opens: [],
     runs: [],
     gateText: () => GATE_HELD,
-    approvedText: () => '{"result":"pass","reasons":[]}',
+    // A real pass verdict carries rendered (and hash only on
+    // needs_approval): without rendered the next scan would read
+    // gate.json as carrying no text to match.
+    approvedText: () => JSON.stringify({ result: 'pass', reasons: [], rendered: RENDERED }),
     openPlaced: true,
     ...over,
   };
@@ -329,8 +346,9 @@ for (const surface of ['terminal', 'desktop'] as const) {
 
   test(`a typed bt approve records $.state and sends once (${surface})`, async ($, on) => {
     // `bt approve` typed in the prompt reaches the mod's own
-    // prompt.submit hook: the hash8 resolves through `held list` and
-    // the full hash lands in $.state. The resend spends it once.
+    // prompt.submit hook: the typed hash8 must prefix-match the
+    // case's current gate.json hash, then the full hash lands in
+    // $.state. The resend spends it once.
     const w = fresh();
     wire(on as OpHook, w);
     await $.prompt.submit({
@@ -338,12 +356,40 @@ for (const surface of ['terminal', 'desktop'] as const) {
       origin: { kind: 'composer' },
     } as never);
     expect(approvals(w)[HASH]).toBe(true);
-    expect(w.runs.some((r) => r.join(' ').includes(`held list ${ID}`))).toBe(true);
     const sent = await $.tool.call(sendCall() as never);
     expect((sent as { result?: { ran: string } }).result?.ran).toBe('gmail.send');
     expect(w.runs.some((r) => r.includes('--approved'))).toBe(true);
     const again = await $.tool.call(sendCall() as never);
     expect((again as { deny?: string }).deny).toMatch(/held for your approval/);
+  });
+
+  test(`a stale held hash refuses the press (${surface})`, async ($, on) => {
+    // gate.json names the draft the last gate verdict held; a card
+    // whose hash does not match it belongs to old text (an edit
+    // already replaced it), so the press refuses plainly.
+    const w = fresh({
+      files: fixtureFiles({
+        [`${DIR}/gate.json`]: JSON.stringify({
+          result: 'needs_approval',
+          reasons: ["action 'cancel' requires --approved"],
+          rendered: 'a different held text',
+          hash: HASH2,
+        }),
+      }),
+    });
+    wire(on as OpHook, w);
+    const pane = await $.ui.mount({
+      plugin: 'betterterms-mod', surface, component: 'Pane',
+      props: PANE_PROPS as never, requestId: 'betterterms',
+    });
+    await pane.press({ key: 'tab-2' });
+    await pane.redraw();
+    await pane.press({ key: `approve-${HASH8}` });
+    expect(approvals(w)[HASH]).toBeUndefined();
+    expect(w.runs.some((r) => r.join(' ').includes(`held approve`))).toBe(false);
+    expect(w.prompts).toHaveLength(0);
+    expect(w.toasts.some((t) => /not the current held draft/.test(t))).toBe(true);
+    await pane.unmount();
   });
 
   test(`a re-gate miss disarms the re-armed marker (${surface})`, async ($, on) => {

@@ -150,14 +150,16 @@ class FloorCommandTest(HookCase):
         self.assertNotIn("62", proc.stdout)
         self.assertFalse((d / ".floor").exists())
 
-    def test_floor_anywhere_in_message_never_reaches_model(self):
-        # Review finding 10: a near miss still names the walk-away,
-        # so `bt floor` anywhere in the text blocks, never forwards.
+    def test_floor_lookalike_at_message_start_never_reaches_model(self):
+        # A lookalike blocks only at the start of the trimmed text
+        # (one leading backtick or slash allowed) and only when the
+        # line still carries a digit: it claims to set the walk-away,
+        # so the number never reaches the model.
         d = self.make_case()
         for prompt in (
-            "ok bt floor case-1 62",
-            "please run bt floor case-1 62 now",
             "`bt floor case-1 62`",
+            "/bt floor case-1 62",
+            "bt floor case-1 sixty two dollars 62",
         ):
             with self.subTest(prompt=prompt):
                 proc = run_hook(self.home, prompt)
@@ -168,7 +170,7 @@ class FloorCommandTest(HookCase):
 
     def test_floor_near_miss_blocks_with_usage(self):
         self.make_case()
-        proc = run_hook(self.home, "ok bt floor case-1 sixty")
+        proc = run_hook(self.home, "bt floor case-1")
         out = hook_json(proc)
         self.assertEqual(out["decision"], "block")
         self.assertIn("bt floor", out["reason"])
@@ -201,8 +203,13 @@ class ApproveCommandTest(HookCase):
         self.assertTrue((held_dir / f"{h}.approved").is_file())
         out = hook_json(proc)
         note = additional_context(out)
+        # The note leads with the no-mod instruction: run the gate
+        # with --approved once, then send the rendered text verbatim.
         self.assertIn("approved", note)
-        self.assertIn("same text", note)
+        self.assertIn("bt.py gate", note)
+        self.assertIn("--approved", note)
+        self.assertIn("verbatim", note)
+        self.assertLess(note.index("--approved"), note.index("mod"))
 
     def test_approve_bad_hash_blocks(self):
         self.make_case()
@@ -284,12 +291,16 @@ class RejectAndTermsTest(HookCase):
         self.assertIn("bt terms", out["reason"])
         self.assertFalse((case_dir / "plan.yaml").exists())
 
-    def test_terms_no_keys_blocks(self):
-        self.make_case()
-        proc = run_hook(self.home, "bt terms case-1")
+    def test_terms_unknown_key_blocks(self):
+        # A terms-shaped line whose = pairs hold a key the grammar
+        # does not know fails the parse, then still looks like a
+        # terms attempt (it starts with `bt terms` and carries `=`).
+        case_dir = self.make_case()
+        proc = run_hook(self.home, "bt terms case-1 note=60")
         out = hook_json(proc)
         self.assertEqual(out["decision"], "block")
         self.assertIn("bt terms", out["reason"])
+        self.assertFalse((case_dir / "plan.yaml").exists())
 
 
 class NonCommandTest(HookCase):
@@ -312,23 +323,24 @@ class NonCommandTest(HookCase):
                 self.assertEqual(proc.stdout.strip(), "")
 
     def test_malformed_bt_line_blocks_with_usage(self):
-        proc = run_hook(self.home, "bt approve")
+        proc = run_hook(
+            self.home, "bt approve case-1 abcd1234 please"
+        )
         self.assertEqual(proc.returncode, 0, proc.stderr)
         out = hook_json(proc)
         self.assertEqual(out["decision"], "block")
         self.assertIn("bt approve", out["reason"])
 
-    def test_embedded_approve_blocks_instead_of_running(self):
-        # `bt approve` inside a sentence is not a whole command: it
-        # blocks with usage rather than approving or passing through.
+    def test_embedded_approve_is_prose_and_passes(self):
+        # `bt approve` inside a sentence is not a command attempt: the
+        # line passes through untouched and approves nothing.
         case_dir = self.make_case()
         held_dir, h = self.hold(case_dir)
         proc = run_hook(
             self.home, f"ok bt approve case-1 {h[:8]} thanks"
         )
-        out = hook_json(proc)
-        self.assertEqual(out["decision"], "block")
-        self.assertIn("bt approve", out["reason"])
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(proc.stdout.strip(), "")
         self.assertFalse((held_dir / f"{h}.approved").exists())
 
 

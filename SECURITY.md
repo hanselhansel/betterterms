@@ -60,9 +60,11 @@ exact rendered text to send.
   or the session log, or from writing an approval file, if it sets out
   to: the boundary there is the skills' instruction never to do those
   things, plus the gate blocking any draft that states the walk-away.
-  Typed `bt` commands never reach the model where the prompt hook
-  handles them. Only the mod's in-memory approval resists a determined
-  agent, because it lives in state file access cannot write.
+  Where the prompt hook runs, only `bt floor` is kept from the model;
+  `bt approve`, `bt reject` and `bt terms` are handled first and then
+  passed through with a note. Only the mod's in-memory approval resists
+  a determined agent, because it lives in state file access cannot
+  write.
 - It runs on the machine and the files it can read. Keep `~/.betterterms`
   yours.
 

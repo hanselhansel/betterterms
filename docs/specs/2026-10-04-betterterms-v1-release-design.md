@@ -294,8 +294,8 @@ body of the triggering `from="human"` message, never text the agent or a counter
 - `bt floor`: writes the walk-away through `bt.py case set-floor` on stdin, then blocks the
   prompt, so the model never receives it. The message stays visible in the thread to project
   members, and Claude Code still writes blocked prompts to the session log
-  (anthropics/claude-code#96891). A `PreToolUse` hook denies agent reads of the session log
-  and of `.floor` files. That guard is best effort.
+  (anthropics/claude-code#96891). The `PreToolUse` file guard named here was removed in
+  0.10.0 (decision 0019): same-user enforcement did not hold.
 - `bt approve`: records an approval for that exact rendered-text hash in
   `<case>/held/<hash>.approved`, then lets the prompt through with a note that the draft is
   approved, so the agent resends. The gate accepts `--approved` only when that file exists and
@@ -303,8 +303,10 @@ body of the triggering `from="human"` message, never text the agent or a counter
 - `bt reject` and `bt terms`: write the change and let the prompt through with a note.
 
 **Strength, stated plainly in the docs.** Widget approval is weaker than a mod keypress. The
-agent can write files, so the `PreToolUse` hook denying writes under `held/` is the only guard
-against a forged approval. It does stop the main threat: text inside an inbound email can never
+agent can write files, so nothing technical stops a forged approval marker under `held/`; the
+skills' rule never to write one is the boundary there (the `PreToolUse` guard that tried to
+enforce it left 0.10.0 under decision 0019). It does stop the main threat: text inside an
+inbound email can never
 become a user message, so it can never approve a draft. This matches chat approval in Codex.
 
 **Tests.** Unit tests feed the hook real prompt shapes: a plain prompt, a Projects wake

@@ -4,7 +4,7 @@
 import * as R from "./register.js";
 import { paneTree } from "./ui/pane.js";
 import {
-  CASE_ID, DIR, DRAFT, GATE_NEEDS_APPROVAL, RENDERED,
+  CASE_ID, DIR, DRAFT, RENDERED,
   caseDirs, caseFiles, heldHash,
 } from "./testkit.js";
 
@@ -27,7 +27,9 @@ export const ELS = { Box: "Box", Text: "Text", Button: "Button", Input: "Input" 
 
 export const heldFiles = (extra = {}) => caseFiles({
   [`${DIR}/draft.yaml`]: DRAFT,
-  [`${DIR}/gate.json`]: GATE_NEEDS_APPROVAL,
+  // gate.json carries the held hash: approve (press or typed) refuses
+  // any held hash that is not the case's current gate.json hash.
+  [`${DIR}/gate.json`]: GATE_HELD_JSON,
   ...extra,
 });
 export const heldDirs = () => caseDirs({
