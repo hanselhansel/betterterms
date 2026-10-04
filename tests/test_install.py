@@ -249,6 +249,32 @@ class SessionStartHookTest(ScriptTestCase):
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertIn("betterterms-start", proc.stdout)
 
+    def test_remote_session_warns_when_home_is_ephemeral(self):
+        # Decision F: a cloud home vanishes with the VM, so the
+        # default ~/.betterterms location gets a one-line warning.
+        proc = self.hook({"CLAUDE_CODE_REMOTE": "true"})
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertIn("vanish", proc.stdout)
+        self.assertNotIn("betterterms-start", proc.stdout)
+
+    def test_remote_session_warns_with_home_relative_bt_home(self):
+        proc = self.hook({
+            "CLAUDE_CODE_REMOTE": "true",
+            "BETTERTERMS_HOME": str(self.home / ".betterterms"),
+        })
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertIn("vanish", proc.stdout)
+
+    def test_remote_session_no_warning_for_persistent_home(self):
+        # A BETTERTERMS_HOME outside the ephemeral home (a mounted
+        # volume) persists, so no warning line is due.
+        proc = self.hook({
+            "CLAUDE_CODE_REMOTE": "true",
+            "BETTERTERMS_HOME": str(self.tmp / "bthome"),
+        })
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertNotIn("vanish", proc.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -150,6 +150,29 @@ class FloorCommandTest(HookCase):
         self.assertNotIn("62", proc.stdout)
         self.assertFalse((d / ".floor").exists())
 
+    def test_floor_anywhere_in_message_never_reaches_model(self):
+        # Review finding 10: a near miss still names the walk-away,
+        # so `bt floor` anywhere in the text blocks, never forwards.
+        d = self.make_case()
+        for prompt in (
+            "ok bt floor case-1 62",
+            "please run bt floor case-1 62 now",
+            "`bt floor case-1 62`",
+        ):
+            with self.subTest(prompt=prompt):
+                proc = run_hook(self.home, prompt)
+                out = hook_json(proc)
+                self.assertEqual(out["decision"], "block")
+                self.assertNotIn("62", proc.stdout)
+                self.assertFalse((d / ".floor").exists())
+
+    def test_floor_near_miss_blocks_with_usage(self):
+        self.make_case()
+        proc = run_hook(self.home, "ok bt floor case-1 sixty")
+        out = hook_json(proc)
+        self.assertEqual(out["decision"], "block")
+        self.assertIn("bt floor", out["reason"])
+
 
 class ApproveCommandTest(HookCase):
     def test_wake_envelope_uses_human_trigger_only(self):
@@ -281,6 +304,78 @@ class NonCommandTest(HookCase):
         out = hook_json(proc)
         self.assertEqual(out["decision"], "block")
         self.assertIn("bt approve", out["reason"])
+
+    def test_embedded_approve_blocks_instead_of_running(self):
+        # `bt approve` inside a sentence is not a whole command: it
+        # blocks with usage rather than approving or passing through.
+        case_dir = self.make_case()
+        held_dir, h = self.hold(case_dir)
+        proc = run_hook(
+            self.home, f"ok bt approve case-1 {h[:8]} thanks"
+        )
+        out = hook_json(proc)
+        self.assertEqual(out["decision"], "block")
+        self.assertIn("bt approve", out["reason"])
+        self.assertFalse((held_dir / f"{h}.approved").exists())
+
+
+def run_hook_raw(home, raw_stdin):
+    env = dict(
+        os.environ,
+        BETTERTERMS_HOME=str(home),
+        CLAUDE_PLUGIN_ROOT=str(REPO),
+    )
+    return subprocess.run(
+        [sys.executable, str(HOOK)],
+        input=raw_stdin,
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=30,
+    )
+
+
+class FailClosedTest(HookCase):
+    def test_unparseable_event_blocks(self):
+        # The hook fails closed: an event it cannot read may hide a
+        # `bt floor` line, so nothing falls through to the model.
+        proc = run_hook_raw(self.home, "{not json")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        out = hook_json(proc)
+        self.assertEqual(out["decision"], "block")
+
+    def test_hook_exception_blocks_not_passes(self):
+        # A case dir that cannot be listed raises inside _handle;
+        # the failure blocks the prompt instead of forwarding it.
+        d = self.make_case()
+        (d / ".floor").write_text("1.00")
+        os.chmod(d, 0o000)
+        try:
+            proc = run_hook(self.home, "bt floor case-1 62")
+        finally:
+            os.chmod(d, 0o700)
+        self.assertEqual(proc.returncode, 0)
+        out = hook_json(proc)
+        self.assertEqual(out["decision"], "block")
+
+    def test_handle_exception_blocks_in_process(self):
+        import io
+        from unittest import mock
+
+        event = json.dumps({"prompt": "bt floor case-1 62"})
+        buf = io.StringIO()
+        with (
+            mock.patch("sys.stdin", io.StringIO(event)),
+            mock.patch("sys.stdout", buf),
+            mock.patch.object(
+                prompt_commands, "_handle",
+                side_effect=RuntimeError("boom"),
+            ),
+        ):
+            prompt_commands.main()
+        self.assertEqual(
+            json.loads(buf.getvalue())["decision"], "block"
+        )
 
 
 class ParseTest(unittest.TestCase):

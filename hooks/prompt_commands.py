@@ -14,9 +14,12 @@ grammar is handled here:
                                   case set-terms, pass with a note
 
 ``bt floor`` always blocks, so the walk-away is never forwarded to
-the model; its reason never carries the amount. A line that opens
-with ``bt <verb>`` but does not match the grammar blocks with the
-usage line rather than reaching the model as text.
+the model; its reason never carries the amount. ``bt <verb>``
+anywhere in the text -- backticked, mid-sentence, trailing words --
+blocks with the usage line rather than reaching the model as text.
+The hook fails closed: input it cannot read, or a command that raises,
+blocks instead of passing through, because the text may carry a
+walk-away.
 """
 
 import json
@@ -262,23 +265,20 @@ def _handle(cmd):
 def main():
     try:
         event = json.loads(sys.stdin.read() or "{}")
-    except json.JSONDecodeError:
-        return 0
-    text = user_text(str(event.get("prompt") or ""))
-    cmd = parse(text)
-    if cmd is not None:
-        try:
+        text = user_text(str(event.get("prompt") or ""))
+        cmd = parse(text)
+        if cmd is not None:
             _handle(cmd)
-        except Exception:
-            # A failed command hook fails closed: `bt floor` text may
-            # carry the walk-away, so it must never fall through to
-            # the model.
-            _block("betterterms: command failed")
-        return 0
-    opener = _OPENER.match(text.strip())
-    if opener:
-        verb = opener.group(1).lower()
-        _block(f"betterterms: expected '{USAGE[verb]}'")
+            return 0
+        opener = _OPENER.search(text)
+        if opener:
+            verb = opener.group(1).lower()
+            _block(f"betterterms: expected '{USAGE[verb]}'")
+    except Exception:
+        # Fail closed: a prompt this hook cannot read or handle may
+        # carry a walk-away, so it must never fall through to the
+        # model.
+        _block("betterterms: the prompt check failed")
     return 0
 
 

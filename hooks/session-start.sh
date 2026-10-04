@@ -1,14 +1,21 @@
 #!/bin/sh
 # SessionStart hook for the betterterms plugin.
 #
-# Prints one line pointing the agent at the betterterms-start skill.
-# In remote (cloud) sessions nothing is printed unless a case already
-# exists under $BETTERTERMS_HOME/cases: a fresh cloud checkout has no
-# state to resume and the pointer is noise there.
+# In remote (cloud) sessions a $BETTERTERMS_HOME under the ephemeral
+# $HOME loses its cases when the VM ends, so a warning line prints
+# first. The pointer to the betterterms-start skill prints only when
+# it helps: always in a local session, in a cloud session only when a
+# case already exists to resume.
 set -eu
 
+home="${BETTERTERMS_HOME:-$HOME/.betterterms}"
+
 if [ "${CLAUDE_CODE_REMOTE:-}" = "true" ]; then
-    home="${BETTERTERMS_HOME:-$HOME/.betterterms}"
+    case "$home" in
+        "$HOME"|"$HOME"/*)
+            echo "betterterms: cloud session; cases under $home vanish when the VM ends."
+            ;;
+    esac
     if [ ! -d "$home/cases" ] \
         || [ -z "$(find "$home/cases" -mindepth 1 -maxdepth 1 -type d -print -quit 2>/dev/null)" ]; then
         exit 0
