@@ -91,7 +91,14 @@ def cmd_gate(args):
         "rendered": rendered,
     }
     if result == "needs_approval" and rendered is not None:
-        out["hash"] = held.draft_hash(rendered)
+        out["hash"] = held.draft_hash(held.draft_record(d, draft, rendered))
+    # The verdict is recorded in the case folder itself so the pane
+    # and widgets read the same answer the agent got; the write is
+    # best-effort because stdout carries the contract.
+    try:
+        held.atomic_write(d / "gate.json", json.dumps(out))
+    except OSError:
+        pass
     return {"pass": 0, "block": 1, "needs_approval": 3}[result], out
 
 

@@ -3,9 +3,11 @@ needs_approval draft is recorded under held/<sha256>.yaml, an approval
 is consumed exactly once, edited text invalidates it, an ambiguous
 hash prefix names every match, and held files survive a restart."""
 
+import json
 import os
 import re
 import stat
+import threading
 import unittest
 
 from bt_helpers import (
@@ -18,7 +20,7 @@ from bt_helpers import (
     write_case_files,
     write_draft,
 )
-from btlib import yaml
+from btlib import held, yaml
 
 HASH_RE = re.compile(r"^[0-9a-f]{64}$")
 NO_APPROVAL = "no approval recorded for this exact text"
@@ -79,6 +81,17 @@ class HoldOnNeedsApprovalTest(HeldCase):
         self.assertNotIn("hash", out)
         self.assertFalse((case_dir / "held").exists())
 
+    def test_gate_writes_gate_json(self):
+        # The CLI records its own verdict so the mod and widgets read
+        # the same answer the agent got; the agent never writes it.
+        case_id, case_dir = self.make_case()
+        proc, out = self.gate(case_id, self.held_draft())
+        self.assertEqual(proc.returncode, 3, out)
+        saved = json.loads((case_dir / "gate.json").read_text())
+        self.assertEqual(saved["result"], "needs_approval")
+        self.assertEqual(saved["hash"], out["hash"])
+        self.assertEqual(saved["rendered"], out["rendered"])
+
 
 class ApproveFlowTest(HeldCase):
     def test_approved_requires_matching_approval(self):
@@ -136,6 +149,89 @@ class ApproveFlowTest(HeldCase):
             case_id, self.held_draft(), approved=True
         )
         self.assertEqual(proc.returncode, 0, out)
+
+
+class TupleBindingTest(HeldCase):
+    def test_approval_binds_action_not_just_text(self):
+        # The hash covers (action, offer, period, currency, rendered):
+        # an approval for a cancel never licenses a send of the same
+        # words, and vice versa.
+        case_id, case_dir = self.make_case()
+        write_case_files(case_dir, brief=dict(BRIEF_PAY, mode="coach"))
+        cancel = self.held_draft()
+        proc, out = self.gate(case_id, cancel)
+        self.assertEqual(proc.returncode, 3, out)
+        h = out["hash"]
+        proc, out = run_bt_json(
+            self.home, "held", "approve", case_id, h[:8]
+        )
+        self.assertEqual(proc.returncode, 0, out)
+        send = send_draft(
+            action="send", offer=None, template="please end my plan"
+        )
+        proc, out = self.gate(case_id, send, approved=True)
+        self.assertEqual(proc.returncode, 3, out)
+        self.assertEqual(out["rendered"], "please end my plan")
+        self.assertNotEqual(out["hash"], h)
+        self.assertIn(NO_APPROVAL, out["reasons"])
+        proc, out = run_bt_json(
+            self.home, "held", "approve", case_id, out["hash"][:8]
+        )
+        self.assertEqual(proc.returncode, 0, out)
+        proc, out = self.gate(case_id, send, approved=True)
+        self.assertEqual(proc.returncode, 0, out)
+
+    def test_two_sends_cannot_share_one_approval(self):
+        # The marker unlinks atomically: racing consumes split one
+        # True and one False, never two sends off one approval.
+        case_id, case_dir = self.make_case()
+        proc, out = self.gate(case_id, self.held_draft())
+        h = out["hash"]
+        proc, out = run_bt_json(
+            self.home, "held", "approve", case_id, h[:8]
+        )
+        self.assertEqual(proc.returncode, 0, out)
+        draft = self.held_draft()
+        results = []
+        threads = [
+            threading.Thread(
+                target=lambda: results.append(
+                    held.consume_approval(
+                        case_dir, draft, "please end my plan"
+                    )
+                )
+            )
+            for _ in range(2)
+        ]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        self.assertEqual(sorted(results), [False, True])
+        self.assertFalse(
+            (case_dir / "held" / f"{h}.approved").exists()
+        )
+
+
+class IntegrityTest(HeldCase):
+    def test_held_record_edited_after_hold_is_skipped(self):
+        # A held file whose stored fields no longer hash to its name
+        # is corrupt: it never lists, and it cannot be approved.
+        case_id, case_dir = self.make_case()
+        proc, out = self.gate(case_id, self.held_draft())
+        h = out["hash"]
+        path = case_dir / "held" / f"{h}.yaml"
+        data = yaml.load(path.read_text())
+        data["rendered"] = "a different message slipped in"
+        path.write_text(yaml.dump(data))
+        proc, out = run_bt_json(self.home, "held", "list", case_id)
+        self.assertEqual(proc.returncode, 0, out)
+        self.assertEqual(out["held"], [])
+        proc, out = run_bt_json(
+            self.home, "held", "approve", case_id, h[:8]
+        )
+        self.assertEqual(proc.returncode, 2, out)
+        self.assertIn("corrupt", out["error"])
 
 
 class HeldListTest(HeldCase):

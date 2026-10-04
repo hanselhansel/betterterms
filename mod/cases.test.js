@@ -148,6 +148,41 @@ describe("decideSend", () => {
   });
 });
 
+describe("sendShapeError", () => {
+  test("one verbatim argument plus envelope fields passes", () => {
+    const args = { to: "v@x", subject: "re: plan", body: RENDERED };
+    assert.equal(C.sendShapeError(args, RENDERED), null);
+  });
+
+  test("the text inside a longer argument denies", () => {
+    assert.match(
+      C.sendShapeError({ command: `mail v@x <<EOF\n${RENDERED}\nEOF` }, RENDERED),
+      /whole argument/,
+    );
+  });
+
+  test("a second prose argument denies", () => {
+    const args = { to: "v@x", body: RENDERED, note: "and a word more" };
+    assert.match(C.sendShapeError(args, RENDERED), /carries text/);
+  });
+
+  test("no verbatim carrier, or two, denies", () => {
+    assert.match(
+      C.sendShapeError({ to: "v@x", subject: "re: plan" }, RENDERED),
+      /verbatim/,
+    );
+    assert.match(
+      C.sendShapeError({ body: RENDERED, text: RENDERED }, RENDERED),
+      /more than one/,
+    );
+  });
+
+  test("whitespace-only differences still match the render", () => {
+    const ragged = RENDERED.replace("\n", "   ");
+    assert.equal(C.sendShapeError({ body: ragged }, RENDERED), null);
+  });
+});
+
 describe("bt.py resolution", () => {
   const REL = "skills/betterterms-guardrails/scripts/bt.py";
   const MROOT = "/cache/betterterms/betterterms-mod/0.10.0";

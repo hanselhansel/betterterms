@@ -25,10 +25,9 @@ function numOr(v, dflt) {
   return Number.isFinite(n) ? n : dflt;
 }
 
-// The last gate verdict the exchange skill saved to the case folder as
-// gate.json: {result, reasons, rendered, hash?}, or null when absent or
-// malformed. rendered is the exact text the agent must send; null on
-// block.
+// The last gate verdict bt.py wrote into the case folder as gate.json:
+// {result, reasons, rendered, hash?}, or null when absent or malformed.
+// rendered is the exact text the agent must send; null on block.
 export function parseGate(text) {
   try {
     const g = JSON.parse(text);
@@ -238,6 +237,55 @@ export function offerMarks(planText) {
 export function callArgs(e) {
   const { tool, tool_use_id, consent, agentId, ...args } = e ?? {};
   return args;
+}
+
+// Envelope fields a send call may carry beside the message body:
+// where the message goes, never what it says.
+const ENVELOPE_KEYS = new Set([
+  "to", "cc", "bcc", "from", "sender", "subject", "title",
+  "recipient", "recipients", "channel", "channel_id", "chat_id",
+  "thread", "thread_id", "conversation_id", "message_id",
+  "in_reply_to", "reply_to", "email", "address", "phone", "number",
+  "user", "username", "target", "destination", "room",
+]);
+
+// (key, value) for every string leaf: the send-shape check needs the
+// field names, not just the texts.
+export function collectPairs(value, key = "", out = []) {
+  if (typeof value === "string") out.push({ key, value });
+  else if (Array.isArray(value)) {
+    for (const v of value) collectPairs(v, key, out);
+  } else if (value && typeof value === "object") {
+    for (const [k, v] of Object.entries(value)) collectPairs(v, k, out);
+  }
+  return out;
+}
+
+// null when the call is a clean send of the gated text: exactly one
+// argument equals the freshly rendered message verbatim, and every
+// other string argument is an envelope field. The rendered text inside
+// a longer argument, a second prose field, or no verbatim carrier at
+// all is a send the gate never saw and the user never approved.
+export function sendShapeError(args, rendered) {
+  const r = normalize(rendered);
+  if (r === "") return "the gate produced no text to send";
+  let exact = 0;
+  for (const p of collectPairs(args)) {
+    const v = normalize(p.value);
+    if (v === r) {
+      exact += 1;
+      continue;
+    }
+    if (v.includes(r)) {
+      return "the gated text must be the whole argument, not part of a longer one";
+    }
+    if (v !== "" && !ENVELOPE_KEYS.has(String(p.key).toLowerCase())) {
+      return `argument '${p.key}' carries text the gate never saw`;
+    }
+  }
+  if (exact === 0) return "no argument carries the gated text verbatim";
+  if (exact > 1) return "the gated text fills more than one argument";
+  return null;
 }
 
 export function toastText(id, n) {

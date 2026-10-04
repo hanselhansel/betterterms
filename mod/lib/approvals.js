@@ -33,20 +33,6 @@ export function hash8(hash) {
   return hash.slice(0, 8);
 }
 
-// One held/<hash>.yaml: {hash, rendered, reasons, held_at}. The reader
-// tolerates junk (a file mid-write, a dropped note) as "not held".
-export function parseHeldFile(text) {
-  const y = parseFlatYaml(text);
-  if (!y || !HASH64.test(String(y.hash ?? ""))) return null;
-  if (typeof y.rendered !== "string" || y.rendered === "") return null;
-  return {
-    hash: String(y.hash),
-    rendered: y.rendered,
-    reasons: Array.isArray(y.reasons) ? y.reasons.map(String) : [],
-    heldAt: typeof y.held_at === "string" ? y.held_at : "",
-  };
-}
-
 export function heldDenyText(hash) {
   const h8 = hash8(hash);
   return h8 === null
@@ -56,7 +42,8 @@ export function heldDenyText(hash) {
 
 export function approvePromptText(hash, caseId) {
   return `betterterms: the user approved draft ${hash8(hash)} for ${caseId}. ` +
-    "Send it now with the same text.";
+    "Send it now: the approved text verbatim as its own argument, " +
+    "nothing added. The send guard re-runs the gate; do not run it yourself.";
 }
 
 export function statusText(nCases, savedPerYear) {

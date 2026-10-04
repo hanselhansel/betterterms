@@ -3,6 +3,7 @@
 // *.test.js files, though it ships inside the plugin dir.
 
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 
 // The element factory the engine injects. Hooks call it only when a
 // render hook runs; tests stub it before firing those hooks.
@@ -69,6 +70,84 @@ export const DIR = `${HOME}/cases/${CASE_ID}`;
 // ../skills, normalized, lands here in the fake fs.
 export const BT = "/p/skills/betterterms-guardrails/scripts/bt.py";
 
+// The same canonical-tuple hash bt.py computes for held/<sha256>.yaml
+// (action, offer in minor units, period, currency, rendered, sorted
+// JSON, SHA-256). Fixtures keep ASCII so JSON.stringify matches
+// json.dumps(ensure_ascii=True).
+export function heldHash(r) {
+  const offer = r.offer === null || r.offer === undefined
+    ? null
+    : (Math.round(Number(r.offer) * 100) / 100).toFixed(2);
+  const canon = JSON.stringify({
+    action: r.action ?? null,
+    currency: r.currency ?? null,
+    offer,
+    period: r.period ?? null,
+    rendered: r.rendered ?? null,
+  });
+  return createHash("sha256").update(canon, "utf8").digest("hex");
+}
+
+// A process.run responder that speaks the bt.py commands the mod
+// calls. `gate` replays opts.gate (a proc result, a verdict object, or
+// a fn of argv); on `--approved` a needs_approval verdict passes only
+// when the marker file exists, and consumes it like the real CLI.
+// `held list` answers from opts.held[id] record tuples; `held
+// approve|reject` maintain the marker files in `files`.
+export function btRoute(opts, files) {
+  const wrap = (o, code) => ({
+    exitCode: code ?? (o.result === "block" ? 1 : o.result === "needs_approval" ? 3 : 0),
+    stdout: JSON.stringify(o),
+    stderr: "",
+  });
+  return (argv) => {
+    if (argv[2] === "gate") {
+      const g = typeof opts.gate === "function" ? opts.gate(argv) : opts.gate;
+      if (g === undefined || g === null) {
+        return wrap({ result: "pass", reasons: [], rendered: RENDERED });
+      }
+      if ("stdout" in g || "exitCode" in g) return g; // a proc result
+      const id = argv[3];
+      if (g.result === "needs_approval" && argv.includes("--approved")
+          && typeof g.hash === "string"
+          && `${HOME}/cases/${id}/held/${g.hash}.approved` in files) {
+        delete files[`${HOME}/cases/${id}/held/${g.hash}.approved`];
+        return wrap({ result: "pass", reasons: [], rendered: g.rendered });
+      }
+      return wrap(g);
+    }
+    if (argv[2] === "held" && argv[3] === "list") {
+      const id = argv[4];
+      const held = (opts.held?.[id] ?? []).map((r) => {
+        const hash = heldHash(r);
+        return {
+          ...r, hash,
+          approved: `${HOME}/cases/${id}/held/${hash}.approved` in files,
+        };
+      });
+      return wrap({ held });
+    }
+    if (argv[2] === "held" && (argv[3] === "approve" || argv[3] === "reject")) {
+      const id = argv[4];
+      const h8 = String(argv[5] ?? "");
+      const recs = opts.held?.[id] ?? [];
+      const hits = recs.map((r) => heldHash(r)).filter((h) => h.startsWith(h8));
+      if (hits.length !== 1) {
+        return { exitCode: 2, stdout: `{"error":"no held draft matching ${h8}"}`, stderr: "" };
+      }
+      const h = hits[0];
+      if (argv[3] === "approve") {
+        files[`${HOME}/cases/${id}/held/${h}.approved`] = `hash: ${h}\n`;
+      } else {
+        opts.held[id] = recs.filter((r) => heldHash(r) !== h);
+        delete files[`${HOME}/cases/${id}/held/${h}.approved`];
+      }
+      return wrap({ ok: true, hash: h });
+    }
+    return wrap({});
+  };
+}
+
 export function caseFiles(over = {}) {
   return {
     [`${DIR}/brief.yaml`]: BRIEF,
@@ -104,8 +183,7 @@ export function fakeDollar(opts = {}) {
     set: (k, v) =>
       store.set(k, { value: v, version: (store.get(k)?.version ?? 0) + 1 }),
   };
-  const run = opts.run ?? (() =>
-    opts.gate ?? { exitCode: 0, stdout: '{"result":"pass","reasons":[]}', stderr: "" });
+  const run = opts.run ?? btRoute(opts, files);
   const $ = {
     env: { get: async (n) => env[n] },
     fs: {

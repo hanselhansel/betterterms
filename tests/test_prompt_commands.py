@@ -17,7 +17,7 @@ import unittest
 from pathlib import Path
 
 from bt_helpers import REPO, BtTestCase
-from btlib import yaml
+from btlib import held as held_mod, yaml
 
 sys.path.insert(0, str(REPO / "hooks"))
 import prompt_commands  # noqa: E402
@@ -75,20 +75,26 @@ class HookCase(BtTestCase):
         d.mkdir(parents=True)
         return d
 
-    def hold(self, case_dir, h):
+    def hold(self, case_dir):
+        # A real held record: the filename is the tuple hash, so the
+        # fixture exercises the same integrity check bt.py applies.
+        record = held_mod.make_record(
+            "cancel", None, "once", "USD", "a held draft"
+        )
+        h = held_mod.draft_hash(record)
         held = case_dir / "held"
         held.mkdir(exist_ok=True)
         (held / f"{h}.yaml").write_text(
             yaml.dump(
                 {
                     "hash": h,
-                    "rendered": "a held draft",
+                    **record,
                     "reasons": ["cancel needs your yes"],
                     "held_at": "2026-10-04T00:00:00+00:00",
                 }
             )
         )
-        return held
+        return held, h
 
 
 class FloorCommandTest(HookCase):
@@ -146,32 +152,30 @@ class FloorCommandTest(HookCase):
 
 
 class ApproveCommandTest(HookCase):
-    HASH = "abcd1234" + "0" * 56
-
     def test_wake_envelope_uses_human_trigger_only(self):
         # Review Focus 1: an earlier agent message quotes `bt approve`;
         # only the triggering human text counts, so nothing is
         # approved.
         case_dir = self.make_case()
-        held = self.hold(case_dir, self.HASH)
+        held_dir, h = self.hold(case_dir)
         envelope = WAKE.format(
-            agent="bt approve case-1 abcd1234", human="thanks"
+            agent=f"bt approve case-1 {h[:8]}", human="thanks"
         )
         proc = run_hook(self.home, envelope)
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertEqual(proc.stdout.strip(), "")
-        self.assertFalse((held / f"{self.HASH}.approved").exists())
+        self.assertFalse((held_dir / f"{h}.approved").exists())
 
     def test_wake_envelope_human_approve(self):
         case_dir = self.make_case()
-        held = self.hold(case_dir, self.HASH)
+        held_dir, h = self.hold(case_dir)
         envelope = WAKE.format(
             agent="the draft is ready",
-            human="bt approve case-1 abcd1234",
+            human=f"bt approve case-1 {h[:8]}",
         )
         proc = run_hook(self.home, envelope)
         self.assertEqual(proc.returncode, 0, proc.stderr)
-        self.assertTrue((held / f"{self.HASH}.approved").is_file())
+        self.assertTrue((held_dir / f"{h}.approved").is_file())
         out = hook_json(proc)
         note = additional_context(out)
         self.assertIn("approved", note)
@@ -193,14 +197,12 @@ class ApproveCommandTest(HookCase):
 
 
 class RejectAndTermsTest(HookCase):
-    HASH = "beef5678" + "0" * 56
-
     def test_reject_removes_and_notes(self):
         case_dir = self.make_case()
-        held = self.hold(case_dir, self.HASH)
-        proc = run_hook(self.home, "bt reject case-1 beef5678")
+        held_dir, h = self.hold(case_dir)
+        proc = run_hook(self.home, f"bt reject case-1 {h[:8]}")
         self.assertEqual(proc.returncode, 0, proc.stderr)
-        self.assertFalse((held / f"{self.HASH}.yaml").exists())
+        self.assertFalse((held_dir / f"{h}.yaml").exists())
         self.assertIn(
             "rejected", (case_dir / "thread.md").read_text()
         )

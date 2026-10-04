@@ -21,23 +21,27 @@ const replied = new Set();
 let lastPrint = "";
 let lastStatus = "";
 
-// held/<hash>.yaml files, oldest first, .approved flags read.
-async function heldForCase(host, dir) {
-  const ents = await IO.listIf(host, `${dir}/held`);
-  const ok = (e) => e.kind === "file";
-  const approved = new Set(
-    ents.filter((e) => ok(e) && /\.approved$/.test(e.name ?? ""))
-      .map((e) => e.name.slice(0, -".approved".length)),
-  );
-  const held = [];
-  for (const ent of ents) {
-    const name = String(ent.name ?? "");
-    if (!ok(ent) || !/^[0-9a-f]{64}\.yaml$/.test(name)) continue;
-    const parsed = A.parseHeldFile(await IO.readIf(host, `${dir}/held/${name}`));
-    if (parsed) held.push({ ...parsed, approved: approved.has(parsed.hash) });
-  }
-  held.sort((a, b) => a.heldAt.localeCompare(b.heldAt) || a.hash.localeCompare(b.hash));
-  return held;
+// Held drafts for one case, via `bt.py held list`: the CLI reports
+// only records whose stored fields hash back to the filename, so a
+// corrupt or tampered held file never reaches a card.
+async function heldForCase(host, home, root, bt, id) {
+  const dir = `${root}/${id}`;
+  if (bt === null) return [];
+  if ((await IO.statIf(host, `${dir}/held`))?.kind !== "dir") return [];
+  const proc = await IO.runProc(host, home, ["python3", bt, "held", "list", id]);
+  if (proc.error) return [];
+  let out;
+  try { out = JSON.parse(proc.stdout); } catch { return []; }
+  if (!Array.isArray(out?.held)) return [];
+  return out.held
+    .map((h) => ({
+      hash: typeof h?.hash === "string" ? h.hash : "",
+      rendered: typeof h?.rendered === "string" ? h.rendered : "",
+      reasons: Array.isArray(h?.reasons) ? h.reasons.map(String) : [],
+      heldAt: typeof h?.held_at === "string" ? h.held_at : "",
+      approved: h?.approved === true,
+    }))
+    .filter((h) => h.hash !== "");
 }
 
 // The case-folder snapshot every hook draws from: brief, plan (the
@@ -53,6 +57,7 @@ export async function scanCases(host) {
   if (rootStat?.kind !== "dir") {
     return { home, root, resolvedRoot: null, cases: [], savedPerYear: ledger.savedPerYear };
   }
+  const bt = await IO.findBt(host);
   const cases = [];
   for (const ent of await IO.listIf(host, root)) {
     if (ent.kind !== "dir" || ent.isLink || !C.safeCaseId(ent.name)) continue;
@@ -65,7 +70,7 @@ export async function scanCases(host) {
     const names = ["draft.yaml", "gate.json", "thread.md"];
     const [draftSt, gateSt, threadSt] = await Promise.all(names.map(stat));
     const [sources, held] = await Promise.all([
-      IO.listIf(host, `${dir}/sources`), heldForCase(host, dir),
+      IO.listIf(host, `${dir}/sources`), heldForCase(host, home, root, bt, ent.name),
     ]);
     cases.push(C.deriveCase({
       id: ent.name,
@@ -213,6 +218,11 @@ export function paneActions(host, snap) {
   };
 }
 
+// The pre-send guard. The gate re-runs on the draft as it sits on
+// disk, the call is checked against the freshly rendered text, and a
+// held draft passes only on an unused approval: the $.state press, or
+// a marker a typed `bt approve` left, re-armed when an agent-side
+// `gate --approved` already spent it.
 export async function gateSend(host, snap, c, e, next) {
   const gate = await runGate(host, snap, c, false);
   const verdict = C.decideSend(gate, c);
@@ -220,18 +230,46 @@ export async function gateSend(host, snap, c, e, next) {
     host.toast(`betterterms: draft for ${c.id} blocked by the gate`);
     return { deny: `betterterms gate: ${verdict.reason}` };
   }
+  if (C.normalize(c.rendered ?? "") !== C.normalize(gate.rendered ?? "")) {
+    return { deny: "betterterms: draft.yaml changed since this text was gated; re-run the gate" };
+  }
+  const shape = C.sendShapeError(C.callArgs(e), gate.rendered);
+  if (shape !== null) return { deny: `betterterms: ${shape}` };
   if (verdict.kind === "held") {
-    if (verdict.hash !== null && (await takeApproval(host, verdict.hash))) {
-      const again = await runGate(host, snap, c, true);
-      if (again.result !== "pass") {
-        return { deny: `betterterms gate: ${(again.reasons ?? []).join("; ") || "not pass after approval"}` };
-      }
-      host.notice(e.tool_use_id, "betterterms: approved, gate pass");
-      host.toast(`betterterms: draft for ${c.id} sent`);
-      return next(e);
+    const hash = verdict.hash;
+    if (hash === null) {
+      host.invalidate("ui.render");
+      return { deny: A.heldDenyText(null) };
     }
-    host.invalidate("ui.render");
-    return { deny: A.heldDenyText(verdict.hash) };
+    const dir = `${snap.root}/${c.id}`;
+    const marker = `${dir}/held/${hash}.approved`;
+    let pressed = await takeApproval(host, hash);
+    if (!pressed && await host.fsExists(marker).catch(() => false)) {
+      // A typed `bt approve` (the prompt hook, or a manual
+      // `bt.py held approve`) left the marker; adopt it as the press.
+      await markApproved(host, hash);
+      pressed = await takeApproval(host, hash);
+    }
+    if (!pressed) {
+      host.invalidate("ui.render");
+      return { deny: A.heldDenyText(hash) };
+    }
+    // The press proved consent; if an agent-side `gate --approved`
+    // already spent the marker, the mod re-arms it so the resend
+    // cannot deadlock on a file the agent was never meant to manage.
+    if (!(await host.fsExists(marker).catch(() => false))) {
+      const armed = await runHeld(host, snap, "approve", c.id, hash);
+      if (!armed.ok) {
+        return { deny: `betterterms: approval could not be restored: ${armed.error}` };
+      }
+    }
+    const again = await runGate(host, snap, c, true);
+    if (again.result !== "pass") {
+      return { deny: `betterterms gate: ${(again.reasons ?? []).join("; ") || "not pass after approval"}` };
+    }
+    host.notice(e.tool_use_id, "betterterms: approved, gate pass");
+    host.toast(`betterterms: draft for ${c.id} sent`);
+    return next(e);
   }
   if (verdict.kind === "allow") {
     host.notice(e.tool_use_id, "betterterms: gate pass");

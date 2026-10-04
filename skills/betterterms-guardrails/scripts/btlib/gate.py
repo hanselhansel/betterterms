@@ -81,11 +81,16 @@ actions, coach mode, autonomy 1 and a ``send`` offer at the floor
 also need approval.
 
 ``block`` dominates ``needs_approval``, which dominates ``pass``, and
-every floor-related block reports the same generic reason so the
-output can never leak the floor's value, direction or distance.
+every floor-related block reports the same generic reason so no
+single answer reveals the floor's value, direction or distance.
+Probing still can: repeated calls with different offers bisect the
+walk-away one bit at a time, which is why the exchange skill caps
+gate calls per turn and escalates on a blocked draft instead of
+redrafting toward a guessed limit (TODOS.md tracks a probe counter).
 
 A ``needs_approval`` draft is held on disk (``held/<sha256>.yaml``,
-``btlib.held``) so a user approval can bind to the exact rendered
+``btlib.held``) so a user approval can bind to the exact send tuple:
+the draft's action, offer, period and currency plus the rendered
 text. ``approved=True`` no longer skips the review tier by itself: it
 only passes when a matching ``held/<sha256>.approved`` file exists,
 and consumes it once. Without one the draft is held again with the
@@ -359,16 +364,16 @@ def check(case_dir, draft, approved=False, inbound=None):
     rendered = find.text if find else None
     if not findings:
         if approved and rendered is not None:
-            held.consume_approval(case_dir, rendered)
+            held.consume_approval(case_dir, draft, rendered)
         return "pass", reasons, rendered
     if (
         approved
         and rendered is not None
-        and held.consume_approval(case_dir, rendered)
+        and held.consume_approval(case_dir, draft, rendered)
     ):
         return "pass", [], rendered
     if rendered is not None:
-        held.hold(case_dir, rendered, reasons)
+        held.hold(case_dir, draft, rendered, reasons)
     if approved:
         reasons.append(held.NO_APPROVAL)
     return "needs_approval", reasons, rendered

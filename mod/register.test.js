@@ -78,7 +78,8 @@ describe("register", () => {
     register(on.on);
     const { next, calls: went, marker } = fired();
     const out = await on.get("tool.call")($, {
-      tool: "Bash", tool_use_id: "t3", command: `send ${RENDERED}`,
+      tool: "gmail.send", tool_use_id: "t3",
+      to: "v@x", subject: "re: plan", body: RENDERED,
     }, next);
     assert.equal(calls.ask.length, 1);
     assert.equal(out, marker);
@@ -92,11 +93,28 @@ describe("register", () => {
     register(on.on);
     const { next, calls: went } = fired();
     const out = await on.get("tool.call")($, {
-      tool: "Bash", tool_use_id: "t4", command: `send ${RENDERED}`,
+      tool: "gmail.send", tool_use_id: "t4",
+      to: "v@x", subject: "re: plan", body: RENDERED,
     }, next);
     assert.equal(went.length, 0);
     assert.match(out.deny, /betterterms/);
     assert.equal(calls.ask.length, 1);
+  });
+
+  test("a send whose arg wraps the gated text is denied", async () => {
+    // The draft may only travel verbatim as its own argument; a shell
+    // command or body with the text embedded goes nowhere.
+    const files = caseFiles({ [`${DIR}/draft.yaml`]: DRAFT, [`${DIR}/gate.json`]: GATE });
+    const { $, calls } = fakeDollar({ files, dirs: caseDirs(), answer: "Send" });
+    const on = fakeOn();
+    register(on.on);
+    const { next, calls: went } = fired();
+    const out = await on.get("tool.call")($, {
+      tool: "Bash", tool_use_id: "t4b", command: `mail v@x <<EOF\n${RENDERED}\nEOF`,
+    }, next);
+    assert.equal(went.length, 0);
+    assert.match(out.deny, /whole argument/);
+    assert.equal(calls.ask.length, 0);
   });
 
   test("needs_approval is held for the pane, never asked inline", async () => {
@@ -110,21 +128,18 @@ describe("register", () => {
     const hash = "ab12cd34".padEnd(64, "0");
     const { $, calls, state } = fakeDollar({
       files, dirs: caseDirs(), answer: "Send",
-      run: () => ({
-        exitCode: 3,
-        stdout: JSON.stringify({
-          result: "needs_approval",
-          reasons: ["action 'cancel' requires --approved"],
-          rendered: RENDERED, hash,
-        }),
-        stderr: "",
-      }),
+      gate: {
+        result: "needs_approval",
+        reasons: ["action 'cancel' requires --approved"],
+        rendered: RENDERED, hash,
+      },
     });
     const on = fakeOn();
     register(on.on);
     const { next, calls: went } = fired();
     const out = await on.get("tool.call")($, {
-      tool: "Bash", tool_use_id: "t5", command: `cancel: ${RENDERED}`,
+      tool: "gmail.send", tool_use_id: "t5",
+      to: "v@x", subject: "re: plan", body: RENDERED,
     }, next);
     assert.equal(went.length, 0);
     assert.equal(
