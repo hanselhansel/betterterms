@@ -239,59 +239,83 @@ export function callArgs(e) {
   return args;
 }
 
-// The send-shape rule's key classes. A key normalizes by lowering
-// case and stripping "_" and "-".
+// The send-shape allowlist, default deny. A key normalizes by
+// lowering case and stripping "_" and "-"; the three sets below name
+// every key a send call may carry besides the one leaf holding the
+// gated text itself, which is allowed under any key.
 //
-// subject/title is checked before any other shortcut: a header line
-// of at most TITLE_MAX characters, no digits, no `<`, `&`, `%` or
-// `://`, no Unicode format characters, and none of the words a
-// counterparty could read as a yes (accept, agree, deal, sign,
-// cancel, pay, offer). Address/id keys (to, cc, bcc, from,
-// recipient(s), email, channel, references, inreplyto, or any key
-// ending in id, ids or ts) hold one whitespace-free token; a URL,
-// entity or invisible character under them still denies. Content
-// keys (attachments, content, html, htmlbody, blocks, body2, or any
-// key containing html) deny when non-empty. Every other non-empty
-// leaf denies, a string that parses as a number counts as numeric.
+// Address keys take whitespace-free strings or arrays of them. Id
+// keys take a single whitespace-free string or number. subject/title
+// are empty or "Re: " plus a clean header line: at most TITLE_MAX
+// characters, no digits, no spelled-out number words, and no word
+// starting with a commitment stem (accept, agree, deal, sign,
+// cancel, pay, offer, confirm, yes). Every other key denies, nested
+// or not, as does any boolean or null under a non-allowlisted key,
+// so a hidden amount or assent flag can never ride a send.
+const ADDR_KEYS = new Set([
+  "to", "cc", "bcc", "recipient", "recipients", "email",
+]);
+const ID_KEYS = new Set([
+  "channel", "channelid", "threadts", "threadid", "messageid",
+  "replythreadid", "replytomessageid", "inreplyto", "references",
+  "conversationid", "chatid", "draftid",
+]);
 const TITLE_KEYS = new Set(["subject", "title"]);
 const TITLE_MAX = 80;
-const TITLE_BAD = /[<&%\p{Cf}]|:\/\//u;
-const TITLE_WORDS = /\b(?:accept|agree|deal|sign|cancel|pay|offer)\b/i;
-const ID_KEYS = new Set([
-  "to", "cc", "bcc", "from", "recipient", "recipients",
-  "email", "channel", "references", "inreplyto",
-]);
-const ID_BAD = /[&%\p{Cf}]|:\/\//u;
-const CONTENT_KEYS = new Set([
-  "attachments", "content", "html", "htmlbody", "blocks", "body2",
-]);
+const NUM_WORDS =
+  /\b(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand|million|k)\b/i;
+const YES_WORDS =
+  /\b(?:accept|agree|deal|sign|cancel|pay|offer|confirm|yes)/i;
 
-function keyClass(k) {
-  const key = String(k).toLowerCase().replace(/[_-]/g, "");
-  if (TITLE_KEYS.has(key)) return "title";
-  if (CONTENT_KEYS.has(key) || key.includes("html")) return "content";
-  if (ID_KEYS.has(key) || /(?:id|ids|ts)$/.test(key)) return "id";
-  return "other";
-}
+const normKey = (k) => String(k).toLowerCase().replace(/[_-]/g, "");
+const wsFree = (v) => typeof v === "string" && !/\s/.test(v);
 
-// (key, value) for every string or number leaf in the call arguments:
-// the send-shape check needs the field names, not just the texts.
-export function collectLeaves(value, key = "", out = []) {
-  if (typeof value === "string" || typeof value === "number") {
-    out.push({ key, value });
-  } else if (Array.isArray(value)) {
-    for (const v of value) collectLeaves(v, key, out);
-  } else if (value && typeof value === "object") {
-    for (const [k, v] of Object.entries(value)) collectLeaves(v, k, out);
+// {key, value, inArray} for every scalar leaf in the call arguments:
+// strings, numbers, booleans and nulls all count; objects and arrays
+// are walked, so a nested key outside the allowlist still denies.
+export function collectLeaves(value, key = "", inArray = false, out = []) {
+  if (value !== null && typeof value === "object") {
+    if (Array.isArray(value)) {
+      for (const v of value) collectLeaves(v, key, true, out);
+    } else {
+      for (const [k, v] of Object.entries(value)) {
+        collectLeaves(v, k, false, out);
+      }
+    }
+  } else {
+    out.push({ key, value, inArray });
   }
   return out;
 }
 
+function titleFieldError(key, leaf) {
+  const v = leaf.value;
+  if (v === null || v === "") return null;
+  const ok = !leaf.inArray && typeof v === "string"
+    && v.length <= TITLE_MAX && v.startsWith("Re: ")
+    && !/\d/.test(v) && !NUM_WORDS.test(v) && !YES_WORDS.test(v);
+  return ok ? null : `field '${key}' takes an empty value or ` +
+    `"Re: " plus a clean header line`;
+}
+
+function addrFieldError(key, leaf) {
+  return wsFree(leaf.value) ? null
+    : `argument '${key}' takes whitespace-free addresses`;
+}
+
+function idFieldError(key, leaf) {
+  const ok = !leaf.inArray
+    && (wsFree(leaf.value) || typeof leaf.value === "number");
+  return ok ? null
+    : `argument '${key}' takes a whitespace-free id`;
+}
+
 // null when the call is a clean send of the gated text: exactly one
-// string argument equals the freshly rendered message (normalized),
-// and every other leaf follows its key class. A Bash call is never a
-// send however it carries the text. Anything else is a send the gate
-// never saw and the user never approved.
+// string leaf, under any key, equals the freshly rendered message
+// (normalized), and every other leaf sits under an allowlisted key
+// with a value of the kind that key takes. A Bash call is never a
+// send; anything else is a send the gate never saw and the user
+// never approved.
 export function sendShapeError(e, rendered) {
   const r = normalize(rendered);
   if (r === "") return "the gate produced no text to send";
@@ -300,43 +324,25 @@ export function sendShapeError(e, rendered) {
       "text as its own argument or hand the text to the user";
   }
   let exact = 0;
-  for (const p of collectLeaves(callArgs(e))) {
-    const v = normalize(p.value);
-    if (typeof p.value === "string" && v === r) {
-      exact += 1;
-      continue;
-    }
-    if (v.includes(r)) {
-      return "the gated text must be the whole argument, not part of a longer one";
-    }
-    if (v === "") continue;
-    const cls = keyClass(p.key);
-    if (cls === "title") {
-      const s = String(p.value);
-      if (
-        s.length > TITLE_MAX || /\d/.test(s)
-        || TITLE_BAD.test(s) || TITLE_WORDS.test(s)
-      ) {
-        return `field '${p.key}' takes a header line: at most ` +
-          `${TITLE_MAX} characters, no digits, no symbols or links, ` +
-          "no commitment words";
+  for (const leaf of collectLeaves(callArgs(e))) {
+    if (typeof leaf.value === "string") {
+      const v = normalize(leaf.value);
+      if (v === r) {
+        exact += 1;
+        continue;
       }
-      continue;
-    }
-    if (cls === "content") {
-      return `argument '${p.key}' carries content the gate never saw`;
-    }
-    if (cls === "id") {
-      const s = String(p.value);
-      if (/\s/.test(s) || ID_BAD.test(s)) {
-        return `argument '${p.key}' carries text the gate never saw`;
+      if (v.includes(r)) {
+        return "the gated text must be the whole argument, not part of a longer one";
       }
-      continue;
     }
-    const numeric = typeof p.value === "number"
-      || Number.isFinite(Number(p.value));
-    return `argument '${p.key}' carries ` +
-      `${numeric ? "a number" : "text"} the gate never saw`;
+    const key = normKey(leaf.key);
+    const rule = TITLE_KEYS.has(key) ? titleFieldError
+      : ADDR_KEYS.has(key) ? addrFieldError
+      : ID_KEYS.has(key) ? idFieldError : null;
+    const err = rule === null
+      ? `argument '${leaf.key}' is not an allowed send field`
+      : rule(leaf.key, leaf);
+    if (err !== null) return err;
   }
   if (exact === 0) return "no argument carries the gated text verbatim";
   if (exact > 1) return "the gated text fills more than one argument";

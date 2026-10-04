@@ -101,16 +101,21 @@ or ask for their offer when it is not. Then gate, send, and log as below.
    - Exit 0, `pass`: send the `rendered` text verbatim per the autonomy
      level, through a send tool with the text as its own argument and
      nothing added anywhere else in the call. With betterterms-mod
-     loaded the send check reads every other argument by its key
-     class: an address or id key (to, cc, bcc, from, recipient(s),
-     email, channel, references, inreplyto, or any key ending in id,
-     ids or ts) takes one whitespace-free token; a subject or title
-     takes at most 80 characters, no digits, no `<`, `&`, `%` or
-     `://`, no invisible characters, and none of the words accept,
-     agree, deal, sign, cancel, pay or offer; a content key
-     (attachments, content, html, htmlbody, blocks, body2, or any key
-     containing html) must be absent or empty; every other non-empty
-     argument denies, numbers included. Never send through a
+     loaded the send check is default deny with an exact key
+     allowlist (each key normalizes by lowering case and stripping
+     `_` and `-`): exactly one string leaf, under any key, equals the
+     rendered text; address keys (to, cc, bcc, recipient, recipients,
+     email) take whitespace-free strings or arrays of them; id keys
+     (channel, channelid, threadts, threadid, messageid,
+     replythreadid, replytomessageid, inreplyto, references,
+     conversationid, chatid, draftid) take one whitespace-free string
+     or a number; subject and title are empty, or `Re: ` plus text
+     with no digits, no spelled-out number words (one through twenty,
+     the tens thirty through ninety, hundred, thousand, million, `k`)
+     and no word starting with accept, agree, deal, sign, cancel,
+     pay, offer, confirm or yes, at most 80 characters; every other
+     key denies, nested object keys included, and so does any boolean
+     or null under a non-allowlisted key. Never send through a
      shell command: the send check denies it, so use a send tool or
      hand the text to the user. Write, Edit and the other file-path
      tools are never sends and pass untouched.
@@ -125,7 +130,10 @@ or ask for their offer when it is not. Then gate, send, and log as below.
      tuple: a mod keypress or click, a `bt approve <case_id> <hash8>`
      reply the prompt hook catches, or `bt.py held approve <case_id>
      <hash8>` which you run in a host with no prompt hook after the
-     user replies `bt approve`. Then re-run the gate with
+     user replies `bt approve`. The hash must be the one the last
+     gate call printed: `held approve` refuses any other, so a stale
+     card or a hand-written held record can never be approved. Then
+     re-run the gate with
      `--approved`: it consumes the approval once and passes. A
      changed text or a second send is held again. With the mod
      loaded the send check re-gates on the send itself and re-arms

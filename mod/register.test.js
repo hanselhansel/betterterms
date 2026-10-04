@@ -105,7 +105,7 @@ describe("register", () => {
     const { next, calls: went, marker } = fired();
     const out = await on.get("tool.call")($, {
       tool: "gmail.send", tool_use_id: "t3",
-      to: "v@x", subject: "re: plan", body: RENDERED,
+      to: "v@x", subject: "Re: plan", body: RENDERED,
     }, next);
     assert.equal(calls.ask.length, 1);
     assert.equal(out, marker);
@@ -120,7 +120,7 @@ describe("register", () => {
     const { next, calls: went } = fired();
     const out = await on.get("tool.call")($, {
       tool: "gmail.send", tool_use_id: "t4",
-      to: "v@x", subject: "re: plan", body: RENDERED,
+      to: "v@x", subject: "Re: plan", body: RENDERED,
     }, next);
     assert.equal(went.length, 0);
     assert.match(out.deny, /betterterms/);
@@ -170,7 +170,7 @@ describe("register", () => {
     const { next, calls: went } = fired();
     const out = await on.get("tool.call")($, {
       tool: "gmail.send", tool_use_id: "t5",
-      to: "v@x", subject: "re: plan", body: RENDERED,
+      to: "v@x", subject: "Re: plan", body: RENDERED,
     }, next);
     assert.equal(went.length, 0);
     assert.equal(

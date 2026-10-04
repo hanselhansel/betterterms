@@ -15,14 +15,18 @@ grammar is handled here:
 
 ``bt floor`` always blocks, so the walk-away is never forwarded to
 the model; its reason never carries the amount. A message that only
-resembles a command blocks with the usage line when the trimmed text
-starts with ``bt <verb>`` -- one leading backtick or a leading slash
-allowed -- and still carries the piece the verb needs: a digit for
-floor, a hex token of six or more characters for approve and reject,
-``=`` for terms. Everything else is prose and passes to the model.
-The hook fails closed: input it cannot read, or a command that raises,
-blocks instead of passing through, because the text may carry a
-walk-away.
+resembles a command still blocks, under two different rules. Floor
+is default deny: the words ``bt`` and ``floor`` adjacent -- any
+whitespace, any case -- anywhere in the message, on any line and
+after any prefix or markdown, plus any digit in the message, blocks
+with the usage line. Approve, reject, and terms keep the
+start-anchored rule: the trimmed text starts with ``bt <verb>`` --
+one leading backtick or a leading slash allowed -- and carries the
+piece the verb needs, a hex token of six or more characters for
+approve and reject, ``=`` for terms. Everything else is prose and
+passes to the model. The hook fails closed: input it cannot read,
+or a command that raises, blocks instead of passing through,
+because the text may carry a walk-away.
 """
 
 import json
@@ -59,10 +63,15 @@ _GRAMMAR = (
 _TERMS_KV = re.compile(r"(\w+)=(\S+)")
 _TERMS_KEYS = ("target", "alternative")
 
-# A lookalike counts only at the start of the trimmed text, after at
-# most one backtick or a leading slash. A `bt <verb>` mention inside
-# prose is chat text, not a command attempt.
-_LOOKALIKE = re.compile(r"[`/]?bt\s+(approve|reject|floor|terms)\b", re.I)
+# Floor is default deny: the words `bt` and `floor` adjacent, any
+# whitespace and any case, anywhere in the message. The digit check
+# lives in _lookalike_verb; `bt floor` talk with no number in it is
+# prose about the command.
+_FLOOR_WORDS = re.compile(r"\bbt\s+floor\b", re.I)
+# The other lookalikes count only at the start of the trimmed text,
+# after at most one backtick or a leading slash. A `bt <verb>`
+# mention inside prose is chat text, not a command attempt.
+_LOOKALIKE = re.compile(r"[`/]?bt\s+(approve|reject|terms)\b", re.I)
 _HEX_TOKEN = re.compile(r"\b[0-9a-f]{6,}\b", re.I)
 _MESSAGE = re.compile(r"<message\b([^>]*)>(.*?)</message>", re.DOTALL)
 _ATTR = re.compile(r'([\w-]+)="([^"]*)"')
@@ -142,18 +151,21 @@ def parse(text):
 
 
 def _lookalike_verb(text):
-    """The verb a non-command message resembles, or None. The trimmed
-    text must start with ``bt <verb>`` -- one leading backtick or a
-    leading slash allowed -- and still carry the piece the verb
-    needs: a digit for floor, a hash-like token for approve and
-    reject, ``=`` for terms. Anything else is prose."""
+    """The verb a non-command message resembles, or None. Floor runs
+    first and searches the whole message: ``bt`` and ``floor``
+    adjacent plus any digit claims to set the walk-away no matter
+    what precedes it. Approve, reject, and terms count only at the
+    start of the trimmed text -- one leading backtick or a leading
+    slash allowed -- and still need their marker piece: a hash-like
+    token for approve and reject, ``=`` for terms. Anything else is
+    prose."""
+    if _FLOOR_WORDS.search(text) and re.search(r"\d", text):
+        return "floor"
     t = text.strip()
     m = _LOOKALIKE.match(t)
     if m is None:
         return None
     verb = m.group(1).lower()
-    if verb == "floor":
-        return verb if re.search(r"\d", t) else None
     if verb in ("approve", "reject"):
         return verb if _HEX_TOKEN.search(t) else None
     return verb if "=" in t else None

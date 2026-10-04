@@ -10,6 +10,10 @@ text, JSON-encoded in sorted-key order. An approval for that tuple is
 once, then the held record goes with it, so two racing sends cannot
 share one approval. The same words under a different action or offer
 hash differently, so an approval can never carry to a stronger verb.
+An approval sticks only to the draft the last recorded gate verdict
+held: ``gate.json`` names that hash, and ``held approve`` refuses
+any other one, a held record written by hand, or a case whose
+verdict was pass or block or never ran.
 A held record whose stored fields do not hash back to its filename is
 corrupt or tampered with and stays invisible to ``held list`` and the
 widgets. Files are 0600 under a 0700 ``held/`` directory.
@@ -232,12 +236,32 @@ def resolve(case_dir, hash8):
     return matches[0]
 
 
+def _current_hash(case_dir):
+    """The hash the last recorded gate verdict held, or None. The
+    gate writes ``gate.json`` on every verdict but sets ``hash`` only
+    on needs_approval, so a missing or malformed file, a verdict of
+    any other kind, and a hash of the wrong type all read as no
+    current draft."""
+    try:
+        data = json.loads(
+            (Path(case_dir) / "gate.json").read_text(encoding="utf-8")
+        )
+    except (OSError, ValueError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    h = data.get("hash")
+    return h if isinstance(h, str) else None
+
+
 def approve(case_dir, hash8):
     """Record the user's approval for the held draft: writes
     ``held/<hash>.approved`` and returns the full hash. A record whose
     stored fields no longer hash to its name is corrupt and cannot be
     approved; one from before tuple-bound hashes gets the re-run
-    answer instead."""
+    answer instead. The hash must also be the one the last gate
+    verdict held: a stale card, a hand-written record, and a case
+    with no recorded verdict all refuse."""
     h = resolve(case_dir, hash8)
     d = _dir(case_dir)
     data = yaml.load((d / f"{h}.yaml").read_text(encoding="utf-8"))
@@ -245,6 +269,11 @@ def approve(case_dir, hash8):
         if _legacy_ok(data, h):
             raise BtError(f"held draft {h[:8]} is {LEGACY}")
         raise BtError(f"held draft {h[:8]} is corrupt")
+    if _current_hash(case_dir) != h:
+        raise BtError(
+            f"held draft {h[:8]} is not the current held draft; "
+            "approve the hash the last gate call printed"
+        )
     atomic_write(
         d / f"{h}.approved",
         yaml.dump({"hash": h, "approved_at": _now()}),

@@ -40,7 +40,7 @@ export const heldOpt = () => ({ [CASE_ID]: [REC] });
 // one argument (the send-shape rule).
 export const sendCall = () => ({
   tool: "gmail.send", tool_use_id: "t1",
-  to: "v@x", subject: "re: plan", body: RENDERED,
+  to: "v@x", subject: "Re: plan", body: RENDERED,
 });
 // The Approvals-tab tree for a one-held-draft snapshot.
 export const approvalsCard = async ($) => {

@@ -226,7 +226,7 @@ export function fresh(over: Partial<Wired> = {}): Wired {
 // envelope fields only beside it.
 export const sendCall = () => ({
   tool: 'gmail.send', tool_use_id: 't1',
-  to: 'v@x', subject: 're: plan', body: RENDERED,
+  to: 'v@x', subject: 'Re: plan', body: RENDERED,
 });
 
 export const approvals = (w: Wired) =>

@@ -70,7 +70,7 @@ test('a send at autonomy 4 goes through on a gate pass', async ($, on) => {
   wire(on as OpHook, `{"result":"pass","reasons":[],"rendered":${JSON.stringify(RENDERED)}}`);
   const out = await $.tool.call({
     tool: 'gmail.send',
-    to: 'v@x', subject: 're: plan', body: RENDERED,
+    to: 'v@x', subject: 'Re: plan', body: RENDERED,
   } as never);
   expect((out as { result: { ran: string } }).result.ran).toBe('gmail.send');
 });

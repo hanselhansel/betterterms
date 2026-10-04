@@ -75,11 +75,14 @@ class HookCase(BtTestCase):
         d.mkdir(parents=True)
         return d
 
-    def hold(self, case_dir):
+    def hold(self, case_dir, rendered="a held draft"):
         # A real held record: the filename is the tuple hash, so the
         # fixture exercises the same integrity check bt.py applies.
+        # gate.json goes with it: a held record only exists after a
+        # gate verdict wrote one, and held approve refuses a hash
+        # gate.json does not name.
         record = held_mod.make_record(
-            "cancel", None, "once", "USD", "a held draft"
+            "cancel", None, "once", "USD", rendered
         )
         h = held_mod.draft_hash(record)
         held = case_dir / "held"
@@ -91,6 +94,16 @@ class HookCase(BtTestCase):
                     **record,
                     "reasons": ["cancel needs your yes"],
                     "held_at": "2026-10-04T00:00:00+00:00",
+                }
+            )
+        )
+        (case_dir / "gate.json").write_text(
+            json.dumps(
+                {
+                    "result": "needs_approval",
+                    "reasons": ["cancel needs your yes"],
+                    "rendered": rendered,
+                    "hash": h,
                 }
             )
         )
@@ -224,6 +237,34 @@ class ApproveCommandTest(HookCase):
         out = hook_json(proc)
         self.assertEqual(out["decision"], "block")
         self.assertIn("no held draft", out["reason"])
+
+    def test_approve_stale_hash_blocks(self):
+        # gate.json names the draft the last gate verdict held; a
+        # typed `bt approve` for a different held record is a stale
+        # card: no marker is written and no note tells the model to
+        # send.
+        case_dir = self.make_case()
+        held_dir, h = self.hold(case_dir)
+        # A newer verdict held a different draft.
+        self.hold(case_dir, rendered="a newer held draft")
+        proc = run_hook(self.home, f"bt approve case-1 {h[:8]}")
+        out = hook_json(proc)
+        self.assertEqual(out["decision"], "block")
+        self.assertIn("not the current held draft", out["reason"])
+        self.assertNotIn("send", out["reason"].lower())
+        self.assertFalse((held_dir / f"{h}.approved").exists())
+
+    def test_approve_without_gate_json_blocks(self):
+        # No recorded verdict, no approval: the hook cannot tell a
+        # held record is current when gate.json is missing.
+        case_dir = self.make_case()
+        held_dir, h = self.hold(case_dir)
+        (case_dir / "gate.json").unlink()
+        proc = run_hook(self.home, f"bt approve case-1 {h[:8]}")
+        out = hook_json(proc)
+        self.assertEqual(out["decision"], "block")
+        self.assertIn("not the current held draft", out["reason"])
+        self.assertFalse((held_dir / f"{h}.approved").exists())
 
 
 class RejectAndTermsTest(HookCase):

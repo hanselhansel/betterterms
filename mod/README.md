@@ -74,10 +74,11 @@ records anything for the agent's own call. The flow is:
    `.approved` marker on disk never counts by itself; only `$.state`
    authorizes the send.
 4. Different rendered text hashes to a different value, so an edited
-   draft must re-pass the gate and be re-approved. An Approve press or
-   a typed `bt approve` for a hash that is not the case's current
-   `gate.json` hash refuses with a plain reason, so an old card or a
-   stale widget can never approve the new text.
+   draft must re-pass the gate and be re-approved. `bt.py held
+   approve` itself refuses a hash that is not the case's current
+   `gate.json` hash, so the Approve press, the typed `bt approve`,
+   and a bare CLI call all share one answer: an old card or a stale
+   widget can never approve the new text.
 
 Reject runs `bt.py held reject <case> <hash8>`, which drops the held
 draft and appends `## rejected <time> <hash>` to `thread.md`. The mod
@@ -118,24 +119,26 @@ There is no dedicated send tool; the mod treats a call as a send from
 an open case when a normalized copy of the `rendered` text in the
 case's `gate.json` appears inside one of its string arguments (for
 renders under 24 chars the call must also name the case id). A send
-then passes only when the gate is re-run on the draft on disk and one
-string argument equals the freshly rendered text exactly, with every
-other argument following its key class (keys normalize by lowering
-case and stripping `_` and `-`):
+then passes only when the gate is re-run on the draft on disk and the
+call's arguments satisfy a default-deny exact key allowlist (each key
+normalizes by lowering case and stripping `_` and `-`):
 
-- an address or id key (`to`, `cc`, `bcc`, `from`, `recipient(s)`,
-  `email`, `channel`, `references`, `inreplyto`, or any key ending in
-  `id`, `ids` or `ts`) takes one whitespace-free token and still
-  refuses whitespace, links, entities and invisible characters;
-- a `subject` or `title` is checked before any other shortcut: at most
-  80 characters, no digits, no `<`, `&`, `%` or `://`, no Unicode
-  format characters, and none of the words accept, agree, deal, sign,
-  cancel, pay or offer;
-- a content key (`attachments`, `content`, `html`, `htmlbody`,
-  `blocks`, `body2`, or any key containing `html`) denies when
-  non-empty;
-- every other non-empty string or numeric leaf denies, and a string
-  that parses as a number counts as numeric.
+- exactly one string leaf, under any key, equals the freshly rendered
+  text (normalized); it is the only content the call may carry;
+- an address key (`to`, `cc`, `bcc`, `recipient`, `recipients`,
+  `email`) takes whitespace-free strings or an array of them;
+- an id key (`channel`, `channelid`, `threadts`, `threadid`,
+  `messageid`, `replythreadid`, `replytomessageid`, `inreplyto`,
+  `references`, `conversationid`, `chatid`, `draftid`) takes one
+  whitespace-free string or a number;
+- a `subject` or `title` is empty, or `Re: ` plus text with no
+  digits, no spelled-out number words (one through twenty, the tens
+  thirty through ninety, hundred, thousand, million, `k`), and no
+  word starting with accept, agree, deal, sign, cancel, pay, offer,
+  confirm or yes; at most 80 characters;
+- every other key denies, nested object keys included, and so does
+  any boolean or null under a non-allowlisted key. Denials name the
+  offending key.
 
 Extra message body is denied, and an edited draft is denied until it
 is re-gated. `Bash` is never a send however it carries the text. The

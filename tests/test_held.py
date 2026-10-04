@@ -166,7 +166,6 @@ class ApproveFlowTest(HeldCase):
         )
         self.assertEqual(proc.returncode, 0, out)
 
-
 class TupleBindingTest(HeldCase):
     def test_approval_binds_action_not_just_text(self):
         # The hash covers (action, offer, period, currency, rendered):
