@@ -77,8 +77,10 @@ Hard blocks, in order:
    symlink) floor file: block.
 2. Missing or unknown `action`: block.
 3. Unknown draft keys or a `text` key: block.
-4. `offer` not a plain number, `period` invalid, or template not a
-   string: block.
+4. `offer` not a plain number or not positive (zero or negative is
+   never a price), `period` invalid, template not a string, or an
+   inbound `offer` or `amounts` entry that parses to zero or less:
+   block.
 5. Unknown or unresolvable placeholder: block, naming it. Placeholder
    indexes are at most four ASCII digits; a longer run is malformed.
 6. `offer` worse than the floor compared in the floor's declared
@@ -173,11 +175,14 @@ Gate and score exit 2 when the brief `direction` is not `pay` or
 `autonomy` is not an integer 1 to 4, when the case id is not
 `[a-z0-9-]`, when the floor is missing or invalid (gate blocks
 instead), when a `period` or `floor_period` key is present but not a
-string or names no known period (on the plan, an option, a ladder
-step, a fact, or the inbound file; only an absent key defaults), when
-a `currency` is not a three-letter code or brief and plan disagree,
-when a fact `amount` is neither a number nor null, or when a plan
-`price` value in the floor's declared period sits outside the band
+string or names no known period (on the plan or the brief, an option,
+a ladder step, a fact, or the inbound file; only an absent key
+defaults, and a valid `floor_period` never excuses a broken `period`
+key it shadows), when a `currency` is not a three-letter code or
+brief and plan disagree, when a fact `amount` is not a positive
+number or null, when a plan `target`, option or ladder `value` is
+zero or negative, or when a plan `price` value in the floor's
+declared period sits outside the band
 ("plan conflicts with your limits"). Options with `kind` `bonus` or
 `fee` are not offers and skip the check.
 

@@ -177,7 +177,10 @@ class AcceptConversionTest(PeriodCase):
         self.assertEqual(proc.returncode, 1, out)
         self.assertIn(LIMITS, out["reasons"])
 
-    def test_inbound_bad_period_blocks(self):
+    def test_inbound_bad_period_errors(self):
+        # An inbound file is parsed input like the plan and brief: a
+        # present period naming no known period is a broken file,
+        # exit 2, same as the score path, never a negotiation block.
         case_id = self.make_month_case()
         proc, out = self.gate(
             case_id,
@@ -187,9 +190,9 @@ class AcceptConversionTest(PeriodCase):
             inbound={"offer": 720, "period": "weekly", "text": "x",
                      "amounts": []},
         )
-        self.assertEqual(proc.returncode, 1, out)
+        self.assertEqual(proc.returncode, 2, out)
         self.assertIn("period must be once, month or year",
-                      " ".join(out["reasons"]))
+                      out["error"])
 
 
 class FloorPeriodKeyTest(PeriodCase):
@@ -233,6 +236,38 @@ class FloorPeriodKeyTest(PeriodCase):
                 plan = dict(plan_for("pay", 1200), **extra)
                 case_id = self.make_case(plan=plan)
                 proc, out = self.gate(case_id, send_draft(template="hi"))
+                self.assertEqual(proc.returncode, 2, out)
+                self.assertIn("period", out["error"])
+
+    def test_shadowed_period_still_validates(self):
+        # A valid floor_period picks the floor's period; it must not
+        # let a broken period key hide on the plan or the brief.
+        for name, brief, plan in (
+            (
+                "plan",
+                dict(BRIEF_PAY),
+                dict(plan_for("pay", 1200), floor_period="month",
+                     period="weekly"),
+            ),
+            (
+                "brief",
+                dict(BRIEF_PAY, period="weekly"),
+                dict(plan_for("pay", 1200), floor_period="month"),
+            ),
+            (
+                "brief behind plan",
+                dict(BRIEF_PAY, period="weekly"),
+                dict(plan_for("pay", 1200), period="month"),
+            ),
+        ):
+            with self.subTest(name=name):
+                case_id, case_dir = new_case(self.home)
+                write_case_files(
+                    case_dir, brief=brief, plan=plan, floor=1200,
+                )
+                proc, out = self.gate(
+                    case_id, send_draft(template="hi")
+                )
                 self.assertEqual(proc.returncode, 2, out)
                 self.assertIn("period", out["error"])
 

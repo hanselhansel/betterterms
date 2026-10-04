@@ -79,6 +79,8 @@ def classify(case_dir, inbound):
     brief = cases.load_brief(case_dir)
     plan = cases.load_plan(case_dir)
     direction = cases.direction_of(brief)
+    cases.mode_of(brief)
+    cases.autonomy_of(brief)
     floor = cases.read_floor(case_dir)
     if floor is None:
         raise BtError("no floor set for case")

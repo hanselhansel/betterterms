@@ -6,13 +6,17 @@ agent must send verbatim (None on block).
 The gate has two tiers (decision 0009). Hard blocks are code
 guarantees and fail closed:
 
-1. invalid brief (direction, mode, autonomy) or conflicting plan ->
-   error, exit 2
+1. invalid brief (direction, mode, autonomy), an invalid ``period``
+   or ``floor_period`` key anywhere (a valid ``floor_period`` never
+   excuses a shadowed one), an inbound ``period`` naming no known
+   period, or a conflicting plan -> error, exit 2
 2. missing, unreadable or invalid ``.floor`` -> block
 3. missing or unknown ``action`` -> block
 4. unknown draft keys or a legacy ``text`` key -> block
-5. ``offer`` present but not a plain number, or ``period`` outside
-   once|month|year, or template not a string -> block
+5. ``offer`` present but not a plain number or not positive, or
+   ``period`` outside once|month|year, or template not a string ->
+   block; a non-positive inbound ``offer`` or ``amounts`` entry
+   blocks too
 6. unknown, malformed or unresolvable placeholder -> block, naming
    the placeholder
 7. offer worse than the floor, compared in the floor's declared
@@ -264,10 +268,12 @@ def check(case_dir, draft, approved=False, inbound=None):
     in_period = plan_period
     if inbound and inbound.get("period") is not None:
         raw_in = inbound.get("period")
+        # A present inbound period naming no known period is a
+        # broken input file like a bad plan period: exit 2, same as
+        # the score path, never a negotiation block.
         if not isinstance(raw_in, str) or raw_in.lower() not in PERIODS:
-            findings.append(("block", "period must be once, month or year"))
-        else:
-            in_period = raw_in.lower()
+            raise BtError("period must be once, month or year")
+        in_period = raw_in.lower()
 
     find = render.render(
         template, offer, period, plan, plan_period, in_amounts, currency

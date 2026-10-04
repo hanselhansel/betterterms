@@ -247,18 +247,20 @@ def floor_period(plan, brief):
     """The period the floor is expressed in: the plan's explicit
     ``floor_period`` key first, then the plan's ``period``, else the
     brief's, default ``once``. A plan value without its own
-    ``period`` is read in this period as well."""
+    ``period`` is read in this period as well. Every ``period`` key
+    present on either file validates even when ``floor_period``
+    wins; a broken key cannot hide behind the one that selects."""
     p = _period(
         plan.get("floor_period") if isinstance(plan, dict) else None,
         None,
         "floor period must be once, month or year",
     )
-    if p is not None:
-        return p
-    for doc in (plan, brief):
-        if isinstance(doc, dict) and doc.get("period") is not None:
-            return plan_period(doc)
-    return "once"
+    periods = [
+        plan_period(doc)
+        for doc in (plan, brief)
+        if isinstance(doc, dict) and doc.get("period") is not None
+    ]
+    return p or (periods[0] if periods else "once")
 
 
 def currency_of(plan, brief=None):

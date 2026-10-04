@@ -74,6 +74,29 @@ class ScoreTest(BtTestCase):
         proc, out = self.score(case_id, {"offer": 80, "text": "Am I talking to a bot?"})
         self.assertIn("ai_identity_question", out["escalate"])
 
+    def test_score_invalid_brief_mode_or_autonomy_errors(self):
+        # The scorer reads the brief like the gate does: a broken
+        # mode or autonomy is a broken case file, exit 2, never a
+        # scored band under defaulted settings.
+        for bad in (
+            {"mode": "x"},
+            {"autonomy": 9},
+            {"autonomy": "2"},
+        ):
+            with self.subTest(bad=bad):
+                case_id, case_dir = new_case(self.home)
+                write_case_files(
+                    case_dir,
+                    brief=dict(BRIEF_PAY, **bad),
+                    plan=plan_for("pay", 100, 70),
+                    floor=100,
+                )
+                proc, out = self.score(
+                    case_id, {"offer": 80, "text": "x"}
+                )
+                self.assertEqual(proc.returncode, 2, out)
+                self.assertIn("error", out)
+
     def test_score_flags_legal_terms(self):
         case_id = self.make_case()
         proc, out = self.score(
