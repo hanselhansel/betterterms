@@ -1,18 +1,22 @@
-// The betterterms pane (spec 6.1-6.3): three tabs —
+// The betterterms pane (spec 6.1-6.5): three tabs:
 //   1 Cases      one card per case, selected shows the offer bar,
-//                the six-step strip and a note
+//                the six-step strip and a note; `t` swaps the list for
+//                the terms editor (ui/terms.js)
 //   2 Approvals  one card per held draft, oldest first, with the
 //                rendered text, the gate's reasons, and the three
 //                actions: Approve and send (a), Edit (e), Reject (r)
-//   3 Savings    the ledger totals (charts land in a later task)
+//   3 Savings    the ledger totals and chart (ui/savings.js)
 //
 // Trees only: the hook resolves the element set and hands `view`
-// ({tab, selected, editing}) plus `act` (the press handlers from
-// lib/approvals.js). Arrow keys are never bound: rows and cards are
-// Buttons and Inputs, which both pointer and hotkey press.
+// ({tab, selected, editing, terms, savings, surface}) plus `act` (the
+// press handlers from lib/wiring.js). Arrow keys are never bound:
+// rows and cards are Buttons and Inputs, which both pointer and
+// hotkey press.
 
 import * as C from "../lib/cases.js";
 import { hash8 } from "../lib/approvals.js";
+import { termsTree } from "./terms.js";
+import { savingsBody } from "./savings.js";
 
 const MONEY = /(?:[$€£]\s?|(?:CHF|USD|EUR|GBP)\s)\d[\d,]*(?:\.\d{1,2})?|\b\d[\d,]*(?:\.\d{1,2})?\s?(?:\/(?:mo|month|yr|year)|\bper\s(?:month|year))|\$\d[\d,]*/g;
 
@@ -63,6 +67,8 @@ function offerBar(marks) {
 
 function casesTab(el, snap, view) {
   const { Box, Text, Button } = el;
+  // `t` swaps the case list for the terms editor (spec 6.4).
+  if (view.terms) return termsTree(el, view.terms, view.act);
   const rows = [];
   for (const c of snap.cases) {
     const stage = c.stage === "exchange" ? "in exchange" : c.stage;
@@ -80,6 +86,13 @@ function casesTab(el, snap, view) {
         rows.push(h(Text, { key: `bar-${c.id}` }, bar.bar));
         rows.push(h(Text, { key: `scale-${c.id}`, dimColor: true }, bar.legend));
       }
+      rows.push(h(Button, {
+        key: `terms-${c.id}`,
+        label: "Terms",
+        hotkey: "t",
+        plain: true,
+        onPress: () => view.act.openTerms(c),
+      }));
       if (c.lastSnippet) {
         rows.push(h(Text, { key: `note-${c.id}`, dimColor: true }, `last: ${c.lastSnippet}`));
       }
@@ -165,8 +178,10 @@ function approvalsTab(el, snap, view) {
   return h(Box, { key: "approvals", flexDirection: "column" }, ...cards);
 }
 
-function savingsTab(el, snap) {
+function savingsTab(el, snap, view) {
   const { Box, Text } = el;
+  // The full view once act.savingsData() lands (ledger total + records).
+  if (view.savings) return savingsBody(el, view.savings, view.surface);
   const closed = snap.cases.filter((c) => c.stage === "closed").length;
   return h(
     Box,
@@ -182,7 +197,7 @@ export function paneTree(el, snap, view, act) {
   const body = v.tab === 2
     ? approvalsTab(el, snap, v)
     : v.tab === 3
-      ? savingsTab(el, snap)
+      ? savingsTab(el, snap, v)
       : casesTab(el, snap, v);
   return h(
     el.Box,
