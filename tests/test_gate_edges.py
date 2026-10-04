@@ -4,6 +4,7 @@ case-file shape errors under the structured-amounts contract."""
 import unittest
 
 from bt_helpers import (
+    approve_held,
     BRIEF_PAY,
     PLAN_BILLS,
     BtTestCase,
@@ -32,10 +33,10 @@ class GateEdgeTest(BtTestCase):
 
     def gate(self, case_id, draft, approved=False, inbound_path=None):
         args = ["gate", case_id, "--draft", str(write_draft(self.tmp, draft))]
-        if approved:
-            args.append("--approved")
         if inbound_path is not None:
             args += ["--inbound", str(inbound_path)]
+        if approved:
+            args = approve_held(self.home, case_id, args)
         return run_bt_json(self.home, *args)
 
     def test_block_dominates_and_bad_actions_block(self):

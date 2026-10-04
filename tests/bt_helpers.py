@@ -39,6 +39,18 @@ def run_bt_json(home, *args, stdin=None):
         )
 
 
+def approve_held(home, case_id, args):
+    """Run the gate once on ``args`` to hold the draft, record the user
+    approval with ``held approve`` on the reported ``hash``, and return
+    ``args`` with ``--approved`` appended so the caller's real call
+    consumes it. A gate result without a hash adds nothing."""
+    h = run_bt_json(home, *args)[1].get("hash")
+    if h:
+        proc, _ = run_bt_json(home, "held", "approve", case_id, h[:8])
+        assert proc.returncode == 0, proc.stdout + proc.stderr
+    return [*args, "--approved"]
+
+
 def new_case(home, pack="bills", mode="act", direction="pay"):
     proc, out = run_bt_json(
         home, "case", "new", "--pack", pack, "--mode", mode, "--direction", direction
@@ -172,12 +184,12 @@ class PriceCase(BtTestCase):
     def gate(self, case_id, draft, approved=False, inbound=None):
         path = write_draft(self.tmp, draft)
         args = ["gate", case_id, "--draft", str(path)]
-        if approved:
-            args.append("--approved")
         if inbound is not None:
             ipath = self.tmp / "inbound.yaml"
             ipath.write_text(yaml.dump(inbound))
             args += ["--inbound", str(ipath)]
+        if approved:
+            args = approve_held(self.home, case_id, args)
         return run_bt_json(self.home, *args)
 
     def score(self, case_id, inbound):

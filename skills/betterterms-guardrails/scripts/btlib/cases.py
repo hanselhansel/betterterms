@@ -15,7 +15,7 @@ import secrets
 from datetime import date
 from pathlib import Path
 
-from . import BtError, MAX_AMOUNT, PERIODS, inputs, minor, yaml
+from . import BtError, MAX_AMOUNT, PERIODS, config, inputs, minor, yaml
 from .floorio import read_floor, set_floor
 
 PACK_RE = re.compile(r"[a-z0-9-]{1,64}")
@@ -100,35 +100,40 @@ def create_case(pack, mode="act", direction="pay"):
         os.chmod(d, 0o700)
         (d / "sources").mkdir()
         os.chmod(d / "sources", 0o700)
+        brief_data = {
+            "pack": pack,
+            "mode": mode,
+            "direction": direction,
+            "goals": [],
+            "priorities": [],
+            "ranking_check": {"passed": False, "samples": []},
+            "autonomy": AUTONOMY_DEFAULT[mode],
+            "never_disclose": [],
+            "deadline": None,
+        }
+        plan_data = {
+            "target": None,
+            "currency": "USD",
+            "options": [],
+            "ladder": [],
+            "patience": {"rounds": None, "days": None},
+            "timing": None,
+            "channel": None,
+            "facts": [],
+            "best_alternative": None,
+        }
+        # An existing config.yaml supplies the new case's autonomy and
+        # currency; without one the mode defaults stand (spec 5).
+        if config.path().is_file():
+            cfg = config.load()
+            brief_data["autonomy"] = cfg["autonomy"]
+            plan_data["currency"] = cfg["currency"].upper()
         (d / "brief.yaml").write_text(
-            yaml.dump(
-                {
-                    "pack": pack,
-                    "mode": mode,
-                    "direction": direction,
-                    "goals": [],
-                    "priorities": [],
-                    "ranking_check": {"passed": False, "samples": []},
-                    "autonomy": AUTONOMY_DEFAULT[mode],
-                    "never_disclose": [],
-                    "deadline": None,
-                }
-            ),
+            yaml.dump(brief_data),
             encoding="utf-8",
         )
         (d / "plan.yaml").write_text(
-            yaml.dump(
-                {
-                    "target": None,
-                    "currency": "USD",
-                    "options": [],
-                    "ladder": [],
-                    "patience": {"rounds": None, "days": None},
-                    "timing": None,
-                    "channel": None,
-                    "facts": [],
-                }
-            ),
+            yaml.dump(plan_data),
             encoding="utf-8",
         )
         (d / "thread.md").write_text(
@@ -354,6 +359,29 @@ def check_plan_limits(plan, floor, direction, brief=None):
                 raise BtError(
                     "fact amount must be a positive number or null"
                 )
+    # ``best_alternative`` (spec 6.4) is context for the agent, never an
+    # offer: its shape validates here, but its amount never joins
+    # ``values`` for the floor comparison.
+    alt = plan.get("best_alternative")
+    if alt is not None:
+        if not isinstance(alt, dict):
+            raise BtError("best_alternative must be a mapping")
+        _period(
+            alt,
+            "period",
+            "once",
+            "best alternative period must be once, month or year",
+        )
+        amount = alt.get("amount")
+        if amount is not None and (
+            isinstance(amount, bool)
+            or not isinstance(amount, (int, float))
+            or num(amount) is None
+            or num(amount) <= 0
+        ):
+            raise BtError(
+                "best_alternative amount must be a positive number or null"
+            )
     floor = minor(floor)
     for v in values:
         if v is None:

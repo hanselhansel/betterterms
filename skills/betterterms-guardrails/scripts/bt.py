@@ -3,10 +3,16 @@
 scorer and the ledger. Every subcommand prints one JSON object to
 stdout.
 
+  bt.py where
+  bt.py config show | config set <key> <value>
   bt.py case new --pack <pack> [--mode act|coach] [--direction pay|receive]
   bt.py case set-floor <case_id>     (hidden getpass prompt on a TTY, else stdin, never argv)
+  bt.py case set-terms <case_id> [--target N] [--alternative N] [--period P] [--note T]
   bt.py case show <case_id>
   bt.py gate <case_id> --draft <draft.yaml> [--approved] [--inbound <inbound.yaml>]
+  bt.py held list <case_id>
+  bt.py held approve <case_id> <hash8>
+  bt.py held reject <case_id> <hash8>
   bt.py score <case_id> --inbound <inbound.yaml>
   bt.py ledger add <case_id> --before N --after N --period month|year
   bt.py ledger total
@@ -25,7 +31,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from btlib import BtError, cases, gate, inputs, ledger, score, sources, yaml
+from btlib import (
+    BtError, cases, cli_extra, gate, held, inputs, ledger, score,
+    sources, yaml,
+)
 
 
 def _blocked_input(e):
@@ -75,11 +84,14 @@ def cmd_gate(args):
     except inputs.UnsafeInput as e:
         return _blocked_input(e)
     result, reasons, rendered = gate.check(d, draft, approved=args.approved, inbound=inbound)
-    return {"pass": 0, "block": 1, "needs_approval": 3}[result], {
+    out = {
         "result": result,
         "reasons": reasons,
         "rendered": rendered,
     }
+    if result == "needs_approval" and rendered is not None:
+        out["hash"] = held.draft_hash(rendered)
+    return {"pass": 0, "block": 1, "needs_approval": 3}[result], out
 
 
 def cmd_score(args):
@@ -186,6 +198,8 @@ def build_parser():
     p_sstale.add_argument("case_id")
     p_sstale.add_argument("--days", type=int, default=90)
     p_sstale.set_defaults(fn=cmd_source_stale)
+
+    cli_extra.register(sub, case_sub)
 
     return parser
 

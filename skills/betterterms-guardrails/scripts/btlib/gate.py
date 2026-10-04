@@ -83,24 +83,28 @@ also need approval.
 ``block`` dominates ``needs_approval``, which dominates ``pass``, and
 every floor-related block reports the same generic reason so the
 output can never leak the floor's value, direction or distance.
+
+A ``needs_approval`` draft is held on disk (``held/<sha256>.yaml``,
+``btlib.held``) so a user approval can bind to the exact rendered
+text. ``approved=True`` no longer skips the review tier by itself: it
+only passes when a matching ``held/<sha256>.approved`` file exists,
+and consumes it once. Without one the draft is held again with the
+reason ``no approval recorded for this exact text``.
 """
 
-from . import BtError, LIMITS, PERIODS, cases, quotes, render, review
+from . import (
+    BtError, LIMITS, PERIODS, cases, held, quotes, render, review,
+)
 
 IRREVERSIBLE = {"accept", "cancel", "pay", "sign", "dispute"}
 OFFERED = {"accept", "pay", "sign"}
 ACTIONS = IRREVERSIBLE | {"send"}
 DRAFT_KEYS = {"action", "offer", "period", "template", "claims"}
 
-# A block never reports the at-limit, converted-limit or same-digits
-# review hits: on a block they would each leak one bit about the
-# floor, so only the generic limit reason (and any structural
-# blocks) reports.
-DROP_ON_BLOCK = {
-    "offer is at your limit",
-    "amount matches a converted limit",
-    "amount matches your limit's digits",
-}
+# A block reports only the block findings: the at-limit,
+# converted-limit or same-digits review hits would each leak one bit
+# about the floor, and any other approval finding is noise on a draft
+# that cannot be sent at all.
 
 
 def _safe_str(value):
@@ -269,10 +273,9 @@ def check(case_dir, draft, approved=False, inbound=None):
             )
             if unconvertible:
                 if action == "send":
-                    if not approved:
-                        findings.append(
-                            ("approval", "period differs from your limit")
-                        )
+                    findings.append(
+                        ("approval", "period differs from your limit")
+                    )
                 else:
                     findings.append(
                         ("block", "period differs from your limit")
@@ -280,8 +283,7 @@ def check(case_dir, draft, approved=False, inbound=None):
             elif quotes.worse(offer_floor, floor, direction):
                 findings.append(("block", LIMITS))
             elif (
-                not approved
-                and action == "send"
+                action == "send"
                 and quotes.same(offer_floor, (floor,))
             ):
                 # A send offer at the floor is inside the band, but it
@@ -324,37 +326,49 @@ def check(case_dir, draft, approved=False, inbound=None):
         if c not in fact_ids:
             findings.append(("block", f"claim {_shown(c)} not in plan facts"))
 
-    if action in IRREVERSIBLE and not approved:
+    if action in IRREVERSIBLE:
         findings.append(("approval", f"action {action!r} requires --approved"))
-    if not approved:
-        if mode == "coach":
-            findings.append(("approval", "coach mode: the user approves every send"))
-        if autonomy == 1:
-            findings.append(("approval", "autonomy 1: the user approves every send"))
-        if clean:
-            for reason in review.review(find, never_items):
-                findings.append(("approval", reason))
-            if floor is not None:
-                if quotes.converted_match(find, floor, plan_period):
-                    findings.append(
-                        ("approval", "amount matches a converted limit")
-                    )
-                if quotes.floor_digits(find, floor, plan_period, action):
-                    findings.append(
-                        ("approval", "amount matches your limit's digits")
-                    )
+    if mode == "coach":
+        findings.append(("approval", "coach mode: the user approves every send"))
+    if autonomy == 1:
+        findings.append(("approval", "autonomy 1: the user approves every send"))
+    if clean:
+        for reason in review.review(find, never_items):
+            findings.append(("approval", reason))
+        if floor is not None:
+            if quotes.converted_match(find, floor, plan_period):
+                findings.append(
+                    ("approval", "amount matches a converted limit")
+                )
+            if quotes.floor_digits(find, floor, plan_period, action):
+                findings.append(
+                    ("approval", "amount matches your limit's digits")
+                )
 
     blocked = any(kind == "block" for kind, _ in findings)
     reasons = []
     seen = set()
-    for _, msg in findings:
-        if blocked and msg in DROP_ON_BLOCK:
+    for kind, msg in findings:
+        if blocked and kind != "block":
             continue
         if msg not in seen:
             seen.add(msg)
             reasons.append(msg)
     if blocked:
         return "block", reasons, None
-    if findings:
-        return "needs_approval", reasons, find.text if find else None
-    return "pass", reasons, find.text if find else None
+    rendered = find.text if find else None
+    if not findings:
+        if approved and rendered is not None:
+            held.consume_approval(case_dir, rendered)
+        return "pass", reasons, rendered
+    if (
+        approved
+        and rendered is not None
+        and held.consume_approval(case_dir, rendered)
+    ):
+        return "pass", [], rendered
+    if rendered is not None:
+        held.hold(case_dir, rendered, reasons)
+    if approved:
+        reasons.append(held.NO_APPROVAL)
+    return "needs_approval", reasons, rendered

@@ -4,6 +4,7 @@ import unittest
 from pathlib import Path
 
 from bt_helpers import (
+    approve_held,
     BRIEF_PAY,
     BtTestCase,
     inbound_msg,
@@ -37,12 +38,12 @@ class HardeningTest(BtTestCase):
     def gate(self, case_id, draft, inbound=None, approved=False, raw=False):
         path = write_draft(self.tmp, draft)
         args = ["gate", case_id, "--draft", str(path)]
-        if approved:
-            args.append("--approved")
         if inbound is not None:
             ipath = self.tmp / "inbound.yaml"
             ipath.write_text(yaml.dump(inbound))
             args += ["--inbound", str(ipath)]
+        if approved:
+            args = approve_held(self.home, case_id, args)
         if raw:
             return run_bt(self.home, *args), None
         return run_bt_json(self.home, *args)
