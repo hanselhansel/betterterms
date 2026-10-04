@@ -13,8 +13,9 @@ Agent notes:
   account-restriction risk in `../playbook.md` step 6.
 - State the next step calmly. A calm statement is pressure; a threat is
   not needed and not in the user's voice.
-- Keep the deadline a plain count of days. The dispute-window date lives
-  in the plan, never in this text.
+- Keep the deadline in words ("within a week"); a numeral routes to
+  review. The dispute-window date lives in the plan, never in this
+  text.
 
 Template:
 
@@ -25,7 +26,7 @@ I have asked for a refund of {offer} and shared my records:
 {fact:evidence-summary} Your team has not resolved this yet.
 
 This is my final request before I open a billing dispute with my card
-issuer. If I do not hear back within 7 days, that is the step I will
+issuer. If I do not hear back within a week, that is the step I will
 take.
 
 I would rather settle this with you directly. {fact:what-happened}

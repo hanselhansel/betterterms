@@ -5,7 +5,6 @@ or refund terms. Action: `send`. Replace `id` in `{fact:id}` with
 the fact that holds the policy text found during research.
 
 ```
-Thank you for checking. Your published cancellation policy says
-{fact:id}. Please process my cancellation under that policy, and
-confirm it in writing.
+Thank you for checking. Your published exit terms say {fact:id}.
+Please end my service under those terms, and put it in writing.
 ```

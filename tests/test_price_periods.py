@@ -103,9 +103,11 @@ class UnconvertiblePriceTest(PriceCase):
                     "period differs", " ".join(out["reasons"])
                 )
 
-    def test_quote_and_fact_unconvertible_block_off_send(self):
-        # Quotes and facts keep their send exemption, but on agreeing
-        # actions an unconvertible rendered value fails closed too.
+    def test_fact_unconvertible_blocks_off_send(self):
+        # A fact keeps its send exemption, but on agreeing actions an
+        # unconvertible rendered amount fails closed. A quote is
+        # exempt everywhere (spec 4.4): the same unconvertible quote
+        # on pay passes.
         plan = dict(
             plan_for("pay", 100, target=80),
             period="month",
@@ -128,8 +130,8 @@ class UnconvertiblePriceTest(PriceCase):
             approved=True,
             inbound=inbound_msg(text="x", amounts=[90]),
         )
-        self.assertEqual(proc.returncode, 1, out)
-        self.assertIn("period differs", " ".join(out["reasons"]))
+        self.assertEqual(proc.returncode, 0, out)
+        self.assertNotIn("period differs", " ".join(out["reasons"]))
 
     def test_send_quote_exemption_still_holds(self):
         # Documented carve-out: a send may quote a counterparty value

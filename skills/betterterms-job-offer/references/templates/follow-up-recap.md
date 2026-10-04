@@ -15,7 +15,7 @@ Subject: Recap of our call today
 
 Hi <name>,
 
-Thank you for the time today. Confirming what I heard: an offer of
+Thank you for the time today. Here is what I heard: an offer of
 {quote:1} on the terms we discussed, and you asked for my answer by
 <date>.
 

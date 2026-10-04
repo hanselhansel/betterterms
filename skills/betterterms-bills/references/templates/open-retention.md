@@ -16,8 +16,8 @@ otherwise.
 
 ```text
 Hi, my promotional price ends soon and the new monthly price is more
-than I want to pay. I have been with you a while and I would like to
-stay, but the bill needs to come down.
+than I want to spend. I have been with you a while and I would like
+to stay, but the bill needs to come down.
 
 {fact:competitor-price}
 

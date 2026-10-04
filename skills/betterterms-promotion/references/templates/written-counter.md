@@ -26,8 +26,8 @@ A few shapes that all fit on my side:
 
 - {option:level-plus-raise}: move to <target level> with the raise.
 - {option:raise-now}: stay at the current level with the higher base.
-- {option:title-plus-review}: the new title now, with a dated pay
-  review.
+- {option:title-plus-review}: the new title now, with a dated
+  salary review.
 
 Each of these fits. Which can we make happen?
 

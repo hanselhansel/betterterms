@@ -214,6 +214,9 @@ class HardeningTest(BtTestCase):
         self.assertEqual(out["result"], "pass")
 
     def test_never_disclose_substring(self):
+        # Lettered items are a hard block wherever they appear in the
+        # rendered text (spec 4.1): "ACCT-7788" inside "my ACCT-7788"
+        # blocks, it does not route.
         case_id, _ = self.make_case(
             brief={"never_disclose": ["ACCT-7788", "passw0rd"]}
         )
@@ -222,18 +225,23 @@ class HardeningTest(BtTestCase):
                 proc, out = self.gate(
                     case_id, send_draft(template=f"here is {word}")
                 )
-                self.assertEqual(proc.returncode, 3)
-                self.assertEqual(out["result"], "needs_approval")
+                self.assertEqual(proc.returncode, 1)
+                self.assertEqual(out["result"], "block")
+                self.assertIn(
+                    "never-disclose", " ".join(out["reasons"])
+                )
 
-    def test_never_disclose_zwsp_needs_approval(self):
+    def test_never_disclose_zwsp_blocks(self):
         # A zero-width space inside the term does not hide it: the
-        # check runs on text with format characters stripped.
+        # check runs on text with format characters stripped, and a
+        # lettered item is a hard block.
         case_id, _ = self.make_case(brief={"never_disclose": ["passw0rd"]})
         proc, out = self.gate(
             case_id, send_draft(template="here is passw0rd")
         )
-        self.assertEqual(proc.returncode, 3, out)
-        self.assertEqual(out["result"], "needs_approval")
+        self.assertEqual(proc.returncode, 1, out)
+        self.assertEqual(out["result"], "block")
+        self.assertIn("never-disclose", " ".join(out["reasons"]))
 
     def test_never_disclose_short_numeric(self):
         # Numeric items match fused digit strings in the text and

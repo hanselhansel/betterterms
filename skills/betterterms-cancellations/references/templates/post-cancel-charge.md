@@ -9,9 +9,9 @@ yes. Action: `send`. When the provider stated the charge amount,
 ```
 Hello,
 
-My service was cancelled and you confirmed it in writing. A charge
-posted to my card after that confirmation. Please reverse the
-charge and confirm the reversal in writing.
+My service was ended and you put it in writing. A payment posted to
+my card after that. Please refund it and put the reversal in
+writing.
 
 Thank you.
 ```

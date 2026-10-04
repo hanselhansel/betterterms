@@ -98,9 +98,13 @@ class AgreementWordTest(ProbeTest):
 
 
 class QuoteAndPeriodTest(ProbeTest):
-    def test_quote_worse_than_floor_only_for_send(self):
+    def test_quote_worse_than_floor_never_meets_floor_check(self):
+        # Spec 4.4: a quote restates the counterparty's own number, so
+        # the worse-than-floor check never reaches it on any action.
         case_id = self.make_case()
-        inbound = inbound_msg(text="we charge $1,300", amounts=[1300])
+        inbound = inbound_msg(
+            offer=1100, text="we charge $1,300", amounts=[1300]
+        )
         proc, out = self.gate(
             case_id, send_draft(template="your {quote:1} is too high"),
             inbound=inbound,
@@ -114,10 +118,11 @@ class QuoteAndPeriodTest(ProbeTest):
                     offer=1100 if action in ("accept", "pay", "sign") else None,
                     template="noting your {quote:1}",
                 )
-                out = self.blocked(
+                proc, out = self.gate(
                     case_id, draft, approved=True, inbound=inbound
                 )
-                self.assertIn(LIMITS, out["reasons"])
+                self.assertEqual(proc.returncode, 0, out)
+                self.assertNotIn(LIMITS, out["reasons"])
 
     def test_offer_at_floor_converted_from_yearly(self):
         # plan period month, floor 1200/month: a $14,400/year offer is

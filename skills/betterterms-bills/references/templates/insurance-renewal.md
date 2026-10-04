@@ -23,6 +23,6 @@ I hold written quotes for the same coverage:
 {fact:quote-1}
 {fact:quote-2}
 
-Could you review my policy for discounts, or match one of these? I
-would rather stay than switch. Thank you.
+Could you review my policy for discounts, or match either of these?
+I would rather stay than switch. Thank you.
 ```

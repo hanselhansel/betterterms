@@ -5,6 +5,7 @@ the outcome is better than before: ``before - after`` for ``pay`` cases,
 rounded to the currency minor unit.
 """
 
+import fcntl
 import json
 import math
 import os
@@ -25,36 +26,69 @@ def _clean_number(value):
     return int(value) if float(value).is_integer() else float(value)
 
 
-def _records():
-    """(records, skipped): every line that fails to decode as UTF-8,
-    fails to parse, is not an object or carries a non-numeric or
-    over-cap ``saved_per_year`` is skipped and counted. A corrupt or
-    oversized line warns, it never sinks the whole ledger."""
-    path = ledger_path()
+def _parse_records(data):
+    """(records, skipped) from ledger bytes: every line that fails to
+    decode as UTF-8, fails to parse (a line nested past the
+    interpreter limit raises RecursionError, which counts the same),
+    is not an object or carries a non-numeric or over-cap
+    ``saved_per_year`` is skipped and counted. A corrupt or oversized
+    line warns, it never sinks the whole ledger."""
     records, skipped = [], 0
-    if path.is_file():
-        for raw_line in path.read_bytes().splitlines():
-            try:
-                line = raw_line.decode("utf-8").strip()
-            except UnicodeDecodeError:
-                skipped += 1
-                continue
-            if not line:
-                continue
-            try:
-                record = json.loads(line)
-            except ValueError:
-                skipped += 1
-                continue
-            if not isinstance(record, dict):
-                skipped += 1
-                continue
-            raw = record.get("saved_per_year")
-            if raw is not None and cases.num(raw) is None:
-                skipped += 1
-                continue
-            records.append(record)
+    for raw_line in data.splitlines():
+        try:
+            line = raw_line.decode("utf-8").strip()
+        except UnicodeDecodeError:
+            skipped += 1
+            continue
+        if not line:
+            continue
+        try:
+            record = json.loads(line)
+        except (ValueError, RecursionError):
+            skipped += 1
+            continue
+        if not isinstance(record, dict):
+            skipped += 1
+            continue
+        raw = record.get("saved_per_year")
+        if raw is not None and cases.num(raw) is None:
+            skipped += 1
+            continue
+        records.append(record)
     return records, skipped
+
+
+def _read_locked(exclusive):
+    """(fd, data): the ledger under an flock. A shared lock for
+    readers, which get ``(None, bytes)``; an exclusive one for the
+    read-dedupe-append sequence in ``add``, which gets the open fd
+    and the locked snapshot to dedupe against, so two processes can
+    never record the same case twice. A missing ledger reads as
+    empty; a non-regular file (symlink, fifo) fails closed."""
+    path = ledger_path()
+    if exclusive:
+        cases.ensure_home()
+        flags = os.O_RDWR | os.O_CREAT | os.O_APPEND
+    else:
+        flags = os.O_RDONLY
+    try:
+        fd = os.open(
+            path, flags | os.O_NOFOLLOW | os.O_NONBLOCK, 0o600
+        )
+    except FileNotFoundError:
+        return None, b""
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            raise BtError(f"ledger is not a regular file: {path}")
+        fcntl.flock(fd, fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH)
+        data = os.pread(fd, os.fstat(fd).st_size, 0)
+    except BaseException:
+        os.close(fd)
+        raise
+    if exclusive:
+        return fd, data
+    os.close(fd)
+    return None, data
 
 
 def add(case_dir, before, after, period):
@@ -71,9 +105,6 @@ def add(case_dir, before, after, period):
                 "at most 1e12"
             )
     case_id = Path(case_dir).name
-    records, _ = _records()
-    if any(r.get("case_id") == case_id for r in records):
-        raise BtError("case already recorded in ledger")
     brief = cases.load_brief(case_dir)
     plan = cases.load_plan(case_dir)
     pack = str(brief.get("pack") or case_id.rsplit("-", 2)[0])
@@ -97,23 +128,24 @@ def add(case_dir, before, after, period):
         "saved_per_year": saved,
         "recorded_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
     }
-    path = ledger_path()
-    cases.ensure_home()
     # The ledger holds per-case savings; like .floor it is created
     # owner-only. O_NOFOLLOW refuses a symlinked file, O_NONBLOCK
     # makes a fifo fail at open instead of blocking, and fstat proves
-    # the fd is a regular file before the append.
-    fd = os.open(
-        path,
-        os.O_WRONLY | os.O_CREAT | os.O_APPEND
-        | os.O_NOFOLLOW | os.O_NONBLOCK,
-        0o600,
-    )
-    if not stat.S_ISREG(os.fstat(fd).st_mode):
+    # the fd is a regular file before the append. The dedupe read and
+    # the append run under one exclusive flock, so a racing add of
+    # the same case loses instead of double-recording.
+    fd, data = _read_locked(exclusive=True)
+    try:
+        records, _ = _parse_records(data)
+        if any(r.get("case_id") == case_id for r in records):
+            raise BtError("case already recorded in ledger")
+        line = json.dumps(record, sort_keys=True) + "\n"
+        # A file that ends mid-line still gets a clean append: the
+        # record lands on a line of its own.
+        out = line if data.endswith(b"\n") or not data else "\n" + line
+        os.write(fd, out.encode("utf-8"))
+    finally:
         os.close(fd)
-        raise BtError(f"ledger is not a regular file: {path}")
-    with os.fdopen(fd, "a", encoding="utf-8") as f:
-        f.write(json.dumps(record, sort_keys=True) + "\n")
     return saved
 
 
@@ -121,7 +153,7 @@ def total():
     """Totals grouped by currency: 240 USD a year and 240 EUR a year
     are two answers, never 480. A record without a ``currency`` lands
     in ``unknown`` rather than being guessed into one."""
-    records, skipped = _records()
+    records, skipped = _parse_records(_read_locked(exclusive=False)[1])
     by_currency = {}
     by_pack = {}
     for r in records:

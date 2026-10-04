@@ -11,7 +11,8 @@ exceptions), any scale word, currency word or code, any commitment
 word or phrase, characters off the allowed set, glue on a rendered
 amount and every ``never_disclose`` term all route to the user. A numeric
 ``never_disclose`` item also compares against the rendered
-placeholder values, so the term still matches behind the mask. There
+placeholder values and the amounts inside quote spans, so the term
+still matches behind the mask. There
 is no digit parsing in this tier: a digit run of any length is a
 match, never a number to read, so nothing here can crash on
 ``int()`` or stall on a huge token.
@@ -20,7 +21,7 @@ match, never a number to read, so nothing here can crash on
 import bisect
 import re
 
-from . import FLOOR_TOL, cases, render, wordlists
+from . import FLOOR_TOL, cases, quotes, render, wordlists
 
 # The review-tier allowlist: ASCII letters and digits, space and
 # newline, this punctuation set and the sentinel. Any other character
@@ -150,6 +151,39 @@ def _numeric_item(item):
     return cases.num(re.sub(r"[^0-9.\-]", "", s))
 
 
+def disclosed(rendered, never_items):
+    """True when a ``never_disclose`` item with letters appears in the
+    rendered text, quote spans included: a listed term like
+    "CHF 90" or "$85/month" is never a coincidence, so the gate
+    treats the hit as a hard block, not a review item. Numeric items
+    stay in the review tier: they compare against digit runs and
+    rendered values in ``review``."""
+    if not rendered:
+        return False
+    low = render.normalize(rendered).lower()
+    for item in never_items:
+        s = render.normalize(str(item)).strip().lower()
+        if s and any(c.isalpha() for c in s) and s in low:
+            return True
+    return False
+
+
+# Words that turn a commitment phrase into a decline when they sit
+# within the two tokens before it: "no longer works for me",
+# "won't take it". Contraction forms are covered by the n't suffix.
+_NEGATORS = frozenset(
+    "no not never without cannot".split()
+)
+
+
+def _negated(lower, i):
+    """True when a negator sits within the two tokens before ``i``."""
+    return any(
+        t in _NEGATORS or t.endswith("n't")
+        for t in lower[max(0, i - 2):i]
+    )
+
+
 def review(find, never_items):
     """Review-tier checks on the rendered message. Returns one
     plain-word reason per tripped check; reasons carry no numbers."""
@@ -192,7 +226,11 @@ def review(find, never_items):
     if any(_number_word_hit(run) for run in runs):
         reasons.append("a number word in the message")
     # A phrase whose first word is absent cannot match, so most
-    # phrases cost one set lookup on the token set, not a scan.
+    # phrases cost one set lookup on the token set, not a scan. A
+    # match directly negated within the two tokens before it is a
+    # decline, not a commitment: "no longer works for me" does not
+    # promise anything (spec 4.3's template self-check relies on
+    # this).
     present = set(lower)
     for phrase in wordlists.COMMIT_PHRASES:
         if phrase[0] not in present:
@@ -200,6 +238,7 @@ def review(find, never_items):
         width = len(phrase)
         if any(
             lower[i:i + width] == list(phrase)
+            and not _negated(lower, i)
             for i in range(len(toks) - width + 1)
         ):
             reasons.append("agreement or commitment wording in the message")
@@ -216,7 +255,11 @@ def review(find, never_items):
         if num is not None:
             if groups is None:
                 groups = frozenset(_digit_groups(masked, toks))
-                values = sorted(v.value for v in find.values)
+                values = sorted(
+                    [float(a) for a in
+                     quotes.quote_amounts(find.quote_spans)]
+                    + [v.value for v in find.values]
+                )
             # The item's digits match a fused text run as a whole
             # string ("42" hits "42" and "4.2", not "420"), and its
             # value matches a rendered placeholder amount behind the
@@ -228,6 +271,9 @@ def review(find, never_items):
                 i < len(values) and values[i] - num <= FLOOR_TOL
             ) or (i > 0 and num - values[i - 1] <= FLOOR_TOL)
         else:
+            # A lettered item is a hard-block check (``disclosed``);
+            # the review-tier hit stays as defence in depth: the
+            # reason reports once either way.
             hit = s in low
         if hit:
             reasons.append("a term from your never-disclose list")

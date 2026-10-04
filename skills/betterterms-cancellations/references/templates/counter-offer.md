@@ -13,5 +13,5 @@ Thank you for the offer of {quote:1}. I would like to stay, but the
 price has to fit my budget. {fact:id} I could keep the service at
 {target}. Can you do that?
 
-If not, I will go ahead and finish the cancellation.
+If not, I will close the account.
 ```

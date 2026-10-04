@@ -222,13 +222,14 @@ def autonomy_of(brief):
     return a
 
 
-def _period(value, default, what):
-    """A ``period`` key that is present must be a string naming a
-    known period; only an absent key falls back to ``default``. A
-    falsy non-string (``0``, ``false``, ``[]``) is a broken plan, not
-    a default."""
-    if value is None:
+def _period(mapping, key, default, what):
+    """``mapping[key]`` as a period. A ``period`` key that is present
+    must be a string naming a known period; only an absent key falls
+    back to ``default``. A falsy non-string (``null``, ``0``,
+    ``false``, ``[]``) is a broken plan, not a default."""
+    if not isinstance(mapping, dict) or key not in mapping:
         return default
+    value = mapping[key]
     if not isinstance(value, str) or value.lower() not in PERIODS:
         raise BtError(what)
     return value.lower()
@@ -237,7 +238,8 @@ def _period(value, default, what):
 def plan_period(plan):
     """The period the plan's values (and the floor) are expressed in."""
     return _period(
-        (plan or {}).get("period"),
+        plan,
+        "period",
         "once",
         "plan period must be once, month or year",
     )
@@ -251,14 +253,15 @@ def floor_period(plan, brief):
     present on either file validates even when ``floor_period``
     wins; a broken key cannot hide behind the one that selects."""
     p = _period(
-        plan.get("floor_period") if isinstance(plan, dict) else None,
+        plan,
+        "floor_period",
         None,
         "floor period must be once, month or year",
     )
     periods = [
         plan_period(doc)
         for doc in (plan, brief)
-        if isinstance(doc, dict) and doc.get("period") is not None
+        if isinstance(doc, dict) and "period" in doc
     ]
     return p or (periods[0] if periods else "once")
 
@@ -310,7 +313,7 @@ def check_plan_limits(plan, floor, direction, brief=None):
         if isinstance(item, dict):
             kind = option_kind(item)
             item_period = _period(
-                item.get("period"), period, "invalid option period"
+                item, "period", period, "invalid option period"
             )
             v = _plan_value(item.get("value"))
             if kind == "price" and item_period == period:
@@ -318,7 +321,8 @@ def check_plan_limits(plan, floor, direction, brief=None):
     for item in as_list(plan.get("ladder")):
         if isinstance(item, dict):
             item_period = _period(
-                item.get("period"),
+                item,
+                "period",
                 period,
                 "ladder period must be once, month or year",
             )
@@ -334,7 +338,8 @@ def check_plan_limits(plan, floor, direction, brief=None):
     for item in as_list(plan.get("facts")):
         if isinstance(item, dict):
             _period(
-                item.get("period"),
+                item,
+                "period",
                 "once",
                 "fact period must be once, month or year",
             )

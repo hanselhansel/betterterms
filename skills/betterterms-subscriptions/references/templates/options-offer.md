@@ -8,6 +8,6 @@ or the gate blocks the draft.
 
 ```text
 Thank you for checking. I would like to stay, and any of these would
-fit: {option:annual}, {option:lower-tier}, or {option:pause}. Would one
-of those be possible on your side?
+fit: {option:annual}, {option:lower-tier}, or {option:pause}. Would
+any of those be possible on your side?
 ```

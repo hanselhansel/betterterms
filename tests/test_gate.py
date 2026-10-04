@@ -248,13 +248,16 @@ class GateTest(BtTestCase):
         self.assertEqual(out["result"], "block")
         self.assertIn(LIMITS, out["reasons"])
 
-    def test_never_disclose_needs_approval(self):
+    def test_never_disclose_blocks(self):
+        # An item with letters is a hard block, not a review item:
+        # a listed term is never a coincidence.
         case_id, _ = self.make_case(floor=1200)
         proc, out = self.gate(
             case_id, send_draft(template="my account is ACCT-7788")
         )
-        self.assertEqual(proc.returncode, 3)
-        self.assertEqual(out["result"], "needs_approval")
+        self.assertEqual(proc.returncode, 1)
+        self.assertEqual(out["result"], "block")
+        self.assertIn("never-disclose", " ".join(out["reasons"]))
 
     def test_offer_restated_in_free_text_needs_approval(self):
         # Bypass probe: the offer written bare in free text instead of

@@ -64,7 +64,12 @@ through placeholders the gate renders itself:
 - `{offer}` renders the draft offer with its period ("$85/month").
 - `{target}`, `{option:<label>}`, `{ladder:<n>}` render plan values.
 - `{fact:<id>}` renders the fact's text verbatim and claims the id.
-- `{quote:<n>}` renders the n-th amount in the inbound `amounts` list.
+- `{quote:<n>}` renders the n-th entry in the inbound `amounts`
+  list: a number renders as money, a string renders the
+  counterparty's words verbatim. A quote is never the agent's
+  offer, so it never meets the worse-than-floor or
+  unconvertible-period check on any action; it may still not equal
+  the floor, and the `never_disclose` checks still read it.
 - Anything else inside braces blocks, naming the placeholder.
 
 The gate has two tiers. Hard blocks are code guarantees and fail
@@ -98,18 +103,23 @@ Hard blocks, in order:
    the band, but on `send` it routes to the user). A value equal
    only to the floor's x12 or /12 conversion routes to the user
    instead: "amount matches a converted limit".
-   A price value (target, ladder, price option, quote or fact amount
-   not on `send`) worse than the floor blocks too, and a price value
+   A price value (target, ladder, price option, or fact amount not
+   on `send`) worse than the floor blocks too, and a price value
    whose period cannot convert to the floor's fails closed like an
    unconvertible offer. A fact's value is its structured `amount`
    (period-converted from its declared `period`); the gate never
-   parses fact text. A `send` may render a quote or fact amount worse
-   than the floor or in a period it cannot convert: restating a price
-   the counterparty named is not the agent's offer. Bonus and fee
-   options skip the worse-than check but may not equal the floor.
+   parses fact text. A `send` may render a fact amount worse than
+   the floor or in a period it cannot convert: restating a price
+   the counterparty named is not the agent's offer. A quote never
+   meets the worse-than or unconvertible check on any action.
+   Bonus and fee options skip the worse-than check but may not
+   equal the floor.
 8. Rendered message over 64 KB, measured after fact expansion: block.
 9. A claim id missing from `plan.yaml` facts: block. `{fact:<id>}`
    placeholders claim the id automatically.
+10. A `never_disclose` item with letters anywhere in the rendered
+    text, verbatim quote spans included: block. A listed term is
+    never a coincidence, so it is not a review item.
 
 The review tier scans the rendered message with every non-fact
 placeholder output replaced by a mask sentinel (fact text stays
@@ -141,10 +151,15 @@ that carries no numbers:
   apostrophes, so "i'll take" matches and "won't" is not "won"; a
   possessive or contraction suffix strips before the match, so
   "deal's" reads as "deal"; the scale word stems match inside
-  letter runs as above).
+  letter runs as above). A commitment phrase directly negated in
+  the two tokens before it is a decline, not a commitment:
+  "no longer works for me" does not route.
 - Any `never_disclose` term, matched on normalized text with format
   characters stripped; numeric items match fused digit runs in the
-  text and also compare against rendered placeholder values.
+  text and also compare against rendered placeholder values and the
+  amounts inside verbatim quote spans. An item with letters is a
+  hard block (rule 10 above), so this review hit only ever reports
+  for numeric items.
 - A rendered non-offer value equal to the floor only after an x12 or
   /12 conversion.
 - A `send` draft offer whose digits equal the floor's digits in a
@@ -160,7 +175,7 @@ The word lists live in `scripts/btlib/wordlists.py`, the single
 module the runtime and this file share:
 
 number words: dozen, eight, eighteen, eighty, eleven, fifteen, fifth, fifty, five, forty, four, fourteen, nine, nineteen, ninety, ninth, one, seven, seventeen, seventy, six, sixteen, sixty, ten, thirteen, thirty, three, twelfth, twelve, twenty, two, zero
-number word exceptions: abandoned, alone, antenna, anyone, artwork, attend, attendance, attended, attending, attention, attentive, bitten, bone, bones, clone, commissioner, commissioners, competent, component, components, consistency, consistent, consistently, content, contents, done, everyone, existence, extend, extended, extending, extends, extension, extensions, extensive, extent, forgotten, freight, frightened, gone, gotten, headphones, height, heights, honest, honestly, honey, hormone, hydrocodone, indonesia, indonesian, intend, intended, intense, intensity, intensive, intent, intention, intentionally, jones, leone, liechtenstein, lightweight, listen, listened, listening, lone, lonely, maintenance, mentioned, microphone, monetary, money, network, networking, networks, nintendo, none, nonetheless, often, oftentimes, ones, opponent, opponents, ozone, patent, patents, persistent, phone, phoned, phones, phoning, pioneer, potential, potentially, practitioner, practitioners, prisoner, prisoners, retention, ringtone, ringtones, sentence, sentences, softened, someone, soonest, stationery, stone, stones, superintendent, telephone, tenant, tend, tender, tennessee, tennis, tension, tent, tenure, threatened, threatening, tone, toned, toner, tones, weight, weighted, weights, written, zone, zones
+number word exceptions: abandoned, alone, antenna, anyone, artwork, attend, attendance, attended, attending, attention, attentive, bitten, bone, bones, clone, commissioner, commissioners, competent, component, components, consistency, consistent, consistently, content, contents, done, everyone, existence, extend, extended, extending, extends, extension, extensions, extensive, extent, forgotten, freight, frightened, gone, gotten, headphones, height, heights, honest, honestly, honey, hormone, hydrocodone, indonesia, indonesian, intend, intended, intense, intensity, intensive, intent, intention, intentionally, jones, leone, liechtenstein, lightweight, listen, listened, listening, lone, lonely, maintenance, mentioned, microphone, milestone, milestones, monetary, money, network, networking, networks, nintendo, none, nonetheless, often, oftentimes, ones, opponent, opponents, ozone, patent, patents, persistent, phone, phoned, phones, phoning, pioneer, potential, potentially, practitioner, practitioners, prisoner, prisoners, retention, ringtone, ringtones, sentence, sentences, softened, someone, soonest, stationery, stone, stones, superintendent, telephone, tenant, tend, tender, tennessee, tennis, tension, tent, tenure, threatened, threatening, tone, toned, toner, tones, weight, weighted, weights, written, zone, zones
 scale words: bil, billion, billions, bln, bn, crore, crores, hundred, hundreds, k, lakh, lakhs, m, mil, million, millions, mln, mm, mn, quadrillion, quadrillions, thou, thousand, thousands, tn, trillion, trillions
 scale word stems: billion, crore, grand, hundred, lakh, million, quadrillion, thousand, trillion
 currency codes: AED, AUD, BRL, BTC, CAD, CHF, CNH, CNY, CZK, DKK, EUR, GBP, HKD, HUF, IDR, ILS, INR, JPY, KRW, MXN, MYR, NOK, NZD, PHP, PLN, RMB, RUB, SAR, SEK, SGD, THB, TRY, TWD, USD, VND, ZAR

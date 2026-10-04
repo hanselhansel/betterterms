@@ -16,10 +16,10 @@ Draft fields:
 ```text
 Hi <name>,
 
-As I prepare for our review conversation, could you share the pay
-scale or band for <current level> and for <target level>? {fact:f-band}
-would point me to it, but I would rather get the current figure
-from you directly.
+As I prepare for our review conversation, could you share the
+salary band or scale for <current level> and for <target level>?
+{fact:f-band} would point me to it, but I would rather get the
+current figure from you directly.
 
 Thank you,
 ```

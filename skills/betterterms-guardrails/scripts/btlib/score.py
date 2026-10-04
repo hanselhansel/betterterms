@@ -90,8 +90,8 @@ def classify(case_dir, inbound):
     # floor's; a present non-string or unknown period is a broken
     # inbound file, never a default.
     in_period = floor_period
-    raw_in = inbound.get("period")
-    if raw_in is not None:
+    if "period" in inbound:
+        raw_in = inbound.get("period")
         if not isinstance(raw_in, str) or raw_in.lower() not in PERIODS:
             raise BtError("period must be once, month or year")
         in_period = raw_in.lower()

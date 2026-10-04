@@ -7,8 +7,9 @@ The gate has two tiers (decision 0009). Hard blocks are code
 guarantees and fail closed:
 
 1. invalid brief (direction, mode, autonomy) or a conflicting
-   plan, or a ``period`` or ``floor_period`` key that names no
-   known period, even shadowed, inbound included -> error, exit 2
+   plan, or a ``period`` or ``floor_period`` key present but not a
+   string naming a known period (a null is a broken key, not a
+   default), even shadowed, inbound included -> error, exit 2
 2. missing, unreadable or invalid ``.floor`` -> block
 3. missing or unknown ``action``, unknown draft keys or a legacy
    ``text`` key -> block
@@ -33,18 +34,24 @@ guarantees and fail closed:
    floor after conversion is a review hit too (``offer is at your
    limit``): inside the band, but it reveals the walk-away number;
    ``accept``, ``sign`` and ``pay`` may sit exactly on it. A price
-   value (target, ladder, price option, quote or fact amount not on
+   value (target, ladder, price option, or fact amount not on
    ``send``) worse than the floor blocks too, and a price value
    whose period cannot convert to the floor's fails closed like an
    unconvertible offer; fact values read the structured ``amount``
    field only, never the text (decision 0010). A ``send`` may
-   render a quote or fact worse than the floor: restating a price
-   the counterparty named is not the agent's offer. Bonus and fee
-   options are not offers, so only the equal-to-floor rule reaches
-   them
+   render a fact worse than the floor: restating a price the
+   counterparty named is not the agent's offer. A quote never meets
+   the worse-than or unconvertible-period check on any action
+   (spec 4.4): the counterparty's own words or numbers are never
+   the agent's offer, and a string ``amounts`` entry renders
+   verbatim. Bonus and fee options are not offers, so only the
+   equal-to-floor rule reaches them
 8. rendered message over 64 KB, checked after fact expansion and
    before any text scanning, or a claim id (draft or auto-claimed
    by ``{fact:id}``) not in ``plan.facts`` -> block
+9. a ``never_disclose`` item with letters anywhere in the rendered
+   text, quote spans included -> block: a listed term is never a
+   coincidence, so it is not a review item
 
 The review tier never blocks but never passes silently either: a
 draft whose rendered text (placeholder outputs masked, fact text
@@ -56,7 +63,8 @@ number word inside a letter run outside the listed exceptions,
 currency or scale words and codes, listed commitment words and
 phrases, sentinel glue and every ``never_disclose`` term all route
 to the user; numeric ``never_disclose`` items also compare against
-the rendered placeholder values. A ``send`` offer whose digits equal
+the rendered placeholder values and the amounts inside quote spans.
+A ``send`` offer whose digits equal
 the floor's digits in a different period routes too (``amount
 matches your limit's digits``): the converted value clears the band
 but the digits still restate the walk-away number. Irreversible
@@ -68,19 +76,19 @@ every floor-related block reports the same generic reason so the
 output can never leak the floor's value, direction or distance.
 """
 
-from . import BtError, FLOOR_TOL, PERIODS, cases, minor, render, review
+from . import BtError, LIMITS, PERIODS, cases, quotes, render, review
 
 IRREVERSIBLE = {"accept", "cancel", "pay", "sign", "dispute"}
 OFFERED = {"accept", "pay", "sign"}
 ACTIONS = IRREVERSIBLE | {"send"}
 DRAFT_KEYS = {"action", "offer", "period", "template", "claims"}
-LIMITS = "outside your limits; escalate to the user"
-PRICE_KINDS = ("target", "ladder", "option:price", "quote", "fact")
 
-# A block never reports the converted-limit or same-digits review
-# hits: on a block they would each leak one bit about the floor, so
-# only the generic limit reason (and any structural blocks) reports.
+# A block never reports the at-limit, converted-limit or same-digits
+# review hits: on a block they would each leak one bit about the
+# floor, so only the generic limit reason (and any structural
+# blocks) reports.
 DROP_ON_BLOCK = {
+    "offer is at your limit",
     "amount matches a converted limit",
     "amount matches your limit's digits",
 }
@@ -102,86 +110,6 @@ def _shown(value):
     itself."""
     s = _safe_str(value)
     return s if len(s) <= 40 else s[:40] + "..."
-
-
-def _worse(value, floor, direction):
-    return value < floor - FLOOR_TOL if direction == "receive" else value > floor + FLOOR_TOL
-
-
-def _same(a, values):
-    return any(abs(a - v) <= FLOOR_TOL for v in values)
-
-
-def _in_floor_period(value, from_period, plan_period):
-    """``value`` as it renders (minor unit), converted and rounded
-    again: comparisons always read rendered amounts."""
-    return minor(render.convert(minor(value), from_period, plan_period))
-
-
-def _check_values(find, action, floor, direction, plan_period, findings):
-    """Floor rules on the amounts the placeholders placed: every value
-    except the offer itself must not equal the floor (in its own or
-    the floor's period), and a price value (target, ladder, price
-    option, quote or fact amount not on ``send``) must not be worse
-    than the floor. Fact amounts come from the structured ``amount``
-    field only, never parsed text (decision 0010). Equality with only
-    a period conversion is a review hit, not a block; it is checked
-    in ``_converted_match`` under the review tier. Bonus and fee
-    options are not offers, so only the equality rule reaches them.
-    A price value whose period cannot convert to the floor's (``once``
-    on either side) fails closed like an unconvertible offer."""
-    for v in find.values:
-        quoted = v.kind in ("quote", "fact") and action == "send"
-        priced = v.kind in PRICE_KINDS and not quoted
-        if priced and v.period != plan_period and "once" in (
-            v.period, plan_period
-        ):
-            findings.append(("block", "period differs from your limit"))
-            continue
-        nv = _in_floor_period(v.value, v.period, plan_period)
-        if v.kind != "offer" and (
-            _same(nv, (floor,)) or _same(minor(v.value), (floor,))
-        ):
-            findings.append(("block", LIMITS))
-        elif priced and _worse(nv, floor, direction):
-            findings.append(("block", LIMITS))
-
-
-def _converted_match(find, floor, plan_period):
-    """True when a rendered non-offer value equals the floor's x12 or
-    /12 conversion in its own or the floor's period, without equalling
-    the floor itself: "5/year" against a 60/month floor is a numeric
-    coincidence the user must see, not proof of a leak."""
-    for v in find.values:
-        if v.kind == "offer":
-            continue
-        nv = _in_floor_period(v.value, v.period, plan_period)
-        for val in (nv, minor(v.value)):
-            if _same(val, (floor * 12, floor / 12)) and not _same(
-                val, (floor,)
-            ):
-                return True
-    return False
-
-
-def _floor_digits(find, floor, plan_period, action):
-    """True when the rendered offer repeats the floor's digits in a
-    period that is not the floor's: "$1,200/year" next to a
-    1,200/month floor is a coincidence the user must judge, not a
-    clean pass. A match in the floor's own period already routes as
-    "offer is at your limit" and a non-offer value equal to the floor
-    blocks outright, so only the offer needs this check. ``accept``,
-    ``sign`` and ``pay`` are exempt: they may restate a price the
-    counterparty already named."""
-    if action in OFFERED:
-        return False
-    for v in find.values:
-        if v.kind != "offer":
-            continue
-        nv = _in_floor_period(v.value, v.period, plan_period)
-        if _same(minor(v.value), (floor,)) and not _same(nv, (floor,)):
-            return True
-    return False
 
 
 def check(case_dir, draft, approved=False, inbound=None):
@@ -225,8 +153,9 @@ def check(case_dir, draft, approved=False, inbound=None):
         findings.append(("block", "offer must be a positive number"))
         offer = None
 
-    # A null draft period means "not set" and defaults to once, like
-    # the plan, fact and inbound period keys.
+    # A null draft period means "not set" and defaults to once; the
+    # plan-side and inbound period keys are stricter and fail on a
+    # present null as a broken file (exit 2).
     raw_period = draft.get("period")
     if raw_period is None:
         period = "once"
@@ -263,7 +192,7 @@ def check(case_dir, draft, approved=False, inbound=None):
     # declares one, else in the floor's period; either way it is
     # converted to the floor's period before any comparison.
     in_period = plan_period
-    if inbound and inbound.get("period") is not None:
+    if inbound and "period" in inbound:
         raw_in = inbound.get("period")
         # A present inbound period naming no known period is a
         # broken input file like a bad plan period: exit 2, same as
@@ -301,20 +230,20 @@ def check(case_dir, draft, approved=False, inbound=None):
                     findings.append(
                         ("block", "period differs from your limit")
                     )
-                in_floor = _in_floor_period(
+                in_floor = quotes.in_floor_period(
                     in_offer, in_period, plan_period
                 )
-                if offer is not None and not _same(
-                    _in_floor_period(offer, period, plan_period),
+                if offer is not None and not quotes.same(
+                    quotes.in_floor_period(offer, period, plan_period),
                     (in_floor,),
                 ):
                     findings.append(("block", "accept must equal the counterparty's offer"))
-                if floor is not None and _worse(in_floor, floor, direction):
+                if floor is not None and quotes.worse(in_floor, floor, direction):
                     findings.append(("block", LIMITS))
 
     if floor is not None:
         if offer is not None:
-            offer_floor = _in_floor_period(offer, period, plan_period)
+            offer_floor = quotes.in_floor_period(offer, period, plan_period)
             # "once" has no conversion factor, so a period mismatch
             # with it can never verify the offer against the floor:
             # the raw values are unlike units, so the worse-than and
@@ -334,12 +263,12 @@ def check(case_dir, draft, approved=False, inbound=None):
                     findings.append(
                         ("block", "period differs from your limit")
                     )
-            elif _worse(offer_floor, floor, direction):
+            elif quotes.worse(offer_floor, floor, direction):
                 findings.append(("block", LIMITS))
             elif (
                 not approved
                 and action == "send"
-                and _same(offer_floor, (floor,))
+                and quotes.same(offer_floor, (floor,))
             ):
                 # A send offer at the floor is inside the band, but it
                 # hands the counterparty the user's walk-away number.
@@ -347,7 +276,14 @@ def check(case_dir, draft, approved=False, inbound=None):
                 # already on the table.
                 findings.append(("approval", "offer is at your limit"))
         if clean:
-            _check_values(find, action, floor, direction, plan_period, findings)
+            quotes.check_values(
+                find, action, floor, direction, plan_period, findings
+            )
+    never_items = cases.as_list(brief.get("never_disclose"))
+    if clean and review.disclosed(find.text, never_items):
+        findings.append(
+            ("block", "a term from your never-disclose list")
+        )
 
     fact_ids = {
         _safe_str(f["id"])
@@ -369,16 +305,14 @@ def check(case_dir, draft, approved=False, inbound=None):
         if autonomy == 1:
             findings.append(("approval", "autonomy 1: the user approves every send"))
         if clean:
-            for reason in review.review(
-                find, cases.as_list(brief.get("never_disclose"))
-            ):
+            for reason in review.review(find, never_items):
                 findings.append(("approval", reason))
             if floor is not None:
-                if _converted_match(find, floor, plan_period):
+                if quotes.converted_match(find, floor, plan_period):
                     findings.append(
                         ("approval", "amount matches a converted limit")
                     )
-                if _floor_digits(find, floor, plan_period, action):
+                if quotes.floor_digits(find, floor, plan_period, action):
                     findings.append(
                         ("approval", "amount matches your limit's digits")
                     )

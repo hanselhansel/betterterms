@@ -133,7 +133,7 @@ class PlaceholderRenderTest(RenderTest):
         self.assertIn("{quote:2}", " ".join(out["reasons"]))
         out = self.blocked(
             case_id, send_draft(template="you said {quote:1}"),
-            inbound=inbound_msg(text="x", amounts=["soon"]),
+            inbound=inbound_msg(text="x", amounts=[[1, 2]]),
         )
         self.assertIn("not a number", " ".join(out["reasons"]))
 

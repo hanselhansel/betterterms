@@ -13,7 +13,7 @@ Draft fields:
 
 ```text
 I appreciate your time on this. The offers so far are still more
-than I can pay, so I am getting ready to move my service.
+than I can spend, so I am getting ready to move my service.
 
 If you can do {offer}, I will stay. Otherwise I will look at
 switching when my term allows. Thanks either way.

@@ -9,8 +9,8 @@ Agent notes:
   `plan.yaml` facts (order summary, what happened, evidence list).
 - `{offer}` renders the planned ask; for a full refund it equals the
   target.
-- Adjust the reply-deadline days to the plan's timing, and keep it a
-  plain count of days.
+- Adjust the reply-deadline to the plan's timing, and keep it in
+  words ("a couple of weeks"); a numeral routes to review.
 - Sign off as the user. Add no typed prices, dates with years, or
   account numbers in the literal text.
 
@@ -25,7 +25,7 @@ I would like a refund of {offer} to my original payment method.
 {fact:evidence-summary} I am happy to send any other records you need.
 
 Could you please review this and process the refund? If I have not
-heard back within 14 days, I will follow up here.
+heard back within a couple of weeks, I will follow up here.
 
 Thank you for your time.
 ```

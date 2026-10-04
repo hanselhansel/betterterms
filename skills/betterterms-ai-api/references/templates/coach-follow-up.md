@@ -9,7 +9,7 @@ Subject: Recap of our call
 
 Hello,
 
-Thank you for the time today. Confirming what I heard: the offer was
+Thank you for the time today. Here is what I heard: the offer was
 {quote:1} on the terms we discussed, and you asked for a decision by
 our renewal date.
 

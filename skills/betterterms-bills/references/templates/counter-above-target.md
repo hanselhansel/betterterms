@@ -16,7 +16,7 @@ counterparty stated it.
 
 ```text
 Thanks for checking on this. {quote:1} a month is still more than I
-can pay for this plan.
+can spend on this plan.
 
 {fact:competitor-price}
 

@@ -6,16 +6,16 @@ of one demand. Option labels must match `plan.yaml` exactly.
 ```text
 Hello,
 
-Thanks for the numbers. Two ways we could close this:
+Thanks for the numbers. Either of these closes it for me:
 
-Option one: {option:annual-commit} per year on a one-year commit at
+Option A: {option:annual-commit} per year on an annual commit at
 our current usage profile.
 
-Option two: {option:two-year-commit} per year on a two-year commit,
+Option B: {option:two-year-commit} per year on a longer commit,
 same terms.
 
-Either works for us; the difference is commit length, not price.
-Which can you get approved?
+Either path is open on our side; the difference is commit length,
+not price. Which can you get approved?
 
 Best,
 ```

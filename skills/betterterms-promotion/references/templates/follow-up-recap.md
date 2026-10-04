@@ -17,7 +17,7 @@ Subject: Recap of our conversation
 
 Hi <name>,
 
-Thank you for the time today. Confirming what I heard: you
+Thank you for the time today. Here is what I heard: you
 mentioned {quote:1} per year on the package, and the next step was
 <what they promised: a check with the committee, a written offer,
 a follow-up date>.

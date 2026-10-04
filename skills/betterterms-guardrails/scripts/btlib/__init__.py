@@ -19,6 +19,10 @@ PERIODS = ("once", "month", "year")
 """The only billing periods a draft, option or inbound offer may
 declare. ``once`` is the default and converts against nothing."""
 
+LIMITS = "outside your limits; escalate to the user"
+"""The one generic reason every floor-related block reports, so the
+output can never leak the floor's value, direction or distance."""
+
 
 def minor(value):
     """``value`` rounded to the currency minor unit (two decimals),

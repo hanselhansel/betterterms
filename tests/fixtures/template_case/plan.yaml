@@ -1,0 +1,36 @@
+target: 80
+currency: USD
+options:
+  - {label: annual, value: 82, terms: prepay}
+  - {label: annual-commit, value: 82, terms: commit}
+  - {label: base-first, value: 84, terms: base}
+  - {label: downgrade, value: 78, terms: smaller plan}
+  - {label: equity-level, value: 84, terms: equity}
+  - {label: keep-plan, value: 90, terms: stay}
+  - {label: level-plus-raise, value: 86, terms: level}
+  - {label: lower-tier, value: 78, terms: tier}
+  - {label: pause, value: 88, terms: pause}
+  - {label: raise-now, value: 86, terms: raise}
+  - {label: sign-on-shift, value: 84, terms: shift}
+  - {label: title-plus-review, value: 86, terms: title}
+  - {label: two-year-commit, value: 80, terms: commit}
+ladder:
+  - {value: 80, reason: target}
+  - {value: 90, reason: fallback}
+patience: {rounds: 3, days: 14}
+timing: before renewal
+channel: email
+facts:
+  - {id: alt-quote, text: the file note, source: note}
+  - {id: competitor-price, text: the file note, source: note}
+  - {id: decision-window, text: the file note, source: note}
+  - {id: evidence-summary, text: the file note, source: note}
+  - {id: f-band, text: the file note, source: note}
+  - {id: f-market, text: the file note, source: note}
+  - {id: f1, text: the file note, source: note}
+  - {id: id, text: the file note, source: note}
+  - {id: policy-quote, text: the file note, source: note}
+  - {id: quote-1, text: the file note, source: note}
+  - {id: quote-2, text: the file note, source: note}
+  - {id: range, text: the file note, source: note}
+  - {id: what-happened, text: the file note, source: note}

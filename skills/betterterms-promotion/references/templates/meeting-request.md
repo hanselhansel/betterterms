@@ -16,8 +16,8 @@ Hi <name>,
 
 I would like to schedule time to talk about my role and
 compensation, and how I keep growing here. Could we book a
-dedicated slot in the next week or two rather than fold it into
-our regular catch-up?
+dedicated slot in the next couple of weeks rather than fold it
+into our regular catch-up?
 
 Happy to share the outline ahead of time if that helps.
 
