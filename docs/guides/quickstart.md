@@ -29,9 +29,14 @@ walk-away number you set yourself.
      press Enter and the prompt hook writes it. The value stays
      visible in the thread, so the terminal is the better path when
      you have one.
-   - Any chat surface: type `bt floor <case_id> <amount>` yourself.
-     The prompt hook writes it and blocks the message, so the model
-     never receives it.
+   - Any chat surface where the prompt hook runs (Claude Code with
+     the plugin installed, including a repo that vendored it): type
+     `bt floor <case_id> <amount>` yourself. The hook writes it and
+     blocks the message, so the model never receives it that turn,
+     though the text stays in the thread.
+   - Codex and hook-less hosts have no prompt hook, so a typed
+     `bt floor` would reach the model. Use the terminal command
+     there; there is no safe in-chat path without the hook.
 
    The value lands in a `.floor` file only the gate and the scorer
    read. The model never sees it and the chat never repeats it.
@@ -84,9 +89,10 @@ walk-away number you set yourself.
 
 When the gate returns `needs_approval`, nothing has left: the draft is
 held on disk as `held/<hash>.yaml` in the case folder, and the gate's
-answer carries the `hash`. You approve the exact rendered text, not a
+answer carries the `hash`. You approve the exact send, not a
 draft in general: your approval is a file named after the SHA-256 of
-that text, and the gate consumes it after one send. Edit the draft and
+the send tuple (action, offer, period, currency, rendered text), and
+the gate consumes it after one send. Edit the draft and
 the old approval no longer matches, so the new text is held again.
 Held drafts survive restarts, so the same list is waiting in a later
 session.
@@ -100,7 +106,7 @@ One command per message, wherever you type to the agent. A
 |---|---|
 | `bt approve <case_id> <hash8>` | Approves the held draft with that hash. The hook writes the approval and lets the prompt through with a note, so the agent resends the same text. |
 | `bt reject <case_id> <hash8>` | Drops the held draft and stamps `rejected` in `thread.md`. |
-| `bt floor <case_id> <amount>` | Writes the walk-away on stdin to `case set-floor`, then blocks the message so the model never receives it. |
+| `bt floor <case_id> <amount>` | Writes the walk-away on stdin to `case set-floor`, then blocks the message so the model never receives it. Only on surfaces with the prompt hook; on Codex and other hook-less hosts use the terminal `case set-floor` command instead. |
 | `bt terms <case_id> target=<amount> alternative=<amount>` | Writes target and best alternative to `plan.yaml`. Either key alone works, in any order. |
 
 Amounts accept `62`, `62.50`, `$62`, `1,200`. `hash8` is the first 8

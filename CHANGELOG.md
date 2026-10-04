@@ -8,15 +8,22 @@
   `bt.py config show` and `bt.py config set <key> <value>`.
 - Held drafts: a `needs_approval` verdict writes `held/<hash>.yaml` in
   the case folder, so drafts survive restarts and are rebuilt into the
-  Approvals tab. Approvals bind to the SHA-256 of the exact rendered
-  text (`held/<hash>.approved`), are written only by a user action, and
-  are consumed after one send.
+  Approvals tab. Approvals bind to the SHA-256 of the send tuple
+  (action, offer, period, currency, rendered text) as
+  `held/<hash>.approved`, are written only by a user action, and are
+  consumed atomically after one send. Held records whose stored fields
+  do not hash back to their filename never list.
 - Typed commands through a `UserPromptSubmit` hook
   (`hooks/prompt_commands.py`): `bt approve`, `bt reject`, `bt floor`,
   `bt terms` with `target=` and `alternative=` keys in either order.
   `bt floor` writes on stdin and blocks the prompt so the model never
-  receives the walk-away. A `PreToolUse` hook denies agent access to
-  `.floor`, `held/`, `case set-floor` calls and the session log.
+  receives the walk-away; malformed or embedded lookalikes block too.
+  A `PreToolUse` hook scoped to the betterterms home denies agent
+  access to `.floor`, `held/`, `ledger.jsonl`, `config.yaml`, the
+  session log, and `case set-floor` / `held approve` / `held reject`
+  calls, while the skills' own case files stay writable. In a cloud
+  session the session-start hook warns when the betterterms home sits
+  in the ephemeral VM home.
 - `betterterms-mod`, an optional Claude Code cockpit plugin: pane with
   Cases, Approvals and Savings tabs, band above the prompt, gate rows,
   toasts, and a terms editor that sets the walk-away by drag, nudge or
@@ -45,6 +52,16 @@
   not a TTY; both report `SKIP` when the `claude` binary is absent.
 - Root `plugin.json` gains the `skills` key. Docs describe the three
   display modes (mod, widget, chat) and what each guarantees.
+- The mod finds the core `bt.py` through the marketplace cache layout,
+  scans case folders on stat fingerprints with burst reuse, and its
+  send guard passes only when one argument equals the freshly
+  re-gated rendered text.
+- `bt.py ledger add` accepts `--period once` for one-time savings.
+  `case new` validates `config.yaml` before touching the case tree.
+- `scripts/vendor-into-repo` enables the plugin without copying the
+  skills (a copy would load each skill twice); `--no-plugin` vendors
+  the skills alone.
+- `scripts/doctor` reports native Windows as unsupported.
 
 ### Removed
 - Gemini, Cursor and Muse manifests and generators, claude.ai skill

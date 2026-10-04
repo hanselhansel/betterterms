@@ -30,12 +30,16 @@ drafted: misreading them is the biggest source of lost value.
 
 1. Resolve the runtime's absolute path once and keep it: every command
    this skill prints for the user carries that path, never a relative
-   one.
+   one. `bt.py` sits at `scripts/bt.py` inside the
+   `betterterms-guardrails` folder beside this skill file, wherever
+   the skills are installed: `$CLAUDE_PLUGIN_ROOT/skills/` under a
+   Claude Code plugin, a vendored repo's `.claude/skills/`,
+   `~/.agents/skills/`, or `~/.claude/skills/`. Run `where` on it and
+   use the `bt` value it prints as `<bt>` everywhere below:
 
-   `python3 ../betterterms-guardrails/scripts/bt.py where`
+   `python3 <skills>/betterterms-guardrails/scripts/bt.py where`
 
-   Use the `bt` value it returns in place of `<bt>` below. Then create
-   the case:
+   Then create the case:
 
    `python3 <bt> case new --pack <pack> --mode <mode> --direction <direction>`
 
@@ -76,26 +80,22 @@ drafted: misreading them is the biggest source of lost value.
      editor in the BetterTerms pane (`t` on the case) sets the same
      value by drag, nudge, or a typed field, and writes it through
      `case set-floor` itself.
+   - In a session where the prompt hook runs (Claude Code with the
+     plugin installed, including a repo that vendored it), the user
+     may instead type `bt floor <case_id> <amount>` as a chat
+     message: the hook writes it and blocks the message, so the model
+     never receives it. The text still sits in the thread where the
+     model can read it later, so the terminal command stays the
+     better path whenever the user has a terminal.
    - Never repeat the value back. Never write it into `brief.yaml`,
      `plan.yaml`, `thread.md`, a draft, or any other file. Only the gate
      and the scorer can read it.
-   - Only if the user says they cannot run the command themselves and
-     the session has no widget tool either, may you
-     pass the value on stdin with a quoted heredoc:
-
-     ```
-     python3 <bt> case set-floor <case_id> <<'EOF'
-     <value>
-     EOF
-     ```
-
-     This fallback breaks the spec's rule that the model never sees the
-     floor: the value passes through you once, in this command and
-     nowhere else. It exists only for sessions with no terminal. Tell
-     the user you saw the value once, delete it from your working notes
-     right after the command finishes, and never repeat it, never write
-     it into any file, and never put it on a command line (`printf` or
-     argv).
+   - Never run `case set-floor` yourself, with or without a heredoc:
+     the read guard denies it in a session that has the guard, and
+     everywhere else the value would pass through you. If the user
+     has no terminal and the session has no prompt hook and no
+     widget tool, say so: there is no safe way to set the number in
+     that chat, and they need a terminal.
 
    While you are on the limit, ask which period it is per: `once`,
    `month`, or `year`. Write the answer to `brief.yaml` as `period`;

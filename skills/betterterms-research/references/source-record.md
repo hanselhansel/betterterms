@@ -24,18 +24,19 @@ carry them into a fact.
 
 ## Storing a record
 
-Pipe the record on stdin:
+Pipe the record on stdin. `<bt>` is the runtime's absolute path,
+resolved once per session as the skill's procedure describes:
 
 ```
-python3 ../betterterms-guardrails/scripts/bt.py source add <case_id>
+python3 <bt> source add <case_id>
 ```
 
 It prints `{"id": "<n>", "path": ...}` and writes `sources/<n>.yaml`.
 Inspect what is stored:
 
 ```
-python3 ../betterterms-guardrails/scripts/bt.py source list <case_id>
-python3 ../betterterms-guardrails/scripts/bt.py source stale <case_id> --days 90
+python3 <bt> source list <case_id>
+python3 <bt> source stale <case_id> --days 90
 ```
 
 A record in `stale` output is too old to rely on; read the source again

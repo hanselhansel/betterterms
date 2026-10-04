@@ -50,8 +50,13 @@ placeholders the gate renders itself: `{offer}`, `{target}`,
 [decision 0008](../decisions/0008-structured-amounts.md).
 
 Every floor-related block reports one generic reason ("outside your limits;
-escalate to the user"), so the gate's own output cannot leak the number. See
-[decision 0007](../decisions/0007-gate-hardening.md).
+escalate to the user"), so no single gate answer states the number. A
+determined agent could still probe the gate with repeated guesses until a
+block flips to a pass, which is why the skills cap gate calls per turn and
+the mod watches tool calls (decision
+[0017](../decisions/0017-display-modes-and-widget-fallback.md) states the
+limit; a probe counter is tracked in TODOS). See
+[decision 0007](../decisions/0007-gate-hardening.md) for the hardening list.
 
 ## Held drafts and hash-bound approvals
 
@@ -60,7 +65,8 @@ draft. The gate writes `held/<hash>.yaml` in the case folder with the
 rendered text and reasons, and returns the `hash`. The draft waits for
 you there, minutes or days, and survives restarts.
 
-Approval is bound to the SHA-256 of the exact rendered text, recorded
+Approval is bound to the SHA-256 of the send tuple (action, offer,
+period, currency, and the exact rendered text), recorded
 as `held/<hash>.approved`, and written only by a user action:
 
 - a keypress or click on Approve in the `betterterms-mod` Approvals
@@ -100,11 +106,17 @@ triggering body counts as you.
   `bt.py gate`. An agent acting outside that path is outside its reach. The
   skills route every send through the gate, and the default autonomy asks
   before every send, which keeps a human on each turn.
+- Outside the mod, the agent runs as your user. The `PreToolUse` guard
+  scopes private state to the betterterms home and normalizes quoting and
+  path tricks, but a same-user agent that sets out to bypass it can: only
+  the mod's in-memory approval resists that, because it lives in state the
+  agent's file access cannot write.
 - It checks structure, not truth. A sourced fact can still be wrong; source
   records carry URLs and read dates so you can check them.
 - It does not rate-limit itself. The skills cap gate calls per turn and
-  redraft at most once before escalating, so a block cannot be probed into an
-  oracle for your number.
+  redraft at most once before escalating, which is the standing mitigation
+  for probing: enough guesses against the floor comparison could triangulate
+  the number, so a dedicated probe counter is on the TODO list.
 - It does not replace your yes. Accept, cancel, pay, sign, and dispute always
   wait for an explicit approval, at every autonomy level.
 

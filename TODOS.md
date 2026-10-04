@@ -8,6 +8,10 @@ Deferred from the step 1 ship (owner approved 2026-10-03), to fix first in step 
 
 - **Priority:** P3. Free-text period words after a placeholder ({offer}/month, {offer} per month) with a once-period offer pass; the period should come from the structured period field (best-effort word lists, 0010 amendment).
 
+## Gate probing (accepted limit, pre-landing review decision D)
+
+- **Priority:** P1. The gate has no probe counter: an agent could binary-search the floor through repeated `gate` calls until a block flips to pass. Standing mitigations are the skills' per-turn gate-call cap and the redraft-once rule; add a per-case probe counter in bt.py that escalates after N floor-related verdicts in a window. (btlib/gate.py)
+
 ## Completed
 
 - **Priority:** P2. Tokens with apostrophe suffixes ("deal's", "dollar's", "USD's", "k's") bypass whole-token word lists; strip possessive and contraction suffixes before matching. (skills/betterterms-guardrails/scripts/btlib/review.py) **Completed:** release v1

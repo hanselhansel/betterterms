@@ -1,3 +1,4 @@
+import json
 import os
 import shutil
 import subprocess
@@ -130,10 +131,11 @@ class InstallSkillsTest(ScriptTestCase):
 
 
 class VendorIntoRepoTest(ScriptTestCase):
-    def test_vendors_skills_and_writes_version_marker(self):
+    def test_no_plugin_vendors_skills_and_writes_version_marker(self):
         target = self.tmp / "consumer"
         (target / ".git").mkdir(parents=True)
-        proc = run(self.repo, "vendor-into-repo", str(target), home=self.home)
+        proc = run(self.repo, "vendor-into-repo", str(target),
+                   "--no-plugin", home=self.home)
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         bt = target / ".claude/skills/betterterms-guardrails/scripts/bt.py"
         self.assertTrue(bt.is_file())
@@ -150,12 +152,36 @@ class VendorIntoRepoTest(ScriptTestCase):
                 name,
             )
 
+    def test_default_enables_plugin_without_copying_skills(self):
+        """Decision G: when the plugin is enabled it supplies the
+        skills, so vendoring copies nothing (a copy would load each
+        skill twice)."""
+        target = self.tmp / "consumer"
+        (target / ".git").mkdir(parents=True)
+        proc = run(self.repo, "vendor-into-repo", str(target), home=self.home)
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertFalse((target / ".claude" / "skills").exists())
+        settings = json.loads(
+            (target / ".claude" / "settings.json").read_text()
+        )
+        self.assertEqual(
+            settings["enabledPlugins"], {"betterterms@betterterms": True}
+        )
+
+    def test_default_warns_about_stale_vendored_copies(self):
+        target = self.tmp / "consumer"
+        write_skill(target / ".claude" / "skills", "betterterms-start")
+        proc = run(self.repo, "vendor-into-repo", str(target), home=self.home)
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertIn("betterterms-start", proc.stdout)
+        self.assertIn("plugin supplies the skills", proc.stdout)
+
     def test_vendor_is_idempotent(self):
         target = self.tmp / "consumer"
         target.mkdir()
         for _ in range(2):
             proc = run(self.repo, "vendor-into-repo", str(target),
-                       home=self.home)
+                       "--no-plugin", home=self.home)
             self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
 
     def test_vendor_refuses_missing_or_nondir(self):
@@ -167,8 +193,18 @@ class VendorIntoRepoTest(ScriptTestCase):
 
 
 class DoctorTest(ScriptTestCase):
-    def doctor(self):
-        return run(self.repo, "doctor", home=self.home)
+    def doctor(self, extra_env=None):
+        return run(self.repo, "doctor", home=self.home,
+                   extra_env=extra_env)
+
+    def test_doctor_flags_native_windows(self):
+        """Decision E: bt.py uses Unix file locking, so doctor reports
+        native Windows as unsupported (WSL reports linux and passes)."""
+        proc = self.doctor({"BETTERTERMS_PLATFORM": "win32"})
+        self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+        self.assertIn("Windows", proc.stdout)
+        proc = self.doctor({"BETTERTERMS_PLATFORM": "linux"})
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
 
     def test_clean_home_passes(self):
         proc = self.doctor()

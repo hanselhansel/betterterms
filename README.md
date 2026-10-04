@@ -31,10 +31,13 @@ hold yourself: fixed numbers, a script, and a rehearsal before the call.
 
 ## Install
 
+macOS, Linux, or WSL. `bt.py` uses Unix file locking, so native
+Windows is unsupported (`scripts/doctor` reports it).
+
 | Host | Install |
 |---|---|
 | Claude Code (terminal, desktop) | `/plugin marketplace add hanselhansel/betterterms`, then `/plugin install betterterms@betterterms`. Auto-update for third-party marketplaces is off until you enable it. |
-| Claude Code cloud sessions | Marketplace plugins do not load there. Run `python3 scripts/vendor-into-repo <repo>`: it copies the skills into `<repo>/.claude/skills/` and enables the plugin through `<repo>/.claude/settings.json`, so the typed commands and read guard hooks come along. The plugin installs from `github.com/hanselhansel/betterterms`, which must be reachable from the session (public works). |
+| Claude Code cloud sessions | Run `python3 scripts/vendor-into-repo <repo>`: it enables the plugin through `<repo>/.claude/settings.json`, so the session installs it (skills, typed commands, read guard) from `github.com/hanselhansel/betterterms`, which must be reachable from the session (public works). `--no-plugin` vendors the skills alone for sessions that cannot reach the marketplace. Cases kept in the cloud home vanish when the VM ends; export what you want to keep. |
 | Codex | `codex plugin marketplace add hanselhansel/betterterms`, then `codex plugin add betterterms@betterterms`. Codex has no slash commands: name the skill instead (`betterterms-start` routes, `betterterms-subscriptions` starts a pack). |
 | Other Agent Plugins readers | The repo root carries an Agent Plugins 1.0 `plugin.json` pointing at `skills/`; add the repo as a plugin source in your host. |
 | Any Agent Skills reader | `python3 scripts/install-skills --target ~/.agents/skills`. |
@@ -90,7 +93,10 @@ explicit yes.
   placeholders the gate renders itself.
 
 The gate is a safety net, not a sandbox. The default autonomy asks before
-every send. Full detail: [docs/guides/safety-model.md](docs/guides/safety-model.md).
+every send. One honest limit: outside the mod the agent runs as your
+user, so the file guard is best effort; only the mod's in-memory
+approval resists a determined agent. Full detail:
+[docs/guides/safety-model.md](docs/guides/safety-model.md).
 
 ## Privacy
 

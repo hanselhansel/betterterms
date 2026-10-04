@@ -11,6 +11,14 @@ You run one turn of a written negotiation at a time. Nothing leaves
 without the gate, and nothing irreversible happens without an explicit
 yes.
 
+`<bt>` below is the runtime's absolute path, resolved once per
+session. `bt.py` sits at `scripts/bt.py` inside the
+`betterterms-guardrails` folder beside this skill file, wherever
+the skills are installed: `$CLAUDE_PLUGIN_ROOT/skills/` under a
+Claude Code plugin, a vendored repo's `.claude/skills/`,
+`~/.agents/skills/`, or `~/.claude/skills/`. Run `where` on it and
+keep the `bt` value it prints.
+
 The full turn procedure is in `references/turn-procedure.md`. Follow it.
 
 ## Inputs
@@ -54,7 +62,7 @@ or ask for their offer when it is not. Then gate, send, and log as below.
    is per (`once`, `month`, or `year`), and the text.
 2. Score it:
 
-   `python3 ../betterterms-guardrails/scripts/bt.py score <case_id> --inbound <path>/inbound.yaml`
+   `python3 <bt> score <case_id> --inbound <path>/inbound.yaml`
 
    Read the band and the escalate list:
 
@@ -73,24 +81,30 @@ or ask for their offer when it is not. Then gate, send, and log as below.
 5. Gate it. When this turn answers an inbound message, pass it so
    `{quote:n}` placeholders resolve:
 
-   `python3 ../betterterms-guardrails/scripts/bt.py gate <case_id> --draft <path>/draft.yaml --inbound <path>/inbound.yaml`
+   `python3 <bt> gate <case_id> --draft <path>/draft.yaml --inbound <path>/inbound.yaml`
 
-   Save the JSON it prints to `gate.json` in the case folder.
+   The gate writes `gate.json` into the case folder itself on every
+   call, blocks included; keep it as the record of the last verdict.
 
    - Exit 0, `pass`: send the `rendered` text verbatim per the autonomy
      level.
    - Exit 3, `needs_approval`: the action is irreversible, or coach
      mode, autonomy 1, or the review scan flagged the rendered text.
      The draft is held: `held/<hash>.yaml` in the case folder, `hash`
-     in the JSON. Put it in front of the user per the display mode
-     (below). Approval is a user action that writes
-     `held/<hash>.approved` for this exact text: a mod keypress or
-     click, a `bt approve <case_id> <hash8>` reply the prompt hook
-     catches, or `bt.py held approve <case_id> <hash8>` which you run
-     in a host with no prompt hook after the user replies
-     `bt approve`. Then re-run the gate with `--approved`: it
-     consumes the approval once and passes. A changed text or a
-     second send is held again.
+     in the JSON. The hash binds the whole send tuple (action,
+     offer, period, currency, rendered text), so an approval can
+     never cover a changed draft or a stronger action. Put the draft
+     in front of the user per the display mode (below). Approval is
+     a user action that writes `held/<hash>.approved` for this exact
+     tuple: a mod keypress or click, a `bt approve <case_id> <hash8>`
+     reply the prompt hook catches, or `bt.py held approve <case_id>
+     <hash8>` which you run in a host with no prompt hook after the
+     user replies `bt approve`. Then re-run the gate with
+     `--approved`: it consumes the approval once and passes. A
+     changed text or a second send is held again. With the mod
+     loaded the send check handles the re-gate itself: approve the
+     draft, then send the held text verbatim and do not re-run the
+     gate yourself.
    - Exit 1, `block`: when the reason is "outside your limits; escalate
      to the user", escalate to the user and do not redraft toward a
      guessed limit. When the reason is "the message contains your
@@ -116,17 +130,18 @@ Pick one at run time (spec 6.8):
   keypress or click approves; you post nothing.
 - Widget: the session has a tool that posts interactive widgets
   (Projects cloud threads). Post the `html` field from
-  `python3 ../betterterms-guardrails/scripts/bt.py widget approval <case_id> <hash8>`
+  `python3 <bt> widget approval <case_id> <hash8>`
   as is. Its buttons fill the user's message box with the typed
-  command, and the user presses Enter. `bt.py widget cases`,
-  `bt.py widget terms <case_id>` and `bt.py widget savings` cover
-  the other views.
+  command, and the user presses Enter. `python3 <bt> widget cases`,
+  `python3 <bt> widget terms <case_id>` and `python3 <bt> widget
+  savings` cover the other views.
 - Chat: neither (Codex, plain cloud sessions, `claude -p`). Print
   the rendered text and the reasons, then the typed commands:
   `bt approve <case_id> <hash8>` to approve and send, or
   `bt reject <case_id> <hash8>` to drop the draft. When the user
   replies with one and no prompt hook handles it, record it with
-  `bt.py held approve` or `bt.py held reject` yourself first.
+  `python3 <bt> held approve` or `python3 <bt> held reject`
+  yourself first.
 
 ## Escalate and stop
 

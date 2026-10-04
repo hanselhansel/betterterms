@@ -21,4 +21,4 @@ higher one.
 - When a reply contradicts the published policy, quote the policy back.
 - Re-check a record older than 90 days before relying on it:
 
-  `python3 ../betterterms-guardrails/scripts/bt.py source stale <case_id> --days 90`
+  `python3 <bt> source stale <case_id> --days 90`

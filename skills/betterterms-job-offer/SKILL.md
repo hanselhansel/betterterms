@@ -54,8 +54,9 @@ each message for the user to send under their approval instead.
    base, plus two or three equal package options and a shrinking
    concession ladder. The user confirms the target and options before
    rehearsal. The walk-away number is the user's own: they run
-   `python3 ../betterterms-guardrails/scripts/bt.py case set-floor
-   <case_id>` in their own terminal. Never ask for it in chat.
+   `python3 <bt> case set-floor <case_id>` in their own terminal
+   (the intake skill's first step resolves `<bt>` to an absolute
+   path). Never ask for it in chat.
 5. Coach via `betterterms-coach`, in order: fix the numbers and have
    the user commit; write the script from
    `references/script-template.md`; give relational framing and

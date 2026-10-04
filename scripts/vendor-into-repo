@@ -1,31 +1,32 @@
 #!/usr/bin/env python3
-"""Vendor betterterms skills into another repo for cloud sessions.
+"""Vendor betterterms into another repo for cloud sessions.
 
 Usage: vendor-into-repo [--no-plugin] REPO
 
-Copies every skills/betterterms-* folder into REPO/.claude/skills/ and
-writes REPO/.claude/skills/.betterterms-version with this repo's
-VERSION. Marketplace plugins do not load in Claude Code cloud
-sessions, but committed .claude/skills do; vendoring is the way to run
-betterterms there. The relative path
-../betterterms-guardrails/scripts/bt.py still reaches the runtime
-tool, since the skill folders stay siblings.
-
-It also merges two keys into REPO/.claude/settings.json, creating the
-file when absent: the betterterms marketplace under
+Default run: merges two keys into REPO/.claude/settings.json,
+creating the file when absent -- the betterterms marketplace under
 extraKnownMarketplaces and betterterms@betterterms under
 enabledPlugins. Claude Code installs enabled plugins from known
-marketplaces when a session starts in that repo, so the typed bt
-commands hook and the read guard run in cloud sessions too. The repo
-must be reachable from the session (public, or somewhere its
-credentials can clone) for that install to work. Every existing key
-is kept and entries are never duplicated. Pass --no-plugin to skip
-the settings step.
+marketplaces when a session starts in that repo, so the skills, the
+typed bt commands hook and the read guard all arrive with the plugin
+in cloud sessions too. The repo must be reachable from the session
+(public, or somewhere its credentials can clone) for that install to
+work. Every existing key is kept and entries are never duplicated.
+The skills are not copied in this mode: the plugin supplies them, so
+a vendored copy would only load each skill twice.
+
+--no-plugin: skip the settings step and instead copy every
+skills/betterterms-* folder into REPO/.claude/skills/, writing
+REPO/.claude/skills/.betterterms-version with this repo's VERSION.
+Choose this when the session cannot reach the marketplace; the
+skills work but the typed bt commands and the read guard do not.
 
 An existing .claude/skills/betterterms-* directory is replaced only
 when it looks like a previous vendored copy (SKILL.md naming the
-folder); a symlinked entry is unlinked, never written through. Exit 1
-on errors, 2 on usage errors and on a settings.json that is not a
+folder); a symlinked entry is unlinked, never written through. When
+the plugin is enabled and stale vendored copies are still present,
+the script says so -- remove them so a skill never loads twice. Exit
+1 on errors, 2 on usage errors and on a settings.json that is not a
 valid JSON object (nothing is written in that case).
 """
 
@@ -141,6 +142,22 @@ def main(argv):
         )
         return 1
 
+    if "--no-plugin" not in flags:
+        code = _merge_plugin_settings(repo)
+        if code:
+            return code
+        stale = sorted(
+            p.name for p in target.iterdir()
+            if p.name.startswith("betterterms-")
+        ) if target.is_dir() else []
+        if stale:
+            print(
+                "note: vendored copies still present under "
+                ".claude/skills; the plugin supplies the skills, so "
+                "remove them: " + ", ".join(stale)
+            )
+        return 0
+
     problems = []
     for skill in _skills():
         dest = target / skill.name
@@ -154,11 +171,6 @@ def main(argv):
         for p in problems:
             print(f"refusing: {p}", file=sys.stderr)
         return 1
-
-    if "--no-plugin" not in flags:
-        code = _merge_plugin_settings(repo)
-        if code:
-            return code
 
     target.mkdir(parents=True, exist_ok=True)
     for skill in _skills():

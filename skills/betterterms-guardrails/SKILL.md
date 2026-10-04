@@ -9,6 +9,13 @@ You hold the rules that keep the user safe. The runtime `bt.py` (in this
 folder under `scripts/`) enforces them in code. This skill explains the
 contract so the other skills and the user know what to expect.
 
+`<bt>` below is the runtime's absolute path, resolved once per
+session. `bt.py` sits at `scripts/bt.py` inside this skill folder,
+wherever the skills are installed: `$CLAUDE_PLUGIN_ROOT/skills/`
+under a Claude Code plugin, a vendored repo's `.claude/skills/`,
+`~/.agents/skills/`, or `~/.claude/skills/`. Run `where` on it and
+keep the `bt` value it prints.
+
 ## Inputs
 
 - A `draft.yaml` to check: `{action, offer, period, template, claims}`.
@@ -33,12 +40,12 @@ contract so the other skills and the user know what to expect.
 
 Run before any message leaves:
 
-`python3 ../betterterms-guardrails/scripts/bt.py gate <case_id> --draft <path>/draft.yaml`
+`python3 <bt> gate <case_id> --draft <path>/draft.yaml`
 
 When the draft answers a counterparty message, pass it so `{quote:n}`
 placeholders can render the amounts it stated:
 
-`python3 ../betterterms-guardrails/scripts/bt.py gate <case_id> --draft <path>/draft.yaml --inbound <path>/inbound.yaml`
+`python3 <bt> gate <case_id> --draft <path>/draft.yaml --inbound <path>/inbound.yaml`
 
 Exit codes and results:
 
@@ -60,7 +67,8 @@ Exit codes and results:
   long as the user takes and survives restarts: a new session lists
   the same `held/` files again.
 
-An approval binds to the SHA-256 of the exact rendered text. Only a
+An approval binds to the SHA-256 of the send tuple: action, offer,
+period, currency, and the exact rendered text. Only a
 user action writes `held/<hash>.approved`, through one of three
 paths:
 
@@ -68,19 +76,22 @@ paths:
   tab,
 - the user's own `bt approve <case_id> <hash8>` message, which the
   prompt hook catches (a widget button can type it for them), or
-- `python3 ../betterterms-guardrails/scripts/bt.py held approve
+- `python3 <bt> held approve
   <case_id> <hash8>`, which the agent runs only in a host with no
   prompt hook and only after the user typed `bt approve` for that
   draft.
 
 The agent then re-runs the gate with `--approved`. It passes only
-when an approval file matches the hash of the newly rendered text,
-and the file is consumed after one use: a changed text, a second
-send, or no matching approval holds the draft again with the reason
-`no approval recorded for this exact text`. Typing "yes" in chat
-approves nothing. `held reject` is the matching drop:
-`bt reject <case_id> <hash8>` or `bt.py held reject` removes the
-held draft and stamps `rejected` in `thread.md`.
+when an approval file matches the hash of the newly rendered tuple,
+and the file is consumed after one use: a changed text, a changed
+action or amount, a second send, or no matching approval holds the
+draft again with the reason `no approval recorded for this exact
+text`. Typing "yes" in chat approves nothing. With the mod loaded,
+its send check re-gates and re-arms itself: the user approves in the
+pane and sends the held text verbatim; the agent does not re-run the
+gate. `held reject` is the matching drop:
+`bt reject <case_id> <hash8>` or `python3 <bt> held reject` removes
+the held draft and stamps `rejected` in `thread.md`.
 
 `hash8` is the first 8 or more hex characters of the draft hash and
 must name exactly one held draft: zero or several matches is exit 2,
@@ -98,17 +109,17 @@ How a held draft reaches the user depends on the session (spec 6.8):
   keypress or click approves. The agent posts nothing.
 - Widget: the session has a tool that posts interactive widgets
   (Projects cloud threads). The agent posts the `html` from
-  `python3 ../betterterms-guardrails/scripts/bt.py widget approval <case_id> <hash8>`
+  `python3 <bt> widget approval <case_id> <hash8>`
   as is. Its buttons type the `bt` command into the user's message
-  box, and the user presses Enter. `bt.py widget cases`,
-  `bt.py widget terms <case_id>` and `bt.py widget savings` cover
-  the other views.
+  box, and the user presses Enter. `python3 <bt> widget cases`,
+  `python3 <bt> widget terms <case_id>` and `python3 <bt> widget
+  savings` cover the other views.
 - Chat: neither (Codex, plain cloud sessions, `claude -p`). The
   agent prints the rendered text and the reasons, then the typed
   commands: `bt approve <case_id> <hash8>` to approve and send, or
   `bt reject <case_id> <hash8>` to drop the draft. In a host with no
   prompt hook the agent records the user's typed answer itself with
-  `bt.py held approve` or `bt.py held reject`.
+  `python3 <bt> held approve` or `python3 <bt> held reject`.
 
 Drafts are structured, not free text. Prices reach the message only
 through placeholders the gate renders itself:

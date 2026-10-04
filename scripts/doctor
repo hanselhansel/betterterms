@@ -6,6 +6,8 @@ Usage: doctor
 Scans $HOME/.agents/skills and $HOME/.claude/skills (HOME comes from
 the environment, so tests can point it at a fixture) and reports:
 
+- platform: bt.py needs Unix file locking, so macOS, Linux and WSL
+  are supported and native Windows is not
 - broken symlinks: a betterterms-* entry that resolves nowhere, or to
   a folder without SKILL.md
 - duplicates: the same betterterms-* name present in both shared
@@ -16,6 +18,7 @@ the environment, so tests can point it at a fixture) and reports:
 
 Prints one line per finding and exits 1 when any exist; prints a
 summary and exits 0 when clean. Exit 2 on usage errors.
+BETTERTERMS_PLATFORM overrides sys.platform for tests.
 """
 
 import os
@@ -118,6 +121,12 @@ def main(argv):
     home = _home()
     agents, claude = (home / d for d in SHARED_DIRS)
     findings = []
+    plat = os.environ.get("BETTERTERMS_PLATFORM") or sys.platform
+    if plat.startswith(("win32", "cygwin", "msys")):
+        findings.append(
+            f"platform: native Windows ({plat}) is unsupported; "
+            "bt.py needs Unix file locking, so run under WSL"
+        )
     seen = {}
     for shared in (agents, claude):
         seen[shared] = _check_shared(shared, findings)

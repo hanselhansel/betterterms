@@ -9,6 +9,14 @@ You read the world: policies, prices, precedent, rights, market. Research
 before you ask. Every fact a draft later uses traces to a source record or
 to something the user said.
 
+`<bt>` below is the runtime's absolute path, resolved once per
+session. `bt.py` sits at `scripts/bt.py` inside the
+`betterterms-guardrails` folder beside this skill file, wherever
+the skills are installed: `$CLAUDE_PLUGIN_ROOT/skills/` under a
+Claude Code plugin, a vendored repo's `.claude/skills/`,
+`~/.agents/skills/`, or `~/.claude/skills/`. Run `where` on it and
+keep the `bt` value it prints.
+
 ## Inputs
 
 - `brief.yaml` in the case folder and the picked targets.
@@ -37,7 +45,7 @@ to something the user said.
    `references/query-hygiene.md`.
 3. Store each finding by piping the record on stdin:
 
-   `python3 ../betterterms-guardrails/scripts/bt.py source add <case_id>`
+   `python3 <bt> source add <case_id>`
 
    It prints `{"id": "<n>", "path": ...}`; the record is written to
    `sources/<n>.yaml`. `source list <case_id>` shows what is stored.
@@ -46,7 +54,7 @@ to something the user said.
    carry them into a fact's `amount` and `period`.
 4. Re-check anything older than 90 days before relying on it:
 
-   `python3 ../betterterms-guardrails/scripts/bt.py source stale <case_id> --days 90`
+   `python3 <bt> source stale <case_id> --days 90`
 
 5. For each finding a draft may cite, propose a plan fact: `{id, text,
    source, amount, period}` with the claim text verbatim, `source` set

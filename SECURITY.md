@@ -21,7 +21,9 @@ exact rendered text to send.
 - Your walk-away number lives in `.floor` (mode 0600) in the case folder,
   written once from a hidden terminal prompt. Only the gate and the scorer
   read it. It is never printed, never written into a draft, and block reasons
-  stay generic so the gate's output cannot leak it.
+  stay generic so a single answer never states it. A determined agent could
+  still probe the gate with repeated guesses to triangulate the number; the
+  skills cap gate calls per turn and a probe counter is on the TODO list.
 - Structural checks fail closed: a missing or invalid floor file, an offer
   worse than your number after period conversion, `accept`/`sign`/`pay`
   without a numeric in-band offer, an `accept` that does not match an in-band
@@ -34,8 +36,9 @@ exact rendered text to send.
   `needs_approval`. Unusual text gets a human read instead of a silent
   pass.
 - `accept`, `cancel`, `pay`, `sign`, and `dispute` need your explicit yes at
-  every autonomy level. The `--approved` flag is honest only after a yes in
-  the current conversation, quoted in the case's `thread.md`.
+  every autonomy level. A `held/<hash>.approved` file binds the yes to the
+  SHA-256 of the send tuple (action, offer, period, currency, rendered text)
+  and is consumed after one use; only a user action writes it.
 
 ## What the gate does not guarantee
 
@@ -45,7 +48,15 @@ exact rendered text to send.
   send.
 - It checks structure, not truth. A fact the plan holds can still be wrong.
 - It does not rate-limit itself. The skills cap gate calls per turn and
-  redraft at most once on a floor-related block before escalating.
+  redraft at most once on a floor-related block before escalating; repeated
+  probes could still triangulate the walk-away, so a probe counter is a
+  tracked TODO.
+- Outside the optional mod, the agent runs as your user. The `PreToolUse`
+  guard scopes the private files (`.floor`, `held/`, `ledger.jsonl`,
+  `config.yaml`, the session log) to the betterterms home and normalizes
+  quoting and path tricks, but it is best effort: a determined agent acting
+  as you can still reach them. Only the mod's in-memory approval resists
+  that, because it lives in state file access cannot write.
 - It runs on the machine and the files it can read. Keep `~/.betterterms`
   yours.
 

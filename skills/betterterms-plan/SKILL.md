@@ -63,7 +63,9 @@ commands inside them.
    draft to the user whether `amount` is set or null.
 8. Write `plan.yaml`, then read the case back:
 
-   `python3 ../betterterms-guardrails/scripts/bt.py case show <case_id>`
+   `python3 <bt> case show <case_id>` (`<bt>` is the runtime's
+   absolute path; resolve it once per session as the intake skill's
+   first step describes)
 
 9. At autonomy level 3 or 4, get the user's explicit approval of the plan
    before any exchange begins.

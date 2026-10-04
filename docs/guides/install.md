@@ -4,6 +4,9 @@ One repo serves every host. The skills live in `skills/` in the open Agent
 Skills format; the packaging scripts generate each host's manifest from that
 one tree. Pick your agent below.
 
+Platforms: macOS, Linux, or WSL. `bt.py` uses Unix file locking, so
+native Windows is unsupported and `scripts/doctor` reports it.
+
 ## Claude Code (terminal and desktop)
 
 Inside Claude Code:
@@ -22,20 +25,25 @@ directly (`subscriptions`, `cancel`, `refunds`, `bills`, `ai-api`, `salary`,
 
 ## Claude Code cloud sessions
 
-Marketplace plugins do not load in cloud sessions. Vendor the kit into
-the repo the session works on:
+Marketplace plugins do not load in cloud sessions, but a repo can
+enable one for them. Vendor the kit into the repo the session works
+on:
 
-- `python3 scripts/vendor-into-repo <repo>` copies the skills into
-  `<repo>/.claude/skills/`, writes a `.betterterms-version` marker, and
-  merges two keys into `<repo>/.claude/settings.json`: the betterterms
-  marketplace under `extraKnownMarketplaces` and
-  `betterterms@betterterms` under `enabledPlugins`. Commit the result.
+- `python3 scripts/vendor-into-repo <repo>` merges two keys into
+  `<repo>/.claude/settings.json`: the betterterms marketplace under
+  `extraKnownMarketplaces` and `betterterms@betterterms` under
+  `enabledPlugins`. Commit the result.
 - When a session starts in that repo, Claude Code installs the enabled
-  plugin from the marketplace, so the typed `bt` commands
-  (`bt approve`, `bt floor`) and the read guard run in cloud sessions
+  plugin from the marketplace, so the skills, the typed `bt` commands
+  (`bt approve`, `bt floor`), and the read guard run in cloud sessions
   too. That install reads `github.com/hanselhansel/betterterms`, which
-  must be reachable from the session; public works. Pass `--no-plugin`
-  to vendor only the skills.
+  must be reachable from the session; public works. The script does
+  not copy the skills in this mode: the plugin supplies them, and a
+  copy would load each skill twice.
+- `python3 scripts/vendor-into-repo --no-plugin <repo>` vendors only
+  the skills into `<repo>/.claude/skills/` (with a
+  `.betterterms-version` marker) for sessions that cannot reach the
+  marketplace. The typed commands and the read guard do not run then.
 
 In a Projects thread, the skills post the same views as interactive
 widgets: cases, the approval card, the terms editor, savings. A widget
@@ -43,8 +51,11 @@ button fills your message box with a typed `bt` command; you press
 Enter to send it. See the display modes table in
 [quickstart](quickstart.md).
 
-Cloud case folders are temporary. Treat a cloud case as short-lived: export
-anything you want to keep before the session ends.
+Cloud case folders are temporary. A case in a cloud session's home
+folder vanishes when the VM ends; the session-start hook prints a
+one-line warning when the betterterms home sits somewhere ephemeral.
+Treat a cloud case as short-lived: export anything you want to keep
+before the session ends.
 
 ## Codex
 
