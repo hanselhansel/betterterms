@@ -19,7 +19,7 @@ researched per case, outranks this file.
 - The retention desk holds better offers than front-line support.
   Ask for it.
 - Note the sign-up channel; same-medium cancellation rules apply in
-  some jurisdictions (see `rights.md`).
+  some places (see `rights.md`).
 - Equipment returns and the final bill follow the cancellation. Get
   the return steps and dates in writing.
 

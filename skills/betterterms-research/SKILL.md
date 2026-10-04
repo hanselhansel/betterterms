@@ -32,8 +32,8 @@ to something the user said.
 1. Read the counterparty's own written policy first: cancellation, refund,
    retention, and price-change terms.
 2. Then work the remaining intents: current pricing and promotions,
-   first-hand reports from the last 12 months, the user's rights in their
-   jurisdiction, and market or competitor prices. Every query follows
+   first-hand reports from the last 12 months, the user's rights where
+   they live, and market or competitor prices. Every query follows
    `references/query-hygiene.md`.
 3. Store each finding by piping the record on stdin:
 

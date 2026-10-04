@@ -4,7 +4,6 @@ import subprocess
 import sys
 import tempfile
 import unittest
-import zipfile
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
@@ -212,28 +211,6 @@ class DoctorTest(ScriptTestCase):
         link.symlink_to((self.repo / "skills" / "betterterms-start").resolve())
         proc = self.doctor()
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
-
-
-class ZipSkillsTest(ScriptTestCase):
-    def test_zip_per_skill_deterministic(self):
-        for _ in range(2):
-            proc = run(self.repo, "zip-skills", home=self.home)
-            self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
-        dist = self.repo / "dist"
-        zips = sorted(dist.glob("betterterms-*.zip"))
-        self.assertEqual(len(zips), len(SKILL_NAMES))
-        blob = zipfile.ZipFile(dist / "betterterms-start.zip")
-        names = blob.namelist()
-        self.assertIn("betterterms-start/SKILL.md", names)
-        self.assertFalse(any("__pycache__" in n for n in names))
-        again = self.tmp / "second"
-        shutil.copytree(self.repo, again, ignore=shutil.ignore_patterns("dist"))
-        proc = run(again, "zip-skills", home=self.home)
-        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
-        for z in zips:
-            self.assertEqual(
-                z.read_bytes(), (again / "dist" / z.name).read_bytes()
-            )
 
 
 class SessionStartHookTest(ScriptTestCase):

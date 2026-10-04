@@ -27,8 +27,6 @@ Marketplace plugins do not load in cloud sessions. Two paths work:
 - `python3 scripts/vendor-into-repo <repo>` copies the skills into
   `<repo>/.claude/skills/` and writes a `.betterterms-version` marker. Commit
   the result; the cloud session clones the repo and gets the skills with it.
-- `python3 scripts/zip-skills` writes one zip per skill into `dist/`. Upload
-  the zips to your claude.ai account.
 
 Cloud case folders are temporary. Treat a cloud case as short-lived: export
 anything you want to keep before the session ends.
@@ -40,16 +38,7 @@ codex plugin marketplace add hanselhansel/betterterms
 codex plugin add betterterms@betterterms
 ```
 
-## Gemini CLI
-
-```
-gemini extensions install https://github.com/hanselhansel/betterterms
-```
-
-The repo's `gemini-extension.json` and `GEMINI.md` load the skills and the
-bootstrap.
-
-## Cursor, Copilot, VS Code
+## Other Agent Plugins readers
 
 The repo root carries an Agent Plugins 1.0 `plugin.json` that points at
 `skills/`. Add the repo as a plugin source in your host.
@@ -64,11 +53,6 @@ This links each `skills/betterterms-*` folder into the target directory
 (`--copy` copies instead of linking). It refuses when the same skill exists in
 both `~/.agents/skills` and `~/.claude/skills`, so a skill never loads twice.
 Point any other reader at `skills/` directly.
-
-## Muse
-
-The repo ships `.muse-plugin/plugin.json`. The format is undocumented; the
-manifest follows the pattern other kits ship and is provided untested.
 
 ## The optional mod
 

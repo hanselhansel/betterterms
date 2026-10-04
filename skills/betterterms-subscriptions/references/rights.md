@@ -1,4 +1,4 @@
-# Rights by jurisdiction
+# Rights
 
 Each rule cites its source and the date it was read. Recheck anything
 older than 90 days before relying on it.
@@ -31,5 +31,5 @@ older than 90 days before relying on it.
 ## Elsewhere
 
 - Auto-renewal and cancellation rules differ by country and state.
-  During research, check the user's jurisdiction and record each source
-  with the date it was read.
+  During research, check the rules where the user lives and record
+  each source with the date it was read.

@@ -7,8 +7,8 @@ Default mode symlinks each skills/betterterms-* folder into DIR;
 --copy copies them instead and writes DIR/.betterterms-version.
 
 Refuses (exit 1) when a betterterms-* name already sits in both
-$HOME/.agents/skills and $HOME/.claude/skills (Cursor and Muse read
-both, so a skill in each loads twice), when installing would create
+$HOME/.agents/skills and $HOME/.claude/skills (an agent reading both
+would load the skill twice), when installing would create
 that duplicate, or when linking would place a symlink inside this
 repo (the repo holds none; use --copy there). Never replaces a real
 directory that does not look like a betterterms skill. Exit 2 on

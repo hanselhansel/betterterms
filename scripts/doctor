@@ -9,7 +9,7 @@ the environment, so tests can point it at a fixture) and reports:
 - broken symlinks: a betterterms-* entry that resolves nowhere, or to
   a folder without SKILL.md
 - duplicates: the same betterterms-* name present in both shared
-  dirs (Cursor and Muse read both, so a skill in each loads twice)
+  dirs (an agent reading both would load the skill twice)
 - stale versions: a linked install whose repo VERSION differs from
   this repo's VERSION, or a copied install whose
   .betterterms-version marker differs or is missing

@@ -1,6 +1,6 @@
 ---
 name: betterterms-subscriptions
-description: Act-mode pack for negotiating recurring subscriptions such as streaming, apps, memberships, and software plans. Runs the standard betterterms pipeline with subscription intake questions, discovery intents, research intents, a playbook, counterparty patterns, jurisdiction rights, and message templates to win a lower price, a discount, a pause, or a downgrade. Use for "lower my subscription", "negotiate my streaming bill", "my app subscription price went up", "cheaper plan", or /betterterms:subscriptions.
+description: Act-mode pack for negotiating recurring subscriptions such as streaming, apps, memberships, and software plans. Runs the standard betterterms pipeline with subscription intake questions, discovery intents, research intents, a playbook, counterparty patterns, consumer-rights notes, and message templates to win a lower price, a discount, a pause, or a downgrade. Use for "lower my subscription", "negotiate my streaming bill", "my app subscription price went up", "cheaper plan", or /betterterms:subscriptions.
 ---
 
 # betterterms-subscriptions
@@ -16,8 +16,8 @@ to the core procedure. You never redefine it.
 - `references/playbook.md`: moves in order, each claim with a source and
   the date it was read.
 - `references/counterparties.md`: patterns by vendor type.
-- `references/rights.md`: rules by jurisdiction, each with source and
-  date read.
+- `references/rights.md`: consumer rules worth citing, each with
+  source and date read.
 - `references/templates/`: voice-neutral message starters. All money
   enters through placeholders; never type a price.
 
@@ -35,7 +35,7 @@ to the core procedure. You never redefine it.
 - Research (`betterterms-research`): the pack's `research` intents.
   Policy (cancel, pause, downgrade, retention, price-change terms),
   pricing (current plans and promotions), precedent (recent first-hand
-  reports), and rights (auto-renewal rules in the user's jurisdiction).
+  reports), and rights (auto-renewal rules where the user lives).
   Start from `references/rights.md` and recheck anything older than 90
   days.
 - Plan (`betterterms-plan`): target below the current price; two or

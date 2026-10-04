@@ -47,7 +47,7 @@ the error (Reg Z, 12 CFR 1026.13). Source:
 https://www.consumerfinance.gov/rules-policy/regulations/1026/13/
 (read 2026-10-03).
 
-Other payment methods and jurisdictions have their own windows; look up
+Other payment methods and countries have their own windows; look up
 the rule that applies instead of assuming this one (pack guidance). Do
 not let merchant stalling spend the window: when about two weeks remain,
 move to the final notice whether or not the merchant has replied.

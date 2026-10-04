@@ -1,7 +1,7 @@
-# Rights and rules by jurisdiction
+# Rights and rules
 
-Rules the user can lean on in a bills case. Each entry names the
-jurisdiction, the rule, a source, and the date it was read. Confirm
+Rules the user can lean on in a bills case. Each entry names where
+it applies, the rule, a source, and the date it was read. Confirm
 the user's state or country at intake, and re-check any entry older
 than 90 days before relying on it.
 
@@ -41,7 +41,7 @@ than 90 days before relying on it.
 - Cancellation rights set the exit floor. Where the user can cancel
   online or in the same medium as sign-up, the switch-or-stay
   decision is cheap to execute, which strengthens every ask.
-- If the user's jurisdiction is not listed here, run a rights check
-  as a research step before the plan: search the renewal, billing,
+- If the user's state or country is not listed here, run a rights
+  check as a research step before the plan: search the renewal, billing,
   and consumer-protection rules that apply, and log each as a source
   record.

@@ -3,7 +3,7 @@
 What works, in order. The policy for every cancellation case: cancel
 unless the offer meets the user's target, and ask once for better
 first. Each factual claim carries its source and the date it was read;
-the full jurisdiction rules live in `rights.md`.
+the full rules live in `rights.md`.
 
 ## Order of operations
 

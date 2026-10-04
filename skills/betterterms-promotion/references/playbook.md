@@ -40,9 +40,10 @@ every public source gets a source record with the date read. Places
 to look:
 
 - Posted salary ranges on job ads for the user's level or the next,
-  inside the company and at peers. Some jurisdictions require ranges
-  in postings (California requires them at employers with 15 or more
-  staff); check `references/rights.md` for the user's jurisdiction.
+  inside the company and at peers. Some states and countries require
+  ranges in postings (California requires them at employers with 15
+  or more staff); check `references/rights.md` for the rules where
+  the user works.
   Source: https://leginfo.legislature.ca.gov/faces/codes_displaySection.xhtml?lawCode=LAB&sectionNum=432.3 (read 2026-10-03)
 - Public levels data with links the user can cite: levels.fyi and
   similar public aggregators. Link the exact page used.

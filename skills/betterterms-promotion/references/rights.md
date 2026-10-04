@@ -1,4 +1,4 @@
-# Rights by jurisdiction
+# Rights
 
 Each rule cites its source and the date it was read. Recheck anything
 older than 90 days before relying on it. These rules shape the
@@ -43,7 +43,7 @@ much other employees are paid (Labor Code 1197.5(k)(1)).
 
 What it means: in California the user may ask peers about pay, and
 gathering that market data is itself protected. Wage-discussion
-protection elsewhere varies; check the user's jurisdiction.
+protection elsewhere varies; check the rules where the user works.
 
 Source: https://www.dir.ca.gov/dlse/california_equal_pay_act.htm (read 2026-10-03)
 
@@ -51,7 +51,7 @@ Source: https://www.dir.ca.gov/dlse/california_equal_pay_act.htm (read 2026-10-0
 
 - Pay transparency and wage-discussion rules differ by country,
   state, and city. During research, check whether the user's
-  jurisdiction requires posted ranges or protects wage questions,
+  state or country requires posted ranges or protects wage questions,
   and record each source with the date it was read.
 - If the case turns on a pay gap tied to a protected characteristic,
   that is a legal issue, not a negotiation move. Surface it to the

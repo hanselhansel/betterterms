@@ -1,9 +1,8 @@
-# Rights by jurisdiction
+# Rights
 
 Rules that apply to cancelling a subscription, membership, service,
-or contract, by jurisdiction. Each entry names its source and the
-date it was read. Re-check anything older than 90 days before
-relying on it.
+or contract. Each entry names its source and the date it was read.
+Re-check anything older than 90 days before relying on it.
 
 ## United States, federal
 
@@ -40,7 +39,7 @@ relying on it.
   Source: https://www.consumerfinance.gov/rules-policy/regulations/1026/13/
   (read 2026-10-03)
 
-## Other jurisdictions
+## Elsewhere
 
 - Outside the rows above, the provider's own written terms govern.
   Record the user's state or country at intake and research the

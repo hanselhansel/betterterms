@@ -1,4 +1,4 @@
-# Rights by jurisdiction
+# Rights
 
 Each rule carries its source and the date it was read. Re-check rules
 older than 90 days before relying on them. Negotiated business

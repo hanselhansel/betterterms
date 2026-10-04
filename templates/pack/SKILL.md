@@ -20,8 +20,8 @@ domain detail to the core procedure. You never redefine it.
 - `references/playbook.md`: moves in order, each claim with a source
   URL and the date it was read.
 - `references/counterparties.md`: patterns by counterparty type.
-- `references/rights.md`: rules by jurisdiction, each with source and
-  date read.
+- `references/rights.md`: consumer rules worth citing, each with
+  source and date read.
 - `references/templates/`: voice-neutral message starters. All money
   enters through placeholders; never type a price.
 

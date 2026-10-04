@@ -21,8 +21,8 @@ nothing goes to the company except what the user says or sends.
 - `references/playbook.md`: moves in order, each claim with a source
   and the date it was read.
 - `references/counterparties.md`: who decides, by decision-maker type.
-- `references/rights.md`: rules by jurisdiction, each with a source
-  and a read date.
+- `references/rights.md`: pay-transparency and wage rules, each with
+  a source and a read date.
 - `references/script-template.md`: the call script shape.
 - `references/roleplay.md`: rehearsal procedure and scoring rubric.
 - `references/templates/`: voice-neutral email starters. All money

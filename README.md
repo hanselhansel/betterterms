@@ -5,7 +5,7 @@ for you. It learns what you want, finds the bills and offers worth
 negotiating in your own data, reads the counterparty's policies and the
 market, plans with a walk-away limit held in code, then runs the written
 exchange or coaches you for the live call. It runs in Claude Code, Codex,
-Gemini CLI, Cursor, and any agent that reads the open Agent Skills format.
+and any agent that reads the open Agent Skills format.
 
 It is for people who already use an agent daily and want better terms without
 the tedium. It is also for contributors who add packs for new categories.
@@ -34,12 +34,10 @@ hold yourself: fixed numbers, a script, and a rehearsal before the call.
 | Host | Install |
 |---|---|
 | Claude Code (terminal, desktop) | `/plugin marketplace add hanselhansel/betterterms`, then `/plugin install betterterms@betterterms`. Auto-update for third-party marketplaces is off until you enable it. |
-| Claude Code cloud sessions | Marketplace plugins do not load there. Run `python3 scripts/vendor-into-repo <repo>` to copy the skills into a repo's `.claude/skills/`, or run `python3 scripts/zip-skills` and upload the zips from `dist/` to your claude.ai account. |
+| Claude Code cloud sessions | Marketplace plugins do not load there. Run `python3 scripts/vendor-into-repo <repo>` to copy the skills into a repo's `.claude/skills/`. |
 | Codex | `codex plugin marketplace add hanselhansel/betterterms`, then `codex plugin add betterterms@betterterms`. |
-| Gemini CLI | `gemini extensions install https://github.com/hanselhansel/betterterms`. |
-| Cursor, Copilot, VS Code | The repo root carries an Agent Plugins 1.0 `plugin.json` pointing at `skills/`; add the repo as a plugin source in your host. |
+| Other Agent Plugins readers | The repo root carries an Agent Plugins 1.0 `plugin.json` pointing at `skills/`; add the repo as a plugin source in your host. |
 | Any Agent Skills reader | `python3 scripts/install-skills --target ~/.agents/skills`. |
-| Muse | A `.muse-plugin/plugin.json` manifest ships in the repo, provided untested: the format is undocumented. |
 
 Per-host detail, updating, and uninstall: [docs/guides/install.md](docs/guides/install.md).
 

@@ -1,6 +1,6 @@
 ---
 name: betterterms-cancellations
-description: Runs the cancellations pack for a betterterms case. Ends a subscription, membership, service, or contract the user wants to drop, or keeps it only at a price that meets the user's target. Adds cancellation intake questions, policy-first research, jurisdiction rights, retention-desk patterns, and message templates. Use when the user says things like "cancel my subscription", "cancel my membership", "stop these charges", or "quit my gym".
+description: Runs the cancellations pack for a betterterms case. Ends a subscription, membership, service, or contract the user wants to drop, or keeps it only at a price that meets the user's target. Adds cancellation intake questions, policy-first research, consumer-rights notes, retention-desk patterns, and message templates. Use when the user says things like "cancel my subscription", "cancel my membership", "stop these charges", or "quit my gym".
 ---
 
 # betterterms-cancellations
@@ -18,8 +18,8 @@ skills run the stages; this pack adds the cancellation detail.
   intents, and the savings formula.
 - `references/playbook.md`: the ordered playbook with sources.
 - `references/counterparties.md`: patterns by company type.
-- `references/rights.md`: rules by jurisdiction, each with a source
-  and the date it was read.
+- `references/rights.md`: consumer rules worth citing, each with a
+  source and the date it was read.
 - `references/templates/`: message templates. Money reaches a message
   only through placeholders (`{offer}`, `{target}`,
   `{option:<label>}`, `{fact:<id>}`, `{quote:n}`). Never type a price
@@ -36,7 +36,7 @@ skills run the stages; this pack adds the cancellation detail.
    credits or prepaid balances.
 3. Research. Run `betterterms-research`. Read the provider's own
    cancellation and retention policy first, then pricing, precedent,
-   and the jurisdiction rules in `references/rights.md`.
+   and the rules in `references/rights.md`.
 4. Plan. Run `betterterms-plan`. The target is the price or terms
    that keep the user; when the user is leaving for sure, the plan
    ends in cancellation whatever is offered.

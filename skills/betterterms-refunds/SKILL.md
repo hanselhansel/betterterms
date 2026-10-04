@@ -19,7 +19,7 @@ core skills read.
   intents, savings formula.
 - `references/playbook.md`: what works, in order, with sources.
 - `references/counterparties.md`: patterns by company type.
-- `references/rights.md`: rules by jurisdiction, each dated.
+- `references/rights.md`: refund rules worth citing, each dated.
 - `references/templates/`: message skeletons for each step.
 
 ## How each stage extends
@@ -35,7 +35,7 @@ core skills read.
 3. **Research.** Read the merchant's own refund and return policy before
    anything else. Then first-hand reports for this merchant, then the
    user's rights per `references/rights.md`, refreshed for their
-   jurisdiction. Every fact a draft will use gets a dated source record.
+   state or country. Every fact a draft will use gets a dated source record.
 4. **Plan.** Target is the remedy the user wants, usually a full refund
    to the original payment method. Options cover the fallback remedies
    the user named acceptable (partial refund, replacement, credit) with

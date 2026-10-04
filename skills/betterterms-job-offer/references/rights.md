@@ -1,4 +1,4 @@
-# Rights by jurisdiction
+# Rights
 
 Each rule carries its source and the date it was read. Re-check rules
 older than 90 days before relying on them. These shape what the user
@@ -50,7 +50,7 @@ Source: https://california.public.law/codes/business_and_professions_code_sectio
 
 - Salary-history bans, posted-range requirements, and noncompete
   enforceability vary by state and city. During research, check the
-  jurisdiction where the user will work and where the employer sits,
+  rules where the user will work and where the employer sits,
   and record each source with the date it was read.
 - When the job is performed in one state and the employer sits in
   another, confirm which rules apply before relying on one.

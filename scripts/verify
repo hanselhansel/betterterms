@@ -34,7 +34,6 @@ from _lib.checks_tools import (
     check_build_fresh,
     check_claude_validate,
     check_eval_smoke,
-    check_gemini_validate,
     check_unit_tests,
     check_vendor_sync,
     check_version_sync,
@@ -58,7 +57,6 @@ CHECKS = [
     ("version-sync", check_version_sync),
     ("eval-smoke", check_eval_smoke),
     ("claude-validate", check_claude_validate),
-    ("gemini-validate", check_gemini_validate),
 ]
 
 

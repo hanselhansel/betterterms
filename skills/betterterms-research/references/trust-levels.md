@@ -7,7 +7,7 @@ higher one.
 | Level | Meaning | May support |
 |---|---|---|
 | `official` | The counterparty's own published policy, terms, or pricing page | Claims quoted back to the counterparty |
-| `regulator` | Statutes, regulator rules, consumer agency guidance | The user's rights in their jurisdiction |
+| `regulator` | Statutes, regulator rules, consumer agency guidance | The user's rights where they live |
 | `press` | News reporting and named review sites | Market context and dated public claims |
 | `forum` | First-hand reports: Reddit, X, community forums | Tactics to try; never stated as fact |
 

@@ -1,7 +1,7 @@
 # Pay scale request
 
 Ask HR or the manager for the pay scale of the user's position, or
-of the target level, in writing. Some jurisdictions grant this by
+of the target level, in writing. Some states and countries grant this by
 rule (see `../rights.md`); elsewhere it is a normal request under
 the company's own pay-band policy. Either way it grounds the market
 data in `plan.yaml` facts.
@@ -27,7 +27,7 @@ Thank you,
 Notes:
 
 - `{fact:f-band}` renders a plan fact, for example the company's
-  written band policy or the jurisdiction rule the user cites.
+  written band policy or the local rule the user cites.
   Swap in the case's real fact id; drop the sentence if the plan
   holds no such fact.
 - Never quote a band the company has not stated. If only public

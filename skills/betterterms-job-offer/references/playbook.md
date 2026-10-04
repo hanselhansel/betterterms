@@ -131,7 +131,7 @@ order):
 
 1. "What are you making now?" Redirect to the posted range or the
    target. Salary-history questions are restricted in some
-   jurisdictions; see `rights.md`.
+   states; see `rights.md`.
 2. "That is above our band for this level." Ask what the band is,
    then trade inside the package: sign-on, equity, level.
 3. "The budget for this role is set." Ask what would need to be true

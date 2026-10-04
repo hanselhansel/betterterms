@@ -29,8 +29,8 @@ stay offer, a subscription tier change, or an API or cloud contract.
    notices, and files the user drops in.
 3. **Research.** Run `betterterms-research` with the `research` intents
    in `pack.yaml`: policy, pricing, precedent, rights, market. Read
-   `references/rights.md` for the rules that apply in the user's
-   jurisdiction and log each finding as a source record.
+   `references/rights.md` for the rules that apply where the user
+   lives and log each finding as a source record.
 4. **Plan.** Run `betterterms-plan`. Typical option shapes: keep the
    plan at a lower price, a downgrade plus a discount, an annual or
    autopay discount, a bundle change. Mark each option `price`,

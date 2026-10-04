@@ -49,7 +49,7 @@ Draft the user's reply to each before the call.
 
 1. "What are you making now?" -> "I would rather focus on the value
    of this role. The posted range was <range>, and I am targeting
-   the top of it." (In jurisdictions with salary-history bans the
+   the top of it." (Where a salary-history ban applies, the
    user may simply decline; see `rights.md`.)
 2. "That is above our band for this level." -> "What is the band for
    this level? If base is capped, let us look at sign-on, equity, or

@@ -10,19 +10,14 @@ from pathlib import Path, PurePosixPath
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "scripts"))
 
-from _lib import (  # noqa: E402
-    gen_agent_plugins,
-    gen_cursor,
-    gen_gemini,
-    gen_muse,
-)
+from _lib import gen_agent_plugins  # noqa: E402
 from _lib.checks_prose import BANNED_WORDS, EM_DASH  # noqa: E402
 from test_build_gen import make_root  # noqa: E402
 
 VERSION = (REPO / "VERSION").read_text(encoding="utf-8").strip()
 KIT = json.loads((REPO / "kit.config.json").read_text(encoding="utf-8"))
 
-GENERATORS = (gen_gemini, gen_cursor, gen_muse, gen_agent_plugins)
+GENERATORS = (gen_agent_plugins,)
 
 # Agent Plugins 1.0.0: closed manifest schema, section 5.2. Skills are
 # discovered from the fixed skills/ location, never declared inline.
@@ -41,13 +36,6 @@ def generated(root, version=VERSION):
     for mod in GENERATORS:
         out.update(mod.gen(root, version))
     return out
-
-
-def skill_dirs(root):
-    return sorted(
-        p.name for p in (root / "skills").iterdir()
-        if p.is_dir() and (p / "SKILL.md").is_file()
-    )
 
 
 class DeterminismTest(unittest.TestCase):
@@ -87,83 +75,6 @@ class DeterminismTest(unittest.TestCase):
             if rel.endswith(".json"):
                 with self.subTest(rel=rel):
                     json.loads(content)
-
-
-class GeminiShapeTest(unittest.TestCase):
-    def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(self.tmp.cleanup)
-        self.root = make_root(self.tmp.name, skills="real")
-        self.files = gen_gemini.gen(self.root, VERSION)
-
-    def test_gemini_extension_json_shape(self):
-        data = json.loads(self.files["gemini-extension.json"])
-        self.assertEqual(
-            set(data), {"name", "version", "description", "contextFileName"}
-        )
-        self.assertEqual(data["name"], "betterterms")
-        self.assertEqual(data["version"], VERSION)
-        self.assertEqual(data["description"], KIT["description"])
-        self.assertEqual(data["contextFileName"], "GEMINI.md")
-
-    def test_gemini_md_points_at_start_skill(self):
-        content = self.files["GEMINI.md"]
-        self.assertIn("@./skills/betterterms-start/SKILL.md", content)
-        self.assertLess(len(content.splitlines()), 40)
-
-    def test_gemini_emits_exactly_two_files(self):
-        self.assertEqual(
-            set(self.files), {"gemini-extension.json", "GEMINI.md"}
-        )
-
-
-class CursorShapeTest(unittest.TestCase):
-    def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(self.tmp.cleanup)
-        self.root = make_root(self.tmp.name, skills="real")
-        self.files = gen_cursor.gen(self.root, VERSION)
-
-    def test_cursor_plugin_json_shape(self):
-        data = json.loads(self.files[".cursor-plugin/plugin.json"])
-        self.assertEqual(data["name"], "betterterms")
-        self.assertEqual(data["version"], VERSION)
-        self.assertEqual(data["description"], KIT["description"])
-        self.assertEqual(data["license"], KIT["license"])
-        self.assertEqual(data["repository"], KIT["repository"])
-        self.assertEqual(data["author"]["name"], KIT["author"]["name"])
-        self.assertEqual(data["skills"], "./skills/")
-
-
-class MuseShapeTest(unittest.TestCase):
-    def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(self.tmp.cleanup)
-        self.root = make_root(self.tmp.name, skills="real")
-        self.files = gen_muse.gen(self.root, VERSION)
-
-    def test_muse_plugin_json_shape(self):
-        data = json.loads(self.files[".muse-plugin/plugin.json"])
-        self.assertEqual(data["schemaVersion"], 1)
-        self.assertEqual(data["name"], "betterterms")
-        self.assertEqual(data["version"], VERSION)
-        self.assertEqual(data["description"], KIT["description"])
-
-    def test_muse_lists_every_skill(self):
-        data = json.loads(self.files[".muse-plugin/plugin.json"])
-        skills = data["capabilities"]["skills"]
-        listed = [s["id"] for s in skills]
-        self.assertEqual(listed, skill_dirs(self.root))
-        for entry in skills:
-            with self.subTest(skill=entry["id"]):
-                self.assertEqual(
-                    entry["path"],
-                    f"skills/{entry['id']}/SKILL.md",
-                )
-                self.assertTrue(
-                    (self.root / entry["path"]).is_file(),
-                    entry["path"],
-                )
 
 
 class AgentPluginsShapeTest(unittest.TestCase):

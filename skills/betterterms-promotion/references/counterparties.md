@@ -39,7 +39,7 @@ research before relying on a pattern below.
 - Own the bands, the budget, and the process rules. "Top of band"
   and "no budget" answers live here.
 - They can state the pay scale for a level in writing; in some
-  jurisdictions the user has a right to it. See
+  states and countries the user has a right to it. See
   `references/rights.md`.
 - HR enforces the calendar: mid-cycle asks are the exception path
   and usually need a decider's sponsorship.

@@ -1,9 +1,9 @@
-# Refund rights by jurisdiction
+# Refund rights
 
 Rules this pack cites, each with a source and the date it was read.
 Re-check anything older than 90 days before relying on it (research
 skill rule). This is case information, not legal advice. When the user's
-jurisdiction is not listed, research the local rule fresh and record a
+state or country is not listed, research the local rule fresh and record a
 source record.
 
 ## United States, federal
@@ -25,7 +25,7 @@ statute text (Bus. and Prof. Code 17602) before relying on them. It
 matters for refunds when the disputed charge followed a cancellation
 attempt.
 
-## Merchant terms (contract, not jurisdiction)
+## Merchant terms (contract, not law)
 
 Some merchants restrict or close accounts after a chargeback. Read their
 terms first and try the merchant's own refund process before disputing.
@@ -36,7 +36,7 @@ breach clause only; no official anti-dispute policy found), read
 ## Gaps to check before promising a window
 
 - The 60-day rule above covers US credit cards. Debit cards, bank
-  transfers, wallets, and other jurisdictions have their own rules;
+  transfers, wallets, and other countries have their own rules;
   research the one that matches the user's payment method.
 - Card networks and marketplace protection programs set their own case
   deadlines. Find the current figure from the official page during

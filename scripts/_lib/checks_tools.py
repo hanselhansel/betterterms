@@ -135,8 +135,3 @@ def _validate(root, marker, tool, args, skip_msg):
 def check_claude_validate(root):
     return _validate(root, ".claude-plugin/plugin.json", "claude",
                      ["plugin", "validate", "."], "no .claude-plugin/plugin.json")
-
-
-def check_gemini_validate(root):
-    return _validate(root, "gemini-extension.json", "gemini",
-                     ["extensions", "validate", "."], "no gemini-extension.json")

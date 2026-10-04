@@ -192,7 +192,6 @@ betterterms/
   skills/                    # core skills (A), Agent Skills format
   packs/                     # category packs (B)
   scripts/                   # gate, build, verify, bump-version, vendor-into-repo, doctor
-  rules/jurisdictions/       # channel rules per country (AI voice calls, recording consent)
   hooks/                     # session-start bootstrap where supported
   evals/                     # simulated counterparties and scorers
   mod/                       # separate opt-in plugin (E)
@@ -268,7 +267,7 @@ Per-user state lives outside the repo in `~/.betterterms/` (override: `BETTERTER
 
 ```
 ~/.betterterms/
-  config.yaml          # default autonomy, jurisdiction, currency, voice notes
+  config.yaml          # default autonomy, currency, voice notes
   cases/<case-id>/
     brief.yaml         # intake: goals, priorities, ranking check, autonomy, mode
     plan.yaml          # target, floor (gate only), options, ladder, patience, deadline
