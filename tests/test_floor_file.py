@@ -180,7 +180,8 @@ class ReadFloorHardeningTest(FloorFileCase):
 class CaseDirModeTest(BtTestCase):
     def test_case_dirs_created_0700(self):
         case_id, case_dir = new_case(self.home)
-        for d in (self.home / "cases", case_dir, case_dir / "sources"):
+        for d in (self.home, self.home / "cases", case_dir,
+                  case_dir / "sources"):
             with self.subTest(d=d.name):
                 self.assertEqual(
                     stat.S_IMODE(os.stat(d).st_mode), 0o700

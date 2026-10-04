@@ -195,8 +195,12 @@ def check(case_dir, draft, approved=False, inbound=None):
         findings.append(("block", "offer must be a number"))
         offer = None
 
-    raw_period = draft.get("period", "once")
-    if not isinstance(raw_period, str) or raw_period.lower() not in PERIODS:
+    # A null draft period means "not set" and defaults to once, like
+    # the plan, fact and inbound period keys.
+    raw_period = draft.get("period")
+    if raw_period is None:
+        period = "once"
+    elif not isinstance(raw_period, str) or raw_period.lower() not in PERIODS:
         findings.append(("block", "period must be once, month or year"))
         period = "once"
     else:
@@ -268,26 +272,13 @@ def check(case_dir, draft, approved=False, inbound=None):
             offer_floor = _in_floor_period(offer, period, plan_period)
             # "once" has no conversion factor, so a period mismatch
             # with it can never verify the offer against the floor:
-            # a send routes to the user, an agreeing action fails
-            # closed. A raw equal value there is a coincidence, not
-            # "at your limit", so the at-limit route skips it too.
+            # the raw values are unlike units, so the worse-than and
+            # at-limit comparisons are skipped entirely. A send routes
+            # to the user, an agreeing action fails closed.
             unconvertible = (
                 period != plan_period
                 and "once" in (period, plan_period)
             )
-            if _worse(offer_floor, floor, direction):
-                findings.append(("block", LIMITS))
-            elif (
-                not approved
-                and action == "send"
-                and not unconvertible
-                and _same(offer_floor, (floor,))
-            ):
-                # A send offer at the floor is inside the band, but it
-                # hands the counterparty the user's walk-away number.
-                # accept, sign and pay may sit on it: they take a price
-                # already on the table.
-                findings.append(("approval", "offer is at your limit"))
             if unconvertible:
                 if action == "send":
                     if not approved:
@@ -298,6 +289,18 @@ def check(case_dir, draft, approved=False, inbound=None):
                     findings.append(
                         ("block", "period differs from your limit")
                     )
+            elif _worse(offer_floor, floor, direction):
+                findings.append(("block", LIMITS))
+            elif (
+                not approved
+                and action == "send"
+                and _same(offer_floor, (floor,))
+            ):
+                # A send offer at the floor is inside the band, but it
+                # hands the counterparty the user's walk-away number.
+                # accept, sign and pay may sit on it: they take a price
+                # already on the table.
+                findings.append(("approval", "offer is at your limit"))
         if clean:
             _check_values(find, action, floor, direction, plan_period, findings)
 

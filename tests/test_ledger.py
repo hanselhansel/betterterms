@@ -1,3 +1,5 @@
+import os
+import stat
 import unittest
 
 from bt_helpers import BtTestCase, new_case, run_bt_json
@@ -213,6 +215,18 @@ class LedgerTest(BtTestCase):
         )
         self.assertEqual(proc.returncode, 2, out)
         self.assertIn("error", out)
+
+    def test_ledger_file_created_0600(self):
+        # The ledger holds per-case savings; like .floor it is
+        # created owner-only.
+        case_id, _ = new_case(self.home)
+        proc, _ = run_bt_json(
+            self.home, "ledger", "add", case_id,
+            "--before", "80", "--after", "60", "--period", "month",
+        )
+        self.assertEqual(proc.returncode, 0)
+        mode = stat.S_IMODE(os.stat(self.home / "ledger.jsonl").st_mode)
+        self.assertEqual(mode, 0o600, oct(mode))
 
     def test_ledger_rejects_duplicate_case(self):
         case_id, _ = new_case(self.home)

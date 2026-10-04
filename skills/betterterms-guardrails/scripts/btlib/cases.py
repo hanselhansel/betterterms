@@ -35,6 +35,15 @@ def case_dir(case_id):
     return home() / "cases" / case_id
 
 
+def ensure_home():
+    """Create ``BETTERTERMS_HOME`` when missing and pin it to 0700:
+    the directory holds case floors and the savings ledger."""
+    h = home()
+    h.mkdir(parents=True, exist_ok=True)
+    os.chmod(h, 0o700)
+    return h
+
+
 def require_case(case_id):
     # Case ids are file names: anything outside [a-z0-9-] could leave
     # the cases directory, so it is rejected before touching the path.
@@ -81,7 +90,7 @@ def create_case(pack, mode="act", direction="pay"):
         raise BtError(f"bad mode {mode!r}; expected act or coach")
     if direction not in ("pay", "receive"):
         raise BtError(f"bad direction {direction!r}; expected pay or receive")
-    root = home() / "cases"
+    root = ensure_home() / "cases"
     root.mkdir(parents=True, exist_ok=True)
     os.chmod(root, 0o700)
     for _ in range(5):

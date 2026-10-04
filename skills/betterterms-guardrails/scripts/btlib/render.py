@@ -119,6 +119,18 @@ def _short(text):
     return text if len(text) <= 20 else text[:20] + "..."
 
 
+def _enc_len(piece, find):
+    """UTF-8 length of one rendered piece. A lone surrogate or any
+    character UTF-8 cannot carry is a blocking error, never an
+    uncaught exception: the message could never be sent verbatim.
+    The replacement width only feeds the size cap."""
+    try:
+        return len(piece.encode("utf-8"))
+    except UnicodeEncodeError:
+        find.errors.append("unusual characters in the message")
+        return len(piece.encode("utf-8", "replace"))
+
+
 def _index(items, key):
     """First item per ``key`` value in a plan list, as a lookup dict
     built once per render so ``{option:L}`` and ``{fact:id}`` resolve
@@ -151,13 +163,13 @@ def render(template, offer, offer_period, plan, plan_period,
         _bad_brace(literal, find)
         out.append(literal)
         masked.append(literal)
-        size += len(literal.encode("utf-8"))
+        size += _enc_len(literal, find)
         text, mask = _resolve(m.group(1), find, offer, offer_period,
                               plan, plan_period, in_amounts,
                               options, facts, currency)
         out.append(text)
         masked.append(mask)
-        size += len(text.encode("utf-8"))
+        size += _enc_len(text, find)
         pos = m.end()
         if size > MAX_TEXT:
             find.oversized = True
@@ -166,7 +178,7 @@ def render(template, offer, offer_period, plan, plan_period,
     _bad_brace(tail, find)
     out.append(tail)
     masked.append(tail)
-    size += len(tail.encode("utf-8"))
+    size += _enc_len(tail, find)
     if size > MAX_TEXT:
         find.oversized = True
     else:

@@ -7,6 +7,7 @@ rounded to the currency minor unit.
 
 import json
 import math
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -96,8 +97,11 @@ def add(case_dir, before, after, period):
         "recorded_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
     }
     path = ledger_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a", encoding="utf-8") as f:
+    cases.ensure_home()
+    # The ledger holds per-case savings; like .floor it is created
+    # owner-only.
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+    with os.fdopen(fd, "a", encoding="utf-8") as f:
         f.write(json.dumps(record, sort_keys=True) + "\n")
     return saved
 

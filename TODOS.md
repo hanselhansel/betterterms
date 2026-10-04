@@ -12,6 +12,7 @@ Deferred from the step 1 ship (owner approved 2026-10-03), to fix first in step 
 - **Priority:** P2. Commitment word forms missing: agrees, charged, cancelling, cancellation, paid, paying, deals, "sign us up", "count us in". (btlib/wordlists.py)
 - **Priority:** P3. "dozen" and ordinals (fifth, ninth, twelfth, twentieth) are not number words. (btlib/wordlists.py)
 - **Priority:** P3. Very large plan.yaml (2,600 facts) takes about 1.5 s CPU to parse; cap input file size before parsing. (btlib/cases.py, bt.py)
+- **Priority:** P3. Free-text period words after a placeholder ({offer}/month, {offer} per month) with a once-period offer pass; the period should come from the structured period field (best-effort word lists, 0010 amendment).
 
 ## Completed
 
