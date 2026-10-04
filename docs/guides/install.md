@@ -34,8 +34,8 @@ on:
   `extraKnownMarketplaces` and `betterterms@betterterms` under
   `enabledPlugins`. Commit the result.
 - When a session starts in that repo, Claude Code installs the enabled
-  plugin from the marketplace, so the skills, the typed `bt` commands
-  (`bt approve`, `bt floor`), and the read guard run in cloud sessions
+  plugin from the marketplace, so the skills and the typed `bt`
+  commands (`bt approve`, `bt floor`) run in cloud sessions
   too. That install reads `github.com/hanselhansel/betterterms`, which
   must be reachable from the session; public works. The script does
   not copy the skills in this mode: the plugin supplies them, and a
@@ -43,7 +43,9 @@ on:
 - `python3 scripts/vendor-into-repo --no-plugin <repo>` vendors only
   the skills into `<repo>/.claude/skills/` (with a
   `.betterterms-version` marker) for sessions that cannot reach the
-  marketplace. The typed commands and the read guard do not run then.
+  marketplace. No prompt hook runs then, so a typed `bt` command
+  reaches the model as ordinary chat text; the terminal
+  `case set-floor` command is the only safe floor path there.
 
 In a Projects thread, the skills post the same views as interactive
 widgets: cases, the approval card, the terms editor, savings. A widget

@@ -28,6 +28,5 @@ you named.
 ## Fallback
 
 When a connector is missing or the user prefers, ask for a file drop:
-the user drops exports into `cases/<id>/inbox/` or pastes the content.
-The inbox is the only drop point the guard lets you read; do not write
-into it. Read only the files provided.
+the user drops exports into the case folder or pastes the content. Read
+only the files provided.

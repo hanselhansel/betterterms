@@ -18,9 +18,12 @@ writes it through `case set-floor` on stdin, and a `bt floor
 <case_id> <amount>` chat message is caught by a `UserPromptSubmit`
 hook, written through stdin, and blocked so the model never receives
 it. In a Projects thread that message stays visible to project
-members, so the terminal stays the better path there; a
-`PreToolUse` hook also denies reads of `.floor` files, `held/`
-records, and the session transcript.
+members, so the terminal stays the better path there.
+
+State the boundary plainly: outside the mod, the agent runs as your
+user, so nothing technical stops it from reading `.floor` if it
+tries. The skills instruct it never to, and the gate blocks any draft
+that states the walk-away.
 
 ## The gate's two tiers
 
@@ -106,7 +109,7 @@ order). Both come through the same prompt hook.
 | Mode | Where | What approval means |
 |---|---|---|
 | Mod | Claude Code terminal or Desktop with `betterterms-mod` | A keypress or click recorded in mod state the agent cannot write. The strongest path: no file the agent creates, and no text in a counterparty's email, can approve a draft. |
-| Widget | Projects cloud threads with a widget-posting tool | A `held/<hash>.approved` file written by the prompt hook after your typed `bt approve` (the widget button only fills the message box; you press Enter). Weaker than the mod: the agent can write files, so the `PreToolUse` guard denying writes under `held/` is the only guard against a forged approval, and it is best effort. |
+| Widget | Projects cloud threads with a widget-posting tool | A `held/<hash>.approved` file written by the prompt hook after your typed `bt approve` (the widget button only fills the message box; you press Enter). Weaker than the mod: the agent runs as you and can write files, so nothing technical stops a forged marker; the skills' instruction never to write one is the boundary there. |
 | Chat | Codex, plain cloud sessions, `claude -p` | The same typed commands and the same approval file; with no prompt hook the agent runs `bt.py held approve` after you type `bt approve`. Same strength as the widget mode. |
 
 Every mode shares the guarantee that counts most: text inside an
@@ -120,10 +123,11 @@ triggering body counts as you.
   `bt.py gate`. An agent acting outside that path is outside its reach. The
   skills route every send through the gate, and the default autonomy asks
   before every send, which keeps a human on each turn.
-- Outside the mod, the agent runs as your user. The `PreToolUse` guard
-  scopes private state to the betterterms home and normalizes quoting and
-  path tricks, but a same-user agent that sets out to bypass it can: only
-  the mod's in-memory approval resists that, because it lives in state the
+- Outside the mod, the agent runs as your user. Nothing technical
+  stops it from reading the walk-away file or writing an approval
+  marker if it tries; the skills instruct it never to, and the gate
+  blocks any draft that states the walk-away. Only the mod's in-memory
+  approval resists a determined agent, because it lives in state the
   agent's file access cannot write.
 - It checks structure, not truth. A sourced fact can still be wrong; source
   records carry URLs and read dates so you can check them.

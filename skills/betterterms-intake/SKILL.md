@@ -89,10 +89,10 @@ drafted: misreading them is the biggest source of lost value.
      better path whenever the user has a terminal.
    - Never repeat the value back. Never write it into `brief.yaml`,
      `plan.yaml`, `thread.md`, a draft, or any other file. Only the gate
-     and the scorer can read it.
+     and the scorer read it.
    - Never run `case set-floor` yourself, with or without a heredoc:
-     the read guard denies it in a session that has the guard, and
-     everywhere else the value would pass through you. If the user
+     the value would pass through you, and the skills instruct you
+     never to read, print, or write the walk-away. If the user
      has no terminal and the session has no prompt hook and no
      widget tool, say so: there is no safe way to set the number in
      that chat, and they need a terminal.

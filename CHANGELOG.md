@@ -18,19 +18,14 @@
   marker it re-armed was not spent by the re-gate. In mod mode an
   approval lives in `$.state` only, recorded by the pane press or the
   mod's `prompt.submit` hook on a typed `bt approve`; a `.approved`
-  file on disk never authorizes a send by itself, and the file guard
-  denies `held disarm` to the agent like `held approve`.
+  file on disk never authorizes a send by itself.
 - Typed commands through a `UserPromptSubmit` hook
   (`hooks/prompt_commands.py`): `bt approve`, `bt reject`, `bt floor`,
   `bt terms` with `target=` and `alternative=` keys in either order.
   `bt floor` writes on stdin and blocks the prompt so the model never
   receives the walk-away; malformed or embedded lookalikes block too.
-  A `PreToolUse` hook scoped to the betterterms home denies agent
-  access to `.floor`, `held/`, `ledger.jsonl`, `config.yaml`, the
-  session log, and `case set-floor` / `held approve` / `held reject`
-  calls, while the skills' own case files stay writable. In a cloud
-  session the session-start hook warns when the betterterms home sits
-  in the ephemeral VM home.
+  In a cloud session the session-start hook warns when the betterterms
+  home sits in the ephemeral VM home.
 - `betterterms-mod`, an optional Claude Code cockpit plugin: pane with
   Cases, Approvals and Savings tabs, band above the prompt, gate rows,
   toasts, and a terms editor that sets the walk-away by drag, nudge or
@@ -63,8 +58,9 @@
   scans case folders on stat fingerprints with burst reuse, and its
   send guard applies one strict shape: exactly one argument equals the
   freshly re-gated rendered text, other string leaves are
-  whitespace-free address/id fields or a short digit-free
-  subject/title, numeric leaves deny, and a Bash call is never a send.
+  whitespace-free tokens under any key name (addresses, channel,
+  message and thread ids) or a subject/title of at most 80 characters
+  with no digits, numeric leaves deny, and a Bash call is never a send.
 - `bt.py ledger add` accepts `--period once` for one-time savings,
   recorded as `saved_once` and totaled in `once_by_currency` /
   `once_by_pack`, never folded into the per-year figures; widgets,
@@ -103,9 +99,14 @@
   Codex (plugin), and agents that read a vendored `skills/` tree.
 - The optional anonymized response-sharing line; no such code ships.
 
-### Deferred (decision 0015)
+### Deferred
+- The always-on `PreToolUse` file guard (decision 0019): removed after
+  review showed it blocking first-case writes, research source adds
+  and files in unrelated projects, while staying bypassable because
+  the hook and the agent run as the same OS user. Docs state the
+  same-user limit plainly; an OS-level guard design is a P1 TODO.
 - The 12 negotiation metrics, multi-turn simulated counterparties,
-  and the 14 pack eval cases; evals stay at 12 cases.
+  and the 14 pack eval cases; evals stay at 12 cases (decision 0015).
 
 ## [0.1.0] - 2026-10-03
 

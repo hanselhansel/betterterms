@@ -37,7 +37,7 @@ Windows is unsupported (`scripts/doctor` reports it).
 | Host | Install |
 |---|---|
 | Claude Code (terminal, desktop) | `/plugin marketplace add hanselhansel/betterterms`, then `/plugin install betterterms@betterterms`. Auto-update for third-party marketplaces is off until you enable it. |
-| Claude Code cloud sessions | Run `python3 scripts/vendor-into-repo <repo>`: it enables the plugin through `<repo>/.claude/settings.json`, so the session installs it (skills, typed commands, read guard) from `github.com/hanselhansel/betterterms`, which must be reachable from the session (public works). `--no-plugin` vendors the skills alone for sessions that cannot reach the marketplace. Cases kept in the cloud home vanish when the VM ends; export what you want to keep. |
+| Claude Code cloud sessions | Run `python3 scripts/vendor-into-repo <repo>`: it enables the plugin through `<repo>/.claude/settings.json`, so the session installs it (skills, typed commands) from `github.com/hanselhansel/betterterms`, which must be reachable from the session (public works). `--no-plugin` vendors the skills alone for sessions that cannot reach the marketplace. Cases kept in the cloud home vanish when the VM ends; export what you want to keep. |
 | Codex | `codex plugin marketplace add hanselhansel/betterterms`, then `codex plugin add betterterms@betterterms`. Codex has no slash commands: name the skill instead (`betterterms-start` routes, `betterterms-subscriptions` starts a pack). |
 | Other Agent Plugins readers | The repo root carries an Agent Plugins 1.0 `plugin.json` pointing at `skills/`; add the repo as a plugin source in your host. |
 | Any Agent Skills reader | `python3 scripts/install-skills --target ~/.agents/skills`. |
@@ -81,9 +81,9 @@ explicit yes.
 
 ## Safety model
 
-- You type your walk-away number in your own terminal. It lands in a file
-  only the gate and the scorer read; the model never sees it and the chat
-  never repeats it.
+- You type your walk-away number in your own terminal. It lands in a
+  `.floor` file the gate and the scorer read; the skills instruct the
+  model never to read it, and the chat never repeats it.
 - Every message passes a coded pre-send gate. Offers worse than your number
   block. Irreversible actions need your explicit yes.
 - Message text that looks risky (money typed outside the price placeholders,
@@ -94,8 +94,12 @@ explicit yes.
 
 The gate is a safety net, not a sandbox. The default autonomy asks before
 every send. One honest limit: outside the mod the agent runs as your
-user, so the file guard is best effort; only the mod's in-memory
-approval resists a determined agent. Full detail:
+user, so nothing technical stops it from reading the walk-away file or
+writing an approval marker if it tries. The skills instruct it never to,
+the gate blocks any draft that states the walk-away, and typed `bt`
+commands never reach the model where the prompt hook handles them. In
+the mod, approval comes only from a pane press or a `bt approve` you
+type yourself. Full detail:
 [docs/guides/safety-model.md](docs/guides/safety-model.md).
 
 ## Privacy

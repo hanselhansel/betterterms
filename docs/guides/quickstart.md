@@ -126,8 +126,9 @@ plainly:
 
 The honest line on strength: mod approval is the strongest, because a
 keypress lands in state the agent can never write. Widget and chat
-approval rely on the `PreToolUse` hook that denies agent writes under
-`held/`; it is best effort, since the agent can write files. All three
+approval land as a file the agent could also write: it runs as your
+user, so nothing technical stops a forged marker; the skills' rule
+never to write one is the boundary there. All three
 modes share the guarantee that counts: text inside a counterparty's
 message can never become a user message, so nothing the other side
 writes can approve a draft.

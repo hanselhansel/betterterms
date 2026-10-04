@@ -20,7 +20,8 @@ exact rendered text to send.
 
 - Your walk-away number lives in `.floor` (mode 0600) in the case folder,
   written once from a hidden terminal prompt. Only the gate and the scorer
-  read it. It is never printed, never written into a draft, and block reasons
+  read it, and the skills instruct the agent never to. It is never printed,
+  never written into a draft, and block reasons
   stay generic so a single answer never states it. A determined agent could
   still probe the gate with repeated guesses to triangulate the number; the
   skills cap gate calls per turn and a probe counter is on the TODO list.
@@ -54,12 +55,14 @@ exact rendered text to send.
   redraft at most once on a floor-related block before escalating; repeated
   probes could still triangulate the walk-away, so a probe counter is a
   tracked TODO.
-- Outside the optional mod, the agent runs as your user. The `PreToolUse`
-  guard scopes the private files (`.floor`, `held/`, `ledger.jsonl`,
-  `config.yaml`, the session log) to the betterterms home and normalizes
-  quoting and path tricks, but it is best effort: a determined agent acting
-  as you can still reach them. Only the mod's in-memory approval resists
-  that, because it lives in state file access cannot write.
+- Outside the optional mod, the agent runs as your user. Nothing
+  technical stops it from reading `.floor`, `held/` markers, the ledger,
+  or the session log, or from writing an approval file, if it sets out
+  to: the boundary there is the skills' instruction never to do those
+  things, plus the gate blocking any draft that states the walk-away.
+  Typed `bt` commands never reach the model where the prompt hook
+  handles them. Only the mod's in-memory approval resists a determined
+  agent, because it lives in state file access cannot write.
 - It runs on the machine and the files it can read. Keep `~/.betterterms`
   yours.
 

@@ -7,9 +7,9 @@ Default run: merges two keys into REPO/.claude/settings.json,
 creating the file when absent -- the betterterms marketplace under
 extraKnownMarketplaces and betterterms@betterterms under
 enabledPlugins. Claude Code installs enabled plugins from known
-marketplaces when a session starts in that repo, so the skills, the
-typed bt commands hook and the read guard all arrive with the plugin
-in cloud sessions too. The repo must be reachable from the session
+marketplaces when a session starts in that repo, so the skills and
+the typed bt commands hook arrive with the plugin in cloud sessions
+too. The repo must be reachable from the session
 (public, or somewhere its credentials can clone) for that install to
 work. Every existing key is kept and entries are never duplicated.
 The skills are not copied in this mode: the plugin supplies them, so
@@ -19,7 +19,8 @@ a vendored copy would only load each skill twice.
 skills/betterterms-* folder into REPO/.claude/skills/, writing
 REPO/.claude/skills/.betterterms-version with this repo's VERSION.
 Choose this when the session cannot reach the marketplace; the
-skills work but the typed bt commands and the read guard do not.
+skills work but the prompt hook does not, so typed bt commands
+reach the model as ordinary chat text.
 
 An existing .claude/skills/betterterms-* directory is replaced only
 when it looks like a previous vendored copy (SKILL.md naming the
