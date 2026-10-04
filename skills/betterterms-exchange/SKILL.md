@@ -66,23 +66,15 @@ or ask for their offer when it is not. Then gate, send, and log as below.
 
    Read the band and the escalate list:
 
-   - `near_floor`: do not counter. Draft `action: accept` of the
-     counterparty's offer (`offer` equal to their offer, `period`
-     matching theirs, `{quote:1}` or `{offer}` in the template)
-     and run the gate in step 5. An accept always needs the
-     user's approval, so the gate holds it; the user then
-     approves (one press or `bt approve`) or rejects. Tell the
-     user in one or two sentences that the offer is close to
-     their walk-away and give one recommendation: accept, counter
-     at a named amount from the plan, or walk away.
-   - `unknown`, `below_floor`: escalate to the user. Escalate
-     means the turn ends here: do not write `draft.yaml`, do not
-     call the gate, and do not counter. Show the user the
-     counterparty's offer, the band in plain words (`unknown`:
-     "the offer cannot be scored against your limits",
-     `below_floor`: "past your walk-away"), and one
-     recommendation: accept, counter at a named amount from the
-     plan, or walk away. Then wait for the user's decision.
+   - `unknown`, `near_floor`, `below_floor`: escalate to the user.
+     Escalate means the turn ends here: do not write `draft.yaml`,
+     do not call the gate, and do not counter. Show the user the
+     counterparty's offer, the band in plain words (`unknown`: "the
+     offer cannot be scored against your limits", `near_floor`:
+     "close to your walk-away", `below_floor`: "past your
+     walk-away"), and one recommendation: accept, counter at a
+     named amount from the plan, or walk away. Then wait for the
+     user's decision.
    - `at_or_above_target`: ask the user to approve acceptance.
    - `in_band`: negotiate per the plan.
 3. Verify new claims in the message ("lowest price", "expires today",
