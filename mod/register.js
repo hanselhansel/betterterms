@@ -23,6 +23,7 @@
 
 import * as C from "./lib/cases.js";
 import * as A from "./lib/approvals.js";
+import * as IO from "./lib/hostio.js";
 import * as W from "./lib/wiring.js";
 import * as T from "./ui/terms.js";
 import { paneTree } from "./ui/pane.js";
@@ -76,6 +77,7 @@ export const paneActions = ($, snap) => W.paneActions(hostOf($), snap);
 const plausible = (ss) => ss.some((s) => s.length >= C.SEND_MIN_CHARS || /-\d{8}-/.test(s));
 
 export function register(on) {
+  IO.resetBt();
   on("session.start", async ($, e, next) => W.sessionStart(hostOf($), e, next));
 
   on("command.run", { command: "betterterms" }, ($) => W.runCommand(hostOf($)));

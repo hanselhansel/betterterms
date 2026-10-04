@@ -30,11 +30,32 @@ export async function listIf(host, path) {
 }
 
 // bt.py lives in the core plugin's skill tree, probed once per call.
+// Resolved bt.py paths are stable for the session, so a hit is cached
+// per plugin root. A miss is re-probed each call: the core plugin may
+// be installed or upgraded while the session is live.
+const btFound = new Map();
+
 export async function findBt(host) {
-  for (const p of C.btPaths(host.pluginRoot)) {
-    if (await host.fsExists(p)) return p;
+  const root = host.pluginRoot;
+  const hit = btFound.get(root);
+  if (hit !== undefined) return hit;
+  const sibs = C.normPath(`${root}/../../betterterms`);
+  const versions = (await listIf(host, sibs))
+    .filter((e) => e.kind === "dir")
+    .map((e) => String(e.name))
+    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
+    .reverse();
+  for (const p of C.btPaths(root, versions)) {
+    if (await host.fsExists(p)) {
+      btFound.set(root, p);
+      return p;
+    }
   }
   return null;
+}
+
+export function resetBt() {
+  btFound.clear();
 }
 
 // The one process wrapper. `extra` carries init fields a caller adds;

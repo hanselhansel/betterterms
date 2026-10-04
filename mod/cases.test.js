@@ -4,9 +4,11 @@ import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 
 import * as C from "./lib/cases.js";
+import * as IO from "./lib/hostio.js";
+import { hostOf } from "./register.js";
 import {
-  BRIEF, CASE_ID, DIR, DRAFT, GATE, GATE_BLOCK, GATE_NEEDS_APPROVAL,
-  RENDERED, THREAD,
+  BRIEF, BT, CASE_ID, DIR, DRAFT, GATE, GATE_BLOCK, GATE_NEEDS_APPROVAL,
+  RENDERED, THREAD, fakeDollar,
 } from "./testkit.js";
 
 describe("deriveCase", () => {
@@ -143,6 +145,34 @@ describe("decideSend", () => {
     assert.equal(v.kind, "held");
     assert.equal(v.hash, "f".repeat(64));
     assert.equal(C.decideSend({ result: "needs_approval", reasons: [] }, c).hash, null);
+  });
+});
+
+describe("bt.py resolution", () => {
+  const REL = "skills/betterterms-guardrails/scripts/bt.py";
+  const MROOT = "/cache/betterterms/betterterms-mod/0.10.0";
+
+  test("finds the core plugin two levels up in the marketplace cache", async () => {
+    // Marketplace plugins install to cache/<market>/<plugin>/<version>;
+    // the mod's own version differs from the core plugin's, so the
+    // sibling's version dir is discovered by listing, not guessed.
+    const installed = `/cache/betterterms/betterterms/0.10.0/${REL}`;
+    const { $ } = fakeDollar({
+      files: { [installed]: "#!" },
+      dirs: {
+        "/cache/betterterms/betterterms": [
+          { name: "0.9.0", kind: "dir", isLink: false },
+          { name: "0.10.0", kind: "dir", isLink: false },
+        ],
+      },
+    });
+    $.plugin.root = MROOT;
+    assert.equal(await IO.findBt(hostOf($)), installed);
+  });
+
+  test("the in-repo sibling skills dir still resolves", async () => {
+    const { $ } = fakeDollar({ files: { [BT]: "#!" } });
+    assert.equal(await IO.findBt(hostOf($)), BT);
   });
 });
 

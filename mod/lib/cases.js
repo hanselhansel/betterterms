@@ -244,13 +244,30 @@ export function toastText(id, n) {
   return n === 1 ? `New reply in ${id}.` : `${n} new replies in ${id}.`;
 }
 
-// bt.py lives in the core plugin's skill tree. From the installed mod
-// that is a sibling plugin dir; run in place from the repo it is the
-// repo's skills/ dir. Both candidates are tried in order.
-export function btPaths(root) {
+// "." and ".." segments resolved lexically: some engine fs calls take
+// the path verbatim, so candidates arrive already clean.
+export function normPath(p) {
+  const out = [];
+  for (const seg of String(p).split("/")) {
+    if (seg === "" || seg === ".") continue;
+    if (seg === "..") { out.pop(); continue; }
+    out.push(seg);
+  }
+  return `/${out.join("/")}`;
+}
+
+// bt.py lives in the core plugin's skill tree. In the repo the mod dir
+// sits beside skills/, so ../skills reaches it. In a real install the
+// marketplace cache lays plugins as <cache>/<market>/<plugin>/<version>
+// and each plugin carries its own version dir, so the core plugin is
+// two levels up under betterterms/<its version>; the caller passes the
+// version dir names it found by listing, newest first.
+export function btPaths(root, versions = []) {
+  const rel = "skills/betterterms-guardrails/scripts/bt.py";
   return [
-    `${root}/../betterterms/skills/betterterms-guardrails/scripts/bt.py`,
-    `${root}/../skills/betterterms-guardrails/scripts/bt.py`,
+    ...versions.map((v) => normPath(`${root}/../../betterterms/${v}/${rel}`)),
+    normPath(`${root}/../betterterms/${rel}`),
+    normPath(`${root}/../${rel}`),
   ];
 }
 

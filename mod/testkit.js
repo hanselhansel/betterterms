@@ -65,9 +65,9 @@ export const LEDGER = [
 export const CASE_ID = "bills-20261003-a1b2";
 export const HOME = "/bt";
 export const DIR = `${HOME}/cases/${CASE_ID}`;
-// The second btPath candidate register.js probes: plugin root /p/mod +
-// ../skills resolves to this literal string in the fake fs.
-export const BT = "/p/mod/../skills/betterterms-guardrails/scripts/bt.py";
+// The bt.py path the repo layout resolves to: plugin root /p/mod +
+// ../skills, normalized, lands here in the fake fs.
+export const BT = "/p/skills/betterterms-guardrails/scripts/bt.py";
 
 export function caseFiles(over = {}) {
   return {
