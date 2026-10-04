@@ -1,7 +1,8 @@
 """Savings ledger. One JSON line per closed case in
 ``$BETTERTERMS_HOME/ledger.jsonl``. ``saved_per_year`` is positive when
 the outcome is better than before: ``before - after`` for ``pay`` cases,
-``after - before`` for ``receive`` cases, times the periods per year.
+``after - before`` for ``receive`` cases, times the periods per year,
+rounded to the currency minor unit.
 """
 
 import json
@@ -9,7 +10,7 @@ import math
 from datetime import datetime, timezone
 from pathlib import Path
 
-from . import BtError, MAX_AMOUNT, cases
+from . import BtError, MAX_AMOUNT, cases, minor
 
 PERIODS_PER_YEAR = {"month": 12, "year": 1}
 
@@ -23,15 +24,19 @@ def _clean_number(value):
 
 
 def _records():
-    """(records, skipped): every line that fails to parse, is not an
-    object or carries a non-numeric or over-cap ``saved_per_year`` is
-    skipped and counted. A corrupt or oversized line warns, it never
-    sinks the whole ledger."""
+    """(records, skipped): every line that fails to decode as UTF-8,
+    fails to parse, is not an object or carries a non-numeric or
+    over-cap ``saved_per_year`` is skipped and counted. A corrupt or
+    oversized line warns, it never sinks the whole ledger."""
     path = ledger_path()
     records, skipped = [], 0
     if path.is_file():
-        for line in path.read_text(encoding="utf-8").splitlines():
-            line = line.strip()
+        for raw_line in path.read_bytes().splitlines():
+            try:
+                line = raw_line.decode("utf-8").strip()
+            except UnicodeDecodeError:
+                skipped += 1
+                continue
             if not line:
                 continue
             try:
@@ -74,7 +79,7 @@ def add(case_dir, before, after, period):
     currency = cases.currency_of(plan, brief)
     multiplier = PERIODS_PER_YEAR[period]
     delta = (after - before) if direction == "receive" else (before - after)
-    saved = _clean_number(delta * multiplier)
+    saved = _clean_number(minor(delta * multiplier))
     if abs(saved) > MAX_AMOUNT:
         # A legal pair can still compound past the cap; it must not
         # land a line the total would only skip.

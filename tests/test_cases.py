@@ -4,7 +4,17 @@ import stat
 import unittest
 from pathlib import Path
 
-from bt_helpers import BtTestCase, new_case, run_bt, run_bt_json
+from bt_helpers import (
+    BtTestCase,
+    inbound_msg,
+    new_case,
+    run_bt,
+    run_bt_json,
+    send_draft,
+    write_case_files,
+    write_draft,
+)
+from btlib import yaml
 
 CASE_ID_RE = re.compile(r"^[a-z0-9-]+-\d{8}-[0-9a-f]{4}$")
 
@@ -157,6 +167,33 @@ class CaseTest(BtTestCase):
         self.assertEqual(proc.returncode, 0, proc.stdout)
         self.assertIsNone(out["brief"])
         self.assertIsNone(out["plan"])
+
+    # A missing or empty brief.yaml is a broken case file: direction,
+    # mode and autonomy are unknowable, so gate and score exit 2
+    # instead of defaulting to pay/act/2.
+    def test_missing_or_empty_brief_exits_2(self):
+        for missing in (True, False):
+            with self.subTest(missing=missing):
+                case_id, case_dir = new_case(self.home)
+                write_case_files(case_dir, floor=1200)
+                brief = case_dir / "brief.yaml"
+                if missing:
+                    brief.unlink()
+                else:
+                    brief.write_text("")
+                draft = write_draft(self.tmp, send_draft())
+                proc, out = run_bt_json(
+                    self.home, "gate", case_id, "--draft", str(draft)
+                )
+                self.assertEqual(proc.returncode, 2, out)
+                self.assertIn("error", out)
+                ipath = self.tmp / f"inbound-{missing}.yaml"
+                ipath.write_text(yaml.dump(inbound_msg(offer=80)))
+                proc, out = run_bt_json(
+                    self.home, "score", case_id, "--inbound", str(ipath)
+                )
+                self.assertEqual(proc.returncode, 2, out)
+                self.assertIn("error", out)
 
 
 if __name__ == "__main__":
