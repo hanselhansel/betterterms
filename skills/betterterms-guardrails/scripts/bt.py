@@ -86,9 +86,9 @@ def cmd_score(args):
     d = cases.require_case(args.case_id)
     try:
         inbound = inputs.load_yaml_file(args.inbound, "inbound")
+        return 0, score.classify(d, inbound)
     except inputs.UnsafeInput as e:
         return _blocked_input(e)
-    return 0, score.classify(d, inbound)
 
 
 def cmd_ledger_add(args):

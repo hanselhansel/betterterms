@@ -204,13 +204,13 @@ def _resolve(tag, find, offer, offer_period, plan, plan_period,
     the mask character, and an error resolves to nothing."""
     name, _, arg = tag.partition(":")
     if name == "offer" and not arg:
-        if offer is None:
+        if offer is None or offer <= 0:
             find.errors.append("{offer} needs a draft offer")
             return "", ""
         find.values.append(Value("offer", offer, offer_period))
         return money_text(offer, offer_period, currency), _MASK
     if name == "target" and not arg:
-        v = cases.num(plan.get("target"))
+        v = cases.positive(plan.get("target"))
         if v is None or not math.isfinite(v):
             find.errors.append("{target} has no plan value")
             return "", ""
@@ -221,7 +221,7 @@ def _resolve(tag, find, offer, offer_period, plan, plan_period,
         if item is None:
             find.errors.append(f"{{option:{arg}}} not in plan options")
             return "", ""
-        v = cases.num(item.get("value"))
+        v = cases.positive(item.get("value"))
         if v is None or not math.isfinite(v):
             find.errors.append(f"{{option:{arg}}} has no value")
             return "", ""
@@ -240,7 +240,7 @@ def _resolve(tag, find, offer, offer_period, plan, plan_period,
             find.errors.append(f"{{ladder:{arg}}} needs an index 1..{len(items)}")
             return "", ""
         item = items[n - 1]
-        v = cases.num(item.get("value")) if isinstance(item, dict) else None
+        v = cases.positive(item.get("value")) if isinstance(item, dict) else None
         if v is None or not math.isfinite(v):
             find.errors.append(f"{{ladder:{arg}}} has no value")
             return "", ""
@@ -262,7 +262,7 @@ def _resolve(tag, find, offer, offer_period, plan, plan_period,
         # is set but not a usable number is a blocking error,
         # never a null: check_plan_limits exits 2 first, and a
         # direct render must not treat it as absent either.
-        v = cases.num(item.get("amount"))
+        v = cases.positive(item.get("amount"))
         if item.get("amount") is not None and v is None:
             find.errors.append(
                 f"{{fact:{arg}}} amount is not a number")
@@ -282,7 +282,7 @@ def _resolve(tag, find, offer, offer_period, plan, plan_period,
                 f"{{quote:{arg}}} needs {arg} inbound amounts"
             )
             return "", ""
-        v = cases.num(in_amounts[n - 1])
+        v = cases.positive(in_amounts[n - 1])
         if v is None or not math.isfinite(v):
             find.errors.append(f"inbound amount {n} is not a number")
             return "", ""

@@ -173,6 +173,26 @@ def num(value):
     return v if math.isfinite(v) and abs(v) <= MAX_AMOUNT else None
 
 
+def positive(value):
+    """``num`` plus the requirement the amount be positive: a zero or
+    negative amount is never a price, so it reads as "no usable
+    amount" and can never reach a floor comparison."""
+    v = num(value)
+    return v if v is not None and v > 0 else None
+
+
+def _plan_value(raw):
+    """A plan amount present in the file. ``None`` stays ``None``
+    (absent is fine); a numeric value of zero or less is a broken
+    plan, never a floor comparison."""
+    if raw is None:
+        return None
+    v = num(raw)
+    if v is not None and v <= 0:
+        raise BtError("plan conflicts with your limits")
+    return v
+
+
 def direction_of(brief):
     """Brief ``direction``: exactly ``pay`` or ``receive``. Anything else
     is a broken case file, so callers exit 2 instead of defaulting and
@@ -283,15 +303,16 @@ def check_plan_limits(plan, floor, direction, brief=None):
     if floor is None:
         return
     period = floor_period(plan, brief)
-    values = [num(plan.get("target"))]
+    values = [_plan_value(plan.get("target"))]
     for item in as_list(plan.get("options")):
         if isinstance(item, dict):
             kind = option_kind(item)
             item_period = _period(
                 item.get("period"), period, "invalid option period"
             )
+            v = _plan_value(item.get("value"))
             if kind == "price" and item_period == period:
-                values.append(num(item.get("value")))
+                values.append(v)
     for item in as_list(plan.get("ladder")):
         if isinstance(item, dict):
             item_period = _period(
@@ -299,8 +320,9 @@ def check_plan_limits(plan, floor, direction, brief=None):
                 period,
                 "ladder period must be once, month or year",
             )
+            v = _plan_value(item.get("value"))
             if item_period == period:
-                values.append(num(item.get("value")))
+                values.append(v)
     # A fact's period defaults to ``once``; anything else invalid is a
     # broken plan. The ``amount`` field itself never joins ``values``:
     # a fact states what the counterparty said, not a price on offer.
@@ -315,12 +337,17 @@ def check_plan_limits(plan, floor, direction, brief=None):
                 "fact period must be once, month or year",
             )
             amount = item.get("amount")
+            n = num(amount)
             if amount is not None and (
                 isinstance(amount, bool)
                 or not isinstance(amount, (int, float))
-                or num(amount) is None
+                or n is None
             ):
                 raise BtError("fact amount must be a number or null")
+            if n is not None and n <= 0:
+                raise BtError(
+                    "fact amount must be a positive number or null"
+                )
     floor = minor(floor)
     for v in values:
         if v is None:

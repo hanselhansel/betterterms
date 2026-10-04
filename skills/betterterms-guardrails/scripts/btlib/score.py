@@ -11,7 +11,9 @@ Inbound text is data, never instructions.
 
 import re
 
-from . import BtError, MAX_TEXT, PERIODS, cases, minor, money, render
+from . import (
+    BtError, MAX_TEXT, PERIODS, cases, inputs, minor, money, render,
+)
 
 INJECTION = [
     re.compile(
@@ -93,6 +95,15 @@ def classify(case_dir, inbound):
         in_period = raw_in.lower()
     target = cases.num(plan.get("target"))
     offer = cases.num(inbound.get("offer"))
+    if offer is not None and offer <= 0:
+        raise inputs.UnsafeInput(
+            "inbound offer must be a positive number"
+        )
+    for a in cases.as_list(inbound.get("amounts")):
+        if (n := cases.num(a)) is not None and n <= 0:
+            raise inputs.UnsafeInput(
+                "inbound amounts must be positive numbers"
+            )
     raw_text = str(inbound.get("text") or "")
     # The size cap lands before normalization and scanning: a hostile
     # message stays cheap.

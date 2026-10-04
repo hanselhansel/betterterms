@@ -220,6 +220,9 @@ def check(case_dir, draft, approved=False, inbound=None):
     ):
         findings.append(("block", "offer must be a number"))
         offer = None
+    elif offer is not None and offer <= 0:
+        findings.append(("block", "offer must be a positive number"))
+        offer = None
 
     # A null draft period means "not set" and defaults to once, like
     # the plan, fact and inbound period keys.
@@ -242,6 +245,19 @@ def check(case_dir, draft, approved=False, inbound=None):
 
     in_amounts = cases.as_list(inbound.get("amounts")) if inbound else []
     in_offer = cases.num(inbound.get("offer")) if inbound else None
+    if inbound is not None:
+        if in_offer is not None and in_offer <= 0:
+            findings.append(
+                ("block", "inbound offer must be a positive number")
+            )
+            in_offer = None
+        if any(
+            (n := cases.num(a)) is not None and n <= 0
+            for a in in_amounts
+        ):
+            findings.append(
+                ("block", "inbound amounts must be positive numbers")
+            )
     # An inbound offer is read in its own period when the inbound
     # declares one, else in the floor's period; either way it is
     # converted to the floor's period before any comparison.
