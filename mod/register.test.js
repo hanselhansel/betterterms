@@ -99,7 +99,7 @@ describe("register", () => {
     assert.equal(calls.ask.length, 1);
   });
 
-  test("irreversible at high autonomy: ask, then re-gate with --approved", async () => {
+  test("needs_approval is held for the pane, never asked inline", async () => {
     const cancelDraft = DRAFT.replace("action: send", "action: cancel");
     const aut4 = BRIEF.replace("autonomy: 2", "autonomy: 4");
     const files = caseFiles({
@@ -107,22 +107,35 @@ describe("register", () => {
       [`${DIR}/brief.yaml`]: aut4,
       [`${DIR}/gate.json`]: GATE_NEEDS_APPROVAL,
     });
-    const gates = [
-      { exitCode: 3, stdout: '{"result":"needs_approval","reasons":["action \'cancel\' requires --approved"]}', stderr: "" },
-      { exitCode: 0, stdout: '{"result":"pass","reasons":[]}', stderr: "" },
-    ];
-    const { $, calls } = fakeDollar({ files, dirs: caseDirs(), answer: "Send" });
-    let i = 0;
-    $.process.run = async (argv) => { calls.run.push({ argv }); return gates[Math.min(i++, gates.length - 1)]; };
+    const hash = "ab12cd34".padEnd(64, "0");
+    const { $, calls, state } = fakeDollar({
+      files, dirs: caseDirs(), answer: "Send",
+      run: () => ({
+        exitCode: 3,
+        stdout: JSON.stringify({
+          result: "needs_approval",
+          reasons: ["action 'cancel' requires --approved"],
+          rendered: RENDERED, hash,
+        }),
+        stderr: "",
+      }),
+    });
     const on = fakeOn();
     register(on.on);
-    const { next, marker } = fired();
+    const { next, calls: went } = fired();
     const out = await on.get("tool.call")($, {
       tool: "Bash", tool_use_id: "t5", command: `cancel: ${RENDERED}`,
     }, next);
-    assert.equal(out, marker);
-    assert.equal(calls.run.length, 2);
-    assert.equal(calls.run[1].argv.includes("--approved"), true);
+    assert.equal(went.length, 0);
+    assert.equal(
+      out.deny,
+      `betterterms: held for your approval in the BetterTerms pane (draft ab12cd34).`,
+    );
+    // The old inline ask is gone, and nothing entered session state.
+    assert.equal(calls.ask.length, 0);
+    assert.equal(state.size, 0);
+    assert.equal(calls.run.length, 1);
+    assert.equal(calls.run[0].argv.includes("--approved"), false);
   });
 
   test("session.start registers the command, opens the pane, starts the poll", async () => {

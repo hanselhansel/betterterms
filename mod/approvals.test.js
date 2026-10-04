@@ -1,0 +1,382 @@
+// Approval-flow and cockpit tests for the betterterms mod.
+// Run: node --test mod/
+// Pure helpers and the hook wiring are exercised through the fake
+// engine in testkit.js; the engine-side cases live in
+// approvals.test.tsx for `claude plugin test`.
+
+import { test, describe } from "node:test";
+import assert from "node:assert/strict";
+
+import * as C from "./lib/cases.js";
+import * as A from "./lib/approvals.js";
+import { bandTree } from "./ui/band.js";
+import { paneTree } from "./ui/pane.js";
+import { gateRow } from "./ui/rows.js";
+import { register } from "./register.js";
+import * as R from "./register.js";
+import {
+  BT, BRIEF, CASE_ID, DIR, DRAFT, GATE_NEEDS_APPROVAL, RENDERED, THREAD,
+  caseDirs, caseFiles, fakeDollar, fakeOn, fired,
+} from "./testkit.js";
+
+const HASH = "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890";
+const HASH8 = "abcdef12";
+// PyYAML dumps a multiline scalar single-quoted with each newline as
+// a blank line plus indent; the mini reader folds it back to "\n".
+const HELD_YAML =
+  `hash: ${HASH}\n` +
+  `rendered: '${RENDERED.replace(/'/g, "''").replace(/\n/g, "\n\n  ")}'\n` +
+  `reasons:\n- action 'cancel' requires --approved\n` +
+  `held_at: 2026-10-04T12:00:00+00:00\n`;
+const GATE_HELD_JSON = JSON.stringify({
+  result: "needs_approval",
+  reasons: ["action 'cancel' requires --approved"],
+  rendered: RENDERED,
+  hash: HASH,
+});
+const ELS = { Box: "Box", Text: "Text", Button: "Button", Input: "Input" };
+
+const heldFiles = (extra = {}) => caseFiles({
+  [`${DIR}/draft.yaml`]: DRAFT,
+  [`${DIR}/gate.json`]: GATE_NEEDS_APPROVAL,
+  [`${DIR}/held/${HASH}.yaml`]: HELD_YAML,
+  ...extra,
+});
+const heldDirs = () => caseDirs({
+  [`${DIR}/held`]: [{ name: `${HASH}.yaml`, kind: "file", isLink: false }],
+});
+// The send that matches the held draft's rendered text.
+const sendCall = () => ({
+  tool: "Bash", tool_use_id: "t1", command: `mail v@x <<EOF\n${RENDERED}\nEOF`,
+});
+// The Approvals-tab tree for a one-held-draft snapshot.
+const approvalsCard = async ($) => {
+  const snap = await R.scanCases($);
+  return paneTree(ELS, snap, { tab: 2, selected: null, editing: null }, R.paneActions($, snap));
+};
+
+// Depth-first walk of an h() tree for the first node whose props or
+// text match. The node shape is {tag, props, children}.
+function findNode(tree, pred) {
+  if (!tree || typeof tree !== "object") return null;
+  if (pred(tree)) return tree;
+  for (const ch of tree.children ?? []) {
+    const hit = findNode(ch, pred);
+    if (hit) return hit;
+  }
+  return null;
+}
+const isButton = (n) => n.tag === "Button";
+const byKey = (k) => (n) => n.props?.key === k;
+
+describe("lib/approvals helpers", () => {
+  test("hash8 takes the first 8 hex chars", () => {
+    assert.equal(A.hash8(HASH), HASH8);
+    assert.equal(A.hash8("abc"), "abc");
+    assert.equal(A.hash8(null), null);
+  });
+
+  test("parseHeldFile reads hash, rendered, reasons and held_at", () => {
+    const h = A.parseHeldFile(HELD_YAML);
+    assert.equal(h.hash, HASH);
+    assert.equal(h.rendered, RENDERED);
+    assert.deepEqual(h.reasons, ["action 'cancel' requires --approved"]);
+    assert.equal(h.heldAt, "2026-10-04T12:00:00+00:00");
+    assert.equal(A.parseHeldFile("not yaml: ["), null);
+    assert.equal(A.parseHeldFile("hash: zz\nrendered: x\n"), null);
+  });
+
+  test("heldDenyText names the pane and the hash8", () => {
+    assert.equal(
+      A.heldDenyText(HASH),
+      `betterterms: held for your approval in the BetterTerms pane (draft ${HASH8}).`,
+    );
+    assert.equal(
+      A.heldDenyText(null),
+      "betterterms: held for your approval in the BetterTerms pane.",
+    );
+  });
+
+  test("approvePromptText submits the spec wording", () => {
+    assert.equal(
+      A.approvePromptText(HASH, CASE_ID),
+      `betterterms: the user approved draft ${HASH8} for ${CASE_ID}. ` +
+        "Send it now with the same text.",
+    );
+  });
+
+  test("statusText matches the spec line", () => {
+    assert.equal(A.statusText(4, 486), "bt: 4 cases · $486/yr saved");
+    assert.equal(A.statusText(1, 1440), "bt: 1 case · $1440/yr saved");
+    assert.equal(A.statusText(0, 0), "bt: 0 cases · $0/yr saved");
+  });
+});
+
+describe("thread markers", () => {
+  test("a rejected marker does not poison the thread", () => {
+    const text = THREAD +
+      `## rejected 2026-10-04T13:00:00+00:00 ${HASH}\n` +
+      "## in 2026-10-04T14:00:00+00:00 approved_by_user: no\nlast word\n";
+    const c = C.deriveCase({ id: CASE_ID, threadText: text });
+    assert.equal(c.entries.length, 3);
+    assert.equal(c.entries[2].dir, "in");
+    assert.equal(c.entries[2].snippet, "last word");
+    // The marker is not an entry and does not set the prior snippet.
+    assert.equal(c.entries[1].snippet.startsWith("## rejected"), false);
+    assert.equal(c.lastDir, "in");
+  });
+});
+
+describe("held drafts", () => {
+  test("needs_approval decides held with the full hash", () => {
+    const c = { id: CASE_ID, action: "send", autonomy: 2 };
+    const v = C.decideSend({ result: "needs_approval", reasons: ["x"], hash: HASH }, c);
+    assert.equal(v.kind, "held");
+    assert.equal(v.hash, HASH);
+    assert.equal(C.decideSend({ result: "needs_approval", reasons: [] }, c).hash, null);
+  });
+
+  test("held files become c.held in order, approved flags read", async () => {
+    const { $ } = fakeDollar({ files: heldFiles(), dirs: heldDirs() });
+    const snap = await R.scanCases($);
+    assert.equal(snap.cases.length, 1);
+    const held = snap.cases[0].held;
+    assert.equal(held.length, 1);
+    assert.equal(held[0].hash, HASH);
+    assert.equal(held[0].rendered, RENDERED);
+    assert.equal(held[0].approved, false);
+  });
+});
+
+describe("tool.call held drafts", () => {
+  const runHeldGate = { exitCode: 3, stdout: GATE_HELD_JSON, stderr: "" };
+
+  test("needs approval has no state until button press", async () => {
+    const { $, calls, state } = fakeDollar({
+      files: heldFiles(), dirs: heldDirs(), run: () => runHeldGate,
+    });
+    const on = fakeOn();
+    register(on.on);
+    const { next, calls: went } = fired();
+    const out = await on.get("tool.call")($, sendCall(), next);
+    assert.equal(went.length, 0);
+    assert.equal(
+      out.deny,
+      `betterterms: held for your approval in the BetterTerms pane (draft ${HASH8}).`,
+    );
+    // Nothing was recorded: no approvals entry, no state writes at all.
+    assert.equal(state.size, 0);
+    assert.equal(calls.submit.length, 0);
+  });
+
+  test("forged approval file ignored without $.state entry", async () => {
+    const files = heldFiles({ [`${DIR}/held/${HASH}.approved`]: "hash: x\n" });
+    const { $, calls, state } = fakeDollar({
+      files, dirs: heldDirs(), run: () => runHeldGate,
+    });
+    const on = fakeOn();
+    register(on.on);
+    const out = await on.get("tool.call")($, sendCall(), fired().next);
+    assert.match(out.deny, /held for your approval/);
+    assert.equal(state.size, 0);
+    // The gate never ran with --approved.
+    assert.equal(calls.run.every((r) => !r.argv.includes("--approved")), true);
+  });
+
+  test("an approved resend re-gates with --approved, once", async () => {
+    const { $, calls, state } = fakeDollar({
+      files: heldFiles(), dirs: heldDirs(),
+      run: (argv) => argv.includes("--approved")
+        ? { exitCode: 0, stdout: '{"result":"pass","reasons":[]}', stderr: "" }
+        : runHeldGate,
+    });
+    const on = fakeOn();
+    register(on.on);
+    // The press stored the approval for the full hash.
+    state.set("approvals", { [HASH]: true });
+    const { next, calls: went, marker } = fired();
+    const out = await on.get("tool.call")($, sendCall(), next);
+    assert.equal(out, marker);
+    assert.equal(went.length, 1);
+    assert.equal(calls.run.length, 2);
+    assert.equal(calls.run[1].argv.includes("--approved"), true);
+    // The state entry is consumed: a third identical send denies again.
+    const again = await on.get("tool.call")($, sendCall(), fired().next);
+    assert.match(again.deny, /held for your approval/);
+    assert.equal(state.get("approvals")?.[HASH], undefined);
+    assert.equal(calls.ask.length, 0);
+  });
+
+  test("resend with different text denied, approval unspent", async () => {
+    const other = JSON.stringify({
+      result: "needs_approval", reasons: ["changed"], rendered: "edited", hash: "1".repeat(64),
+    });
+    const { $, state } = fakeDollar({
+      files: heldFiles(), dirs: heldDirs(),
+      run: () => ({ exitCode: 3, stdout: other, stderr: "" }),
+    });
+    const on = fakeOn();
+    register(on.on);
+    state.set("approvals", { [HASH]: true });
+    const out = await on.get("tool.call")($, sendCall(), fired().next);
+    assert.match(out.deny, /held for your approval/);
+    assert.equal(state.get("approvals")?.[HASH], true);
+  });
+
+  test("throwing gate denies the send", async () => {
+    const { $ } = fakeDollar({
+      files: heldFiles(), dirs: heldDirs(),
+      run: () => { throw new Error("spawn blew up"); },
+    });
+    const on = fakeOn();
+    register(on.on);
+    const out = await on.get("tool.call")($, sendCall(), fired().next);
+    assert.match(out.deny, /betterterms/);
+  });
+
+  test("a hook failure denies a plausible send through .catch", async () => {
+    const { $ } = fakeDollar({ files: heldFiles(), dirs: heldDirs() });
+    const on = fakeOn();
+    register(on.on);
+    const hook = on.hooks.find((h) => h.event === "tool.call");
+    assert.equal(typeof hook.onCatch, "function");
+    // The hook threw partway: e carries the send, next was never called.
+    const out = await hook.onCatch($, sendCall(), Object.assign(fired().next, { called: false }));
+    assert.match(out.deny, /betterterms/);
+  });
+});
+
+describe("approve press", () => {
+  const approvePress = async ($) =>
+    findNode(await approvalsCard($), byKey(`approve-${HASH8}`)).props.onPress();
+  const held$ = (run) => fakeDollar({
+    files: heldFiles(), dirs: heldDirs(),
+    run: run ?? ((argv) => argv.includes("approve")
+      ? { exitCode: 0, stdout: `{"ok":true,"hash":"${HASH}"}`, stderr: "" }
+      : runHeldGateFallback()),
+  });
+  const runHeldGateFallback = () => ({ exitCode: 3, stdout: GATE_HELD_JSON, stderr: "" });
+
+  test("approve runs held approve with hash8", async () => {
+    const { $, calls } = held$();
+    await approvePress($);
+    assert.equal(calls.run.length, 1);
+    assert.deepEqual(calls.run[0].argv, ["python3", BT, "held", "approve", CASE_ID, HASH8]);
+  });
+
+  test("approval stores full hash and submits prompt", async () => {
+    const { $, calls, state } = held$();
+    await approvePress($);
+    assert.equal(state.get("approvals")?.[HASH], true);
+    assert.deepEqual(calls.submit, [
+      `betterterms: the user approved draft ${HASH8} for ${CASE_ID}. ` +
+      "Send it now with the same text.",
+    ]);
+  });
+
+  test("approval failure does not submit", async () => {
+    const { $, calls, state } = held$(() => ({
+      exitCode: 2, stdout: "", stderr: "no held draft matching abcdef12",
+    }));
+    await approvePress($);
+    assert.equal(calls.submit.length, 0);
+    assert.equal(state.size, 0);
+    assert.match(calls.toast.join("\n"), /approve failed/);
+  });
+
+  test("reject runs held reject with hash8", async () => {
+    const { $, calls } = held$();
+    await findNode(await approvalsCard($), byKey(`reject-${HASH8}`)).props.onPress();
+    assert.deepEqual(calls.run[0].argv, ["python3", BT, "held", "reject", CASE_ID, HASH8]);
+  });
+});
+
+describe("tabs and rows", () => {
+  test("tabs switch and the badge counts held drafts", async () => {
+    const { $, state } = fakeDollar({ files: heldFiles(), dirs: heldDirs() });
+    const snap = await R.scanCases($);
+    const act = R.paneActions($, snap);
+    const casesView = paneTree(ELS, snap, { tab: 1, selected: null, editing: null }, act);
+    const approvalsView = paneTree(ELS, snap, { tab: 2, selected: null, editing: null }, act);
+    assert.equal(JSON.stringify(casesView).includes(CASE_ID), true);
+    assert.equal(JSON.stringify(approvalsView).includes(HASH8), true);
+    assert.notEqual(
+      findNode(approvalsView, (n) => isButton(n) && /Approvals \(1\)/.test(n.props?.label ?? "")),
+      null,
+    );
+    await findNode(approvalsView, byKey("tab-1")).props.onPress();
+    assert.equal(state.get("tab"), 1);
+    // The approvals tab does not draw case rows.
+    assert.equal(findNode(approvalsView, byKey(`case-${CASE_ID}`)), null);
+  });
+
+  test("the selected case draws the strip and offer bar", async () => {
+    const plan = "currency: USD\ntarget: 900\nfacts:\n- 1100\n- 1000\noptions:\n- {kind: price, value: 1200}\n";
+    const files = heldFiles({ [`${DIR}/plan.yaml`]: plan });
+    const { $ } = fakeDollar({ files, dirs: heldDirs() });
+    const snap = await R.scanCases($);
+    assert.deepEqual(snap.cases[0].offer, { start: 1100, offer: 1000, target: 900, currency: "USD" });
+    const tree = paneTree(ELS, snap, { tab: 1, selected: CASE_ID, editing: null }, R.paneActions($, snap));
+    const flat = JSON.stringify(tree);
+    assert.match(flat, /\[Sent\]/);
+    assert.match(flat, /start \$1100 · offer \$1000 · target \$900/);
+  });
+
+  test("gate rows show pass, hold, and block", () => {
+    const props = (output, over = {}) => ({
+      tool: "Bash", tool_use_id: "tu1",
+      input: { command: `python3 ${BT} gate ${CASE_ID} --draft ${DIR}/draft.yaml` },
+      isRunning: false, isErrored: false, isInterrupted: false, output, ...over,
+    });
+    const out = (stdout) => ({ stdout, stderr: "" });
+    assert.equal(gateRow(props(out('{"result":"pass","reasons":[]}')))?.text, "✓ Gate pass");
+    assert.match(
+      gateRow(props(out('{"result":"block","reasons":["outside your limits"]}'))).text,
+      /^✗ Gate block: outside your limits/,
+    );
+    assert.equal(
+      gateRow(props(out(`{"result":"needs_approval","reasons":["x"],"hash":"${HASH}"}`)))?.text,
+      "● Held for you",
+    );
+    // A non-gate row and a still-running row draw nothing.
+    assert.equal(gateRow(props(null, { input: { command: "ls" } })), null);
+    assert.equal(gateRow(props(null, { isRunning: true })), null);
+  });
+
+  test("band text counts held drafts and draws Review", () => {
+    const el = { Box: "Box", Text: "Text", Button: "Button" };
+    const tree = bandTree(el, { held: 1, pending: 0, repliers: ["Comcast"] }, () => {});
+    assert.match(JSON.stringify(tree), /Comcast replied, 1 draft waiting/);
+    assert.equal(findNode(tree, byKey("review")).props.hotkey, "1");
+    assert.equal(bandTree(el, { held: 0, pending: 0, repliers: [] }, () => {}), null);
+  });
+});
+
+describe("session.start status line", () => {
+  test("status text equals bt: <n> cases · $<saved>/yr saved", async () => {
+    const { $, calls } = fakeDollar({ files: heldFiles(), dirs: heldDirs() });
+    const on = fakeOn();
+    register(on.on);
+    await on.get("session.start")($, { isInteractive: true }, fired().next);
+    assert.equal(calls.status[calls.status.length - 1], "bt: 1 case · $1440/yr saved");
+  });
+});
+
+describe("edit flow", () => {
+  test("saving an edit writes draft.yaml and re-runs the gate", async () => {
+    const { $, calls } = fakeDollar({
+      files: heldFiles(), dirs: heldDirs(), run: () => ({ exitCode: 3, stdout: GATE_HELD_JSON, stderr: "" }),
+    });
+    const snap = await R.scanCases($);
+    const tree = paneTree(ELS, snap, { tab: 2, selected: null, editing: HASH }, R.paneActions($, snap));
+    const input = findNode(tree, (n) => n.tag === "Input");
+    assert.equal(input.props.value, RENDERED);
+    await input.props.onSubmit("I can pay $1,200 a year for this plan.");
+    const wrote = calls.write.find((w) => w.path === `${DIR}/draft.yaml`);
+    assert.ok(wrote);
+    assert.match(wrote.text, /template: \|-/);
+    assert.match(wrote.text, /I can pay \$1,200 a year/);
+    assert.match(wrote.text, /action: send/);
+    assert.equal(calls.run.some((r) => r.argv.includes("gate")), true);
+  });
+});

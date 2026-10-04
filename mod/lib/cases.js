@@ -26,7 +26,7 @@ function numOr(v, dflt) {
 }
 
 // The last gate verdict the exchange skill saved to the case folder as
-// gate.json: {result, reasons, rendered}, or null when absent or
+// gate.json: {result, reasons, rendered, hash?}, or null when absent or
 // malformed. rendered is the exact text the agent must send; null on
 // block.
 export function parseGate(text) {
@@ -37,18 +37,33 @@ export function parseGate(text) {
       result: g.result,
       reasons: Array.isArray(g.reasons) ? g.reasons.map(String) : [],
       rendered: typeof g.rendered === "string" && g.rendered !== "" ? g.rendered : null,
+      hash: typeof g.hash === "string" ? g.hash : null,
     };
   } catch { return null; }
 }
 
+// thread.md entries plus the `## rejected <time> <hash>` markers
+// `bt.py held reject` appends. A rejected line is a marker, not a turn:
+// it must not enter the entries list or become the previous entry's
+// snippet. lib/parse.js is not in this task's file list, so the strip
+// happens here before its parser runs.
+export function parseThreadAll(text) {
+  const clean = String(text ?? "")
+    .split(/\r?\n/)
+    .filter((l) => !/^##\s+rejected\s/.test(l))
+    .join("\n");
+  return parseThread(clean);
+}
+
 // One case's display row and send-detection inputs.
-// raw: { id, briefText, threadText, draftText, gateText, draftMtimeMs,
-//        gateMtimeMs, threadMtimeMs, sourceCount, closed }
+// raw: { id, briefText, threadText, draftText, gateText, planText,
+//        held, draftMtimeMs, gateMtimeMs, threadMtimeMs, sourceCount,
+//        closed }
 export function deriveCase(raw) {
   const brief = parseFlatYaml(raw.briefText);
   const draft = raw.draftText ? parseFlatYaml(raw.draftText) : null;
   const gate = parseGate(raw.gateText);
-  const entries = parseThread(raw.threadText);
+  const entries = parseThreadAll(raw.threadText);
   const mode = brief.mode === "coach" ? "coach" : "act";
   const autonomy = numOr(brief.autonomy, AUTONOMY_DEFAULT[mode] ?? 2);
   const action = draft?.action != null ? String(draft.action) : null;
@@ -73,6 +88,7 @@ export function deriveCase(raw) {
     autonomy,
     stage,
     action,
+    draft,
     gateResult: gate?.result ?? null,
     rendered: gate?.rendered ?? null,
     draftUnsent,
@@ -81,7 +97,10 @@ export function deriveCase(raw) {
     needsApproval: pending && gate.result === "needs_approval",
     entryCount: entries.length,
     lastDir: last?.dir ?? null,
+    lastSnippet: last?.snippet ?? "",
     entries,
+    held: Array.isArray(raw.held) ? raw.held : [],
+    offer: offerMarks(raw.planText),
   };
   c.next = nextAction(c);
   return c;
@@ -127,18 +146,17 @@ export function gateArgv(btPath, dir, id, opts = {}) {
   return argv;
 }
 
-// gate: {result, reasons}. Returns {kind: deny|ask|allow, ...}.
+// gate: {result, reasons, hash?}. Returns {kind: deny|ask|allow|held}.
+// needs_approval never asks inline: the draft is already held on disk
+// (held/<hash>.yaml) and the only way through is the pane's Approve,
+// which the send guard recognizes by the hash in $.state.
 export function decideSend(gate, c) {
   if (!gate || (gate.result !== "pass" && gate.result !== "needs_approval")) {
     const why = gate?.reasons?.length ? gate.reasons.join("; ") : "the gate could not run";
     return { kind: "deny", reason: why };
   }
   if (gate.result === "needs_approval") {
-    return {
-      kind: "ask",
-      reapprove: true,
-      question: `${c.action ?? "send"} on ${c.id} needs approval. Send it?`,
-    };
+    return { kind: "held", hash: typeof gate.hash === "string" ? gate.hash : null };
   }
   if (c.autonomy <= 1) {
     return { kind: "deny", reason: `autonomy ${c.autonomy}: the user sends, the agent drafts` };
@@ -149,8 +167,77 @@ export function decideSend(gate, c) {
   return { kind: "allow" };
 }
 
-export function bandText(n) {
-  return `${n} draft${n === 1 ? "" : "s"} waiting to send`;
+// The AbovePrompt band's one line: fresh replies first, then how many
+// drafts wait (held files plus gate-passed unsent ones). Empty string
+// draws nothing.
+export function bandText(held, pending, repliers = []) {
+  const parts = [];
+  if (repliers.length > 0) parts.push(`${repliers.join(", ")} replied`);
+  const n = held + pending;
+  if (n > 0) parts.push(`${n} draft${n === 1 ? "" : "s"} waiting`);
+  return parts.join(", ");
+}
+
+// Total held drafts across cases (the Approvals badge).
+export function heldTotal(cases) {
+  return cases.reduce((n, c) => n + (c.held?.length ?? 0), 0);
+}
+
+// Cases whose saved verdict leaves a send pending and whose held files
+// do not already cover that rendered text, so the band does not count
+// one draft twice.
+export function pendingWithoutHeld(cases) {
+  return cases.filter((c) => {
+    if (!c.pending) return false;
+    const want = normalize(c.rendered ?? "");
+    return !(c.held ?? []).some((h) => normalize(h.rendered ?? "") === want);
+  }).length;
+}
+
+// The Cases-tab detail strip: Intake > Research > Draft > Sent > Reply
+// > Close with the case's step bracketed. `exchange` splits on the last
+// turn's direction: an inbound last turn is a reply to work on, an
+// outbound is a draft in progress.
+export function progressStrip(c) {
+  const steps = ["Intake", "Research", "Draft", "Sent", "Reply", "Close"];
+  const at = { found: 0, researched: 1, exchange: c.lastDir === "in" ? 4 : 2, waiting: 3, closed: 5 }[c.stage] ?? 0;
+  return steps.map((s, i) => (i === at ? `[${s}]` : s)).join(" > ");
+}
+
+// plan.yaml's offer anchors for the selected case's offer bar: start
+// is the counterparty's first stated amount (a fact), offer their
+// latest, target the plan's. Facts hold what they said; price options
+// stand in when no fact is recorded. Numbers only, or null when the
+// plan carries none. The walk-away never enters here: it lives in
+// `.floor`, which the mod never reads.
+export function offerMarks(planText) {
+  const plan = parseFlatYaml(planText);
+  if (!plan || Object.keys(plan).length === 0) return null;
+  const amount = (v) => {
+    if (v && typeof v === "object") v = v.amount ?? v.value;
+    const n = Number(v);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  };
+  const facts = (Array.isArray(plan.facts) ? plan.facts : [])
+    .map((f) => amount(f))
+    .filter((n) => n !== null);
+  const options = (Array.isArray(plan.options) ? plan.options : [])
+    .filter((o) => !o || typeof o !== "object" || (o.kind ?? "price") === "price")
+    .map((o) => amount(o && (o.value ?? o.amount)))
+    .filter((n) => n !== null);
+  const theirs = facts.length > 0 ? facts : options;
+  const target = amount(plan.target);
+  const start = theirs[0] ?? null;
+  const offer = theirs.length > 1 ? theirs[theirs.length - 1] : null;
+  if (start === null && offer === null && target === null) return null;
+  return { start, offer, target, currency: String(plan.currency ?? "USD") };
+}
+
+// The tool.call event minus its envelope fields: what is left is the
+// tool's own arguments, which is what collectStrings should search.
+export function callArgs(e) {
+  const { tool, tool_use_id, consent, agentId, ...args } = e ?? {};
+  return args;
 }
 
 export function toastText(id, n) {
@@ -167,20 +254,7 @@ export function btPaths(root) {
   ];
 }
 
-// Rows the pane draws: a header, one row per case, a totals footer.
-export function paneRows(cases, savedPerYear) {
-  const rows = [{ text: "case".padEnd(28) + "stage".padEnd(12) + "next", dim: true }];
-  for (const c of cases) {
-    const stage = c.stage === "exchange" ? "in exchange" : c.stage;
-    rows.push({
-      text: c.id.padEnd(28).slice(0, 28) + stage.padEnd(12).slice(0, 12) + c.next,
-      dim: c.stage === "closed",
-    });
-  }
-  if (savedPerYear > 0) rows.push({ text: `saved $${Math.round(savedPerYear)}/yr`, dim: true });
-  if (cases.length === 0) rows.push({ text: "no cases yet", dim: true });
-  return rows;
-}
+// Row builders for the pane live in ui/pane.js now.
 
 // Entries in `entries` not yet in `seen` (a Set of `dir:stamp` keys).
 // Returns the new entries; caller adds their keys once toasted.

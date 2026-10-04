@@ -14,34 +14,82 @@ runs in place from the repository.
 
 ## What it does
 
-- **Pane** (`id: betterterms`): one row per case with its pipeline
-  stage (`found`, `researched`, `in exchange`, `waiting`, `closed`) and
-  next action, plus the ledger's `saved_per_year` total. Opens itself at
-  session start when cases exist; `/betterterms-cases` reopens it.
-- **AbovePrompt band**: `N drafts waiting to send` while any open case
-  holds a draft whose last `gate.json` verdict is `pass` or
-  `needs_approval` and whose send is not yet logged in `thread.md`.
-- **Toast**: `New reply in <case>.` when `thread.md` gains an inbound
-  entry; polled every 3 s.
+- **Pane** (`id: betterterms`): a cockpit with three tabs. `1 Cases`
+  draws one card per case with its pipeline stage (`found`,
+  `researched`, `in exchange`, `waiting`, `closed`), next action, and
+  for the selected case the six-step strip and the offer bar from
+  `plan.yaml` (start, their offer, target; the walk-away never shows).
+  `2 Approvals` counts held drafts in its label and draws one card per
+  held draft: the rendered text with the money spans lit, the gate's
+  reasons, and Approve and send (`a`), Edit (`e`), Reject (`r`).
+  `3 Savings` shows the ledger's `saved_per_year` total. Opens itself
+  at session start when cases exist; `/betterterms` or
+  `/betterterms-cases` reopens it.
+- **AbovePrompt band**: `Comcast replied, 1 draft waiting` while a
+  reply is unanswered or a draft waits (held, or a `gate.json` verdict
+  of `pass`/`needs_approval` not yet logged in `thread.md`). The
+  Review button (hotkey `1`) opens the Approvals tab.
+- **Status line**: `bt: <n> cases · $<saved>/yr saved`, refreshed by
+  the poll.
+- **Toasts**: `New reply in <case>.` when `thread.md` gains an inbound
+  entry, `draft ... sent` when the guard lets a send through, and
+  `draft ... blocked` when the gate refuses. Polled every 3 s.
+- **Gate rows**: a `bt.py gate` tool row in the transcript is redrawn
+  as `✓ Gate pass`, `✗ Gate block: <reason>` or `● Held for you`.
 - **Pre-send guard**: a `tool.call` hook. When a call's arguments carry
   an open case's last `gate.json` `rendered` text, the mod runs
   `python3 <core plugin>/skills/betterterms-guardrails/scripts/bt.py gate`
   and enforces the verdict: `block` or a gate error denies the call,
-  `needs_approval` always asks and re-gates with `--approved`, `pass`
-  follows autonomy (1 denies, 2 asks, 3 and 4 allow).
+  `pass` follows autonomy (1 denies, 2 asks, 3 and 4 allow), and
+  `needs_approval` denies to the pane with
+  `held for your approval in the BetterTerms pane (draft <hash8>)`.
+  A thrown hook denies too; nothing fails open.
 
-## What it reads
+## The approval flow
+
+`needs_approval` means the draft sits in `cases/<id>/held/<hash>.yaml`
+and only a press can move it. The guard never asks inline and never
+records anything for the agent's own call. The flow is:
+
+1. The Approve press runs `bt.py held approve <case> <hash8>` through
+   `$.process.run`, which writes `held/<hash>.approved` on disk and
+   returns the full hash.
+2. The press records that full hash under `$.state` key
+   `betterterms-mod/approvals` (session only, never a file the agent
+   can write) and submits a prompt asking the agent to send the same
+   text.
+3. The resend re-runs the gate, gets `needs_approval` again, finds the
+   hash in `$.state`, consumes it, and re-gates once with
+   `--approved`. The CLI's marker file is spent on use; the `$.state`
+   entry is spent on read. Either alone is not enough: a forged
+   `.approved` file without the press does nothing, and a press
+   without the marker never reaches `--approved`.
+4. Different rendered text hashes to a different value, so an edited
+   draft must re-pass the gate and be re-approved.
+
+Reject runs `bt.py held reject <case> <hash8>`, which drops the held
+draft and appends `## rejected <time> <hash>` to `thread.md`. The mod
+reads those markers as markers, not turns. Edit opens an `Input`;
+saving rewrites `draft.yaml` with the new text and re-runs the gate,
+so the card re-lists under the new hash only after the gate sees it.
+
+## What it reads and writes
 
 Only `$BETTERTERMS_HOME` (default `~/.betterterms`): `cases/<id>/` names
 matching `[a-z0-9-]+` (linked dirs skipped), `brief.yaml`, `thread.md`,
 `draft.yaml`, `gate.json` (the last verdict the exchange skill saved),
-`inbound.yaml` existence for the gate's `--inbound` flag, `sources/`
-listing for the researched stage, and `ledger.jsonl`. `plan.yaml` and
-`.floor` are never read: the floor stays inside the gate. The only
-other filesystem touch is a `stat` resolve on a tool call's own
-`file_path` when one is present, to tell a bookkeeping write inside a
-case dir apart from a send. Nothing is written; inbound baseline state
-lives in module memory for the session.
+`plan.yaml` (target and the counterparty's amounts for the offer bar),
+`inbound.yaml` existence for the gate's `--inbound` flag, `held/` for
+the approval cards, `sources/` listing for the researched stage, and
+`ledger.jsonl`. `.floor` is never read: the floor stays inside the
+gate.
+
+The writes: an Edit save rewrites `draft.yaml`, and the `held`
+approve/reject subprocesses maintain `held/` and `thread.md` through
+`bt.py`. Approval state lives in `$.state` for the session and inbound
+baselines in module memory. The only other filesystem touch is a
+`stat` resolve on a tool call's own `file_path` when one is present,
+to tell a bookkeeping write inside a case dir apart from a send.
 
 ## What "send" means
 
@@ -67,36 +115,45 @@ marked early access and is version-specific):
   `"../register.js"`.
 - A hooks module exports `register(on)`; `on(event, matcher?, hook)`
   with hooks `($, e, next)`. `next(e)` defers to other plugins and the
-  engine's own behavior.
+  engine's own behavior. `on(...).catch(fn)` runs when the hook threw;
+  the send guard's catch denies any call that still looks like a send.
 - `tool.call` hooks may return `{ deny: reason }` to refuse the call,
   which is how the pre-send guard blocks. This is the mods-side answer
   to the classic `PreToolUse` shape.
-- `ui.render` hooks match `{ component: "AbovePrompt" }` and
-  `{ component: "Pane", requestId }`. Elements come from
-  `$.ui.resolve(e)` (`Box`, `Text`, `Button`, ...) and are built with
-  the ambient `h(tag, props, ...children)` factory (JSX compiles to it).
+- `ui.render` hooks match `{ component: "AbovePrompt" }`,
+  `{ component: "Pane", requestId }` and `{ component: "ToolUse" }`.
+  Elements come from `$.ui.resolve(e)` (`Box`, `Text`, `Button`,
+  `Input`, ...) and are built with the ambient `h(tag, props,
+  ...children)` factory (JSX compiles to it).
 - `$.ui.open({ id, title })` mounts a pane; `$.ui.toast(text)` shows a
   toast; `$.ui.ask(question, { options, header })` resolves to the
   chosen label; `$.ui.notice(tool_use_id, text)` annotates an open
-  dialog; `$.ui.invalidate("ui.render")` redraws.
-- `$.fs.read|list|stat|exists`, `$.process.run(argv, { env, timeoutMs })`
-  (argv vector, no shell), `$.env.get(name)` (the names are recorded by
-  validation), `$.clock.every(ms, fn)` (returns a cancel), and
-  `$.command.register({ name, description })` are the host calls used.
+  dialog; `$.ui.status(text)` sets the status line;
+  `$.ui.invalidate("ui.render")` redraws.
+- `$.state.get|set(ref)` holds session values named in
+  `types/index.d.ts`; `$.prompt.submit({ text })` queues the resend
+  after a press.
+- `$.fs.read|list|stat|exists|write`, `$.process.run(argv, { env,
+  timeoutMs })` (argv vector, no shell), `$.env.get(name)` (the names
+  are recorded by validation), `$.clock.every(ms, fn)` (returns a
+  cancel), and `$.command.register({ name, description })` are the host
+  calls used.
 - The loader constrains hook modules: `$` may reach only top-level
   declared functions, dynamic `import()` is refused, and Node builtins
   are not available. That is why all parsing lives in `lib/cases.js`
-  (pure functions, unit-tested under `node --test`) and state is
-  module-scoped.
+  and `lib/approvals.js` (pure functions, unit-tested under
+  `node --test`) and state is module-scoped.
 
 ## Tests
 
 ```
-node --test mod/register.test.js     # unit tests, no installs
-claude plugin test ./mod             # engine-side tests (register.test.tsx)
-claude plugin validate ./mod         # manifest + hooks module audit
+cd mod && node --test               # unit tests, no installs
+claude plugin test ./mod            # engine-side tests (*.test.tsx)
+claude plugin validate --strict ./mod   # manifest + hooks module audit
 ```
 
-`register.test.tsx` is `.tsx` only so `node --test` skips it: node can
-strip types from `.ts` but cannot resolve `claude-code/testing`, which
-exists solely inside the Claude test runner.
+`register.test.tsx` and `approvals.test.tsx` are `.tsx` only so
+`node --test` skips them: node can strip types from `.ts` but cannot
+resolve `claude-code/testing`, which exists solely inside the Claude
+test runner. The bare `node --test mod` form is Node-version specific;
+running it inside `mod/` works everywhere.

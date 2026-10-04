@@ -135,20 +135,22 @@ describe("decideSend", () => {
     assert.equal(C.decideSend(pass, { ...c, autonomy: 4 }).kind, "allow");
   });
 
-  test("needs_approval asks and re-gates with --approved", () => {
+  test("needs_approval holds the draft for the Approvals tab", () => {
     const v = C.decideSend(
-      { result: "needs_approval", reasons: ["action 'cancel' requires --approved"] },
+      { result: "needs_approval", reasons: ["action 'cancel' requires --approved"], hash: "f".repeat(64) },
       { ...c, action: "cancel", autonomy: 4 },
     );
-    assert.equal(v.kind, "ask");
-    assert.equal(v.reapprove, true);
+    assert.equal(v.kind, "held");
+    assert.equal(v.hash, "f".repeat(64));
+    assert.equal(C.decideSend({ result: "needs_approval", reasons: [] }, c).hash, null);
   });
 });
 
 describe("labels", () => {
   test("band and toast text", () => {
-    assert.equal(C.bandText(1), "1 draft waiting to send");
-    assert.equal(C.bandText(3), "3 drafts waiting to send");
+    assert.equal(C.bandText(1, 0, []), "1 draft waiting");
+    assert.equal(C.bandText(0, 3, []), "3 drafts waiting");
+    assert.equal(C.bandText(1, 1, ["Comcast"]), "Comcast replied, 2 drafts waiting");
     assert.equal(C.toastText(CASE_ID, 1), `New reply in ${CASE_ID}.`);
     assert.equal(C.toastText(CASE_ID, 2), `2 new replies in ${CASE_ID}.`);
   });

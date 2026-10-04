@@ -91,7 +91,21 @@ export function fakeDollar(opts = {}) {
   const env = opts.env ?? { BETTERTERMS_HOME: HOME };
   const files = opts.files ?? {};
   const dirs = opts.dirs ?? {};
-  const calls = { run: [], toast: [], open: [], ask: [], notice: [], invalidate: [], register: [], every: [] };
+  const calls = {
+    run: [], toast: [], open: [], ask: [], notice: [], invalidate: [],
+    register: [], every: [], submit: [], status: [], write: [],
+  };
+  // $.state backed by a Map; the test-facing facade reads and seeds
+  // values by bare key.
+  const store = new Map();
+  const state = {
+    get size() { return store.size; },
+    get: (k) => store.get(k)?.value,
+    set: (k, v) =>
+      store.set(k, { value: v, version: (store.get(k)?.version ?? 0) + 1 }),
+  };
+  const run = opts.run ?? (() =>
+    opts.gate ?? { exitCode: 0, stdout: '{"result":"pass","reasons":[]}', stderr: "" });
   const $ = {
     env: { get: async (n) => env[n] },
     fs: {
@@ -99,6 +113,7 @@ export function fakeDollar(opts = {}) {
         if (p in files) return files[p];
         throw new Error(`ENOENT ${p}`);
       },
+      write: async (p, text) => { files[p] = text; calls.write.push({ path: p, text }); },
       exists: async (p) => p in files || p in dirs,
       list: async (p) => {
         if (p in dirs) return dirs[p];
@@ -116,17 +131,32 @@ export function fakeDollar(opts = {}) {
     process: {
       run: async (argv, init) => {
         calls.run.push({ argv, init });
-        return opts.gate ?? { exitCode: 0, stdout: '{"result":"pass","reasons":[]}', stderr: "" };
+        return run(argv, init);
       },
     },
+    state: {
+      get: async (ref) => ({
+        value: store.get(ref.key)?.value,
+        version: store.get(ref.key)?.version ?? 0,
+      }),
+      set: async (ref, value, setOpts) => {
+        const cur = store.get(ref.key);
+        if (setOpts?.ifVersion !== undefined && setOpts.ifVersion !== (cur?.version ?? 0))
+          return { isSet: false, version: cur?.version ?? 0 };
+        const version = (cur?.version ?? 0) + 1;
+        store.set(ref.key, { value, version });
+        return { isSet: true, version };
+      },
+    },
+    prompt: { submit: async (e) => { calls.submit.push(e.text); return { text: e.text }; } },
     ui: {
-      resolve: () => ({ Box: "Box", Text: "Text" }),
+      resolve: () => ({ Box: "Box", Text: "Text", Button: "Button", Input: "Input", Select: "Select" }),
       toast: (t) => calls.toast.push(t),
       open: async (req) => { calls.open.push(req); return { isPlaced: true }; },
       notice: (id, t) => calls.notice.push({ id, text: t }),
       ask: async (q, init) => { calls.ask.push({ q, init }); return opts.answer ?? "Hold"; },
       invalidate: (w) => calls.invalidate.push(w),
-      status: () => {},
+      status: (t) => calls.status.push(t),
       log: () => {},
     },
     clock: {
@@ -139,7 +169,7 @@ export function fakeDollar(opts = {}) {
     plugin: { name: "betterterms-mod", root: "/p/mod" },
     session: { id: "s", cwd: "/w" },
   };
-  return { $, calls };
+  return { $, calls, state };
 }
 
 export function fakeOn() {
@@ -147,8 +177,9 @@ export function fakeOn() {
   const on = (event, ...rest) => {
     const hook = rest[rest.length - 1];
     const matcher = rest.length > 1 ? rest[0] : undefined;
-    hooks.push({ event, matcher, hook });
-    return { catch() {} };
+    const rec = { event, matcher, hook, onCatch: undefined };
+    hooks.push(rec);
+    return { catch(fn) { rec.onCatch = fn; } };
   };
   const get = (event, pick) => {
     const found = hooks.filter((h) => h.event === event && (!pick || pick(h)));
