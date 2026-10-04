@@ -119,7 +119,8 @@ Rules:
 
 ## 6. The cockpit mod
 
-The mod is a Claude Code plugin module under `mod/`, shipped inside the betterterms plugin.
+The mod is a Claude Code plugin module under `mod/`, shipped as the opt-in `betterterms-mod`
+plugin in the same marketplace as the core plugin.
 Surfaces: terminal and Desktop get the full design. VS Code and mobile get the same tabs as
 plain text and buttons with no charts. Codex has no mods and keeps the chat flow.
 
@@ -280,7 +281,8 @@ bt floor <case_id> <amount>
 bt terms <case_id> target=<amount> alternative=<amount>
 ```
 
-The same commands typed by hand work in every mode, including Codex.
+The same commands typed by hand work in every Claude Code session. Codex has no prompt hook
+in this release, so Codex users set the walk-away with the terminal command and approve in chat.
 
 **A `UserPromptSubmit` settings hook in the plugin** (`hooks/prompt_commands.py`) reads each
 prompt before the model does. It looks only at the user's own text: in a Projects thread, the
