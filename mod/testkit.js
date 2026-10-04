@@ -4,6 +4,7 @@
 
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import { resetScan } from "./lib/scan.js";
 
 // The element factory the engine injects. Hooks call it only when a
 // render hook runs; tests stub it before firing those hooks.
@@ -95,6 +96,18 @@ export function heldHash(r) {
 // `held list` answers from opts.held[id] record tuples; `held
 // approve|reject` maintain the marker files in `files`.
 export function btRoute(opts, files) {
+  // The held records the fake CLI reports also land as files, so a
+  // held/ listing (and its stat fingerprint) moves like the real fs.
+  for (const [id, recs] of Object.entries(opts.held ?? {})) {
+    for (const r of recs) {
+      const path = `${HOME}/cases/${id}/held/${heldHash(r)}.yaml`;
+      files[path] = JSON.stringify(r);
+    }
+  }
+  const dropRecord = (id, h) => {
+    delete files[`${HOME}/cases/${id}/held/${h}.yaml`];
+    delete files[`${HOME}/cases/${id}/held/${h}.approved`];
+  };
   const wrap = (o, code) => ({
     exitCode: code ?? (o.result === "block" ? 1 : o.result === "needs_approval" ? 3 : 0),
     stdout: JSON.stringify(o),
@@ -111,7 +124,7 @@ export function btRoute(opts, files) {
       if (g.result === "needs_approval" && argv.includes("--approved")
           && typeof g.hash === "string"
           && `${HOME}/cases/${id}/held/${g.hash}.approved` in files) {
-        delete files[`${HOME}/cases/${id}/held/${g.hash}.approved`];
+        dropRecord(id, g.hash);
         return wrap({ result: "pass", reasons: [], rendered: g.rendered });
       }
       return wrap(g);
@@ -140,7 +153,7 @@ export function btRoute(opts, files) {
         files[`${HOME}/cases/${id}/held/${h}.approved`] = `hash: ${h}\n`;
       } else {
         opts.held[id] = recs.filter((r) => heldHash(r) !== h);
-        delete files[`${HOME}/cases/${id}/held/${h}.approved`];
+        dropRecord(id, h);
       }
       return wrap({ ok: true, hash: h });
     }
@@ -167,12 +180,16 @@ export function caseDirs(over = {}) {
 }
 
 export function fakeDollar(opts = {}) {
+  // Each fake $ is a fresh session, so the module-level scan cache
+  // resets exactly as register() resets it for the engine.
+  resetScan();
   const env = opts.env ?? { BETTERTERMS_HOME: HOME };
   const files = opts.files ?? {};
   const dirs = opts.dirs ?? {};
   const calls = {
     run: [], toast: [], open: [], ask: [], notice: [], invalidate: [],
     register: [], every: [], submit: [], status: [], write: [],
+    read: [], stat: [], list: [],
   };
   // $.state backed by a Map; the test-facing facade reads and seeds
   // values by bare key.
@@ -184,25 +201,50 @@ export function fakeDollar(opts = {}) {
       store.set(k, { value: v, version: (store.get(k)?.version ?? 0) + 1 }),
   };
   const run = opts.run ?? btRoute(opts, files);
+  // mtimes move on every write, like a real fs: the scan cache's
+  // fingerprints rely on it, and dir mtimes move when an entry under
+  // them appears or goes (the fake counts files below the path).
+  const bumps = new Map();
+  const bump = (p) => bumps.set(p, (bumps.get(p) ?? 1) + 1);
+  const dirMtime = (p) =>
+    (opts.stats ?? {})[p]?.mtimeMs ??
+    1 + Object.keys(files).filter((f) => f.startsWith(`${p}/`)).length
+      + (bumps.get(p) ?? 0);
   const $ = {
     env: { get: async (n) => env[n] },
     fs: {
       read: async (p) => {
+        calls.read.push(p);
         if (p in files) return files[p];
         throw new Error(`ENOENT ${p}`);
       },
-      write: async (p, text) => { files[p] = text; calls.write.push({ path: p, text }); },
+      write: async (p, text) => {
+        files[p] = text;
+        calls.write.push({ path: p, text });
+        bump(p);
+        bump(p.slice(0, p.lastIndexOf("/")));
+      },
       exists: async (p) => p in files || p in dirs,
       list: async (p) => {
-        if (p in dirs) return dirs[p];
-        throw new Error(`ENOENT ${p}`);
+        calls.list.push(p);
+        const ents = [...(dirs[p] ?? [])];
+        const seen = new Set(ents.map((e) => e.name));
+        for (const f of Object.keys(files)) {
+          if (!f.startsWith(`${p}/`)) continue;
+          const name = f.slice(p.length + 1);
+          if (name.includes("/") || seen.has(name)) continue;
+          ents.push({ name, kind: "file", isLink: false });
+        }
+        if (ents.length === 0 && !(p in dirs)) throw new Error(`ENOENT ${p}`);
+        return ents;
       },
       stat: async (p, init) => {
+        calls.stat.push(p);
         const st = (opts.stats ?? {})[p];
         if (p in files)
-          return { kind: "file", size: files[p].length, mtimeMs: st?.mtimeMs ?? 1, isLink: false, realPath: st?.realPath ?? p };
+          return { kind: "file", size: files[p].length, mtimeMs: st?.mtimeMs ?? bumps.get(p) ?? 1, isLink: false, realPath: st?.realPath ?? p };
         if (p in dirs)
-          return { kind: "dir", size: 0, mtimeMs: st?.mtimeMs ?? 1, isLink: false, realPath: st?.realPath ?? p };
+          return { kind: "dir", size: 0, mtimeMs: dirMtime(p), isLink: false, realPath: st?.realPath ?? p };
         throw new Error(`ENOENT ${p}`);
       },
     },

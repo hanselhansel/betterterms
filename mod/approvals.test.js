@@ -323,11 +323,14 @@ describe("approve press", () => {
 
   test("approval failure does not submit", async () => {
     const files = heldFiles();
+    // Build the route eagerly: its construction materializes the
+    // held/*.yaml files the scan's fingerprint needs to see.
+    const base = btRoute({ held: heldOpt() }, files);
     const { $, calls, state } = fakeDollar({
       files, dirs: heldDirs(), held: heldOpt(),
       run: (argv) => argv[3] === "approve"
         ? { exitCode: 2, stdout: `{"error":"no held draft matching ${HASH8}"}`, stderr: "" }
-        : btRoute({ held: heldOpt() }, files)(argv),
+        : base(argv),
     });
     await approvePress($);
     assert.equal(calls.submit.length, 0);

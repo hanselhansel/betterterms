@@ -10,6 +10,7 @@ import * as A from "./approvals.js";
 import * as IO from "./hostio.js";
 import * as T from "../ui/terms.js";
 import * as V from "../ui/savings.js";
+import { scanCases as scan } from "./scan.js";
 
 const PANE_ID = "betterterms";
 const POLL_MS = 3000;
@@ -21,70 +22,9 @@ const replied = new Set();
 let lastPrint = "";
 let lastStatus = "";
 
-// Held drafts for one case, via `bt.py held list`: the CLI reports
-// only records whose stored fields hash back to the filename, so a
-// corrupt or tampered held file never reaches a card.
-async function heldForCase(host, home, root, bt, id) {
-  const dir = `${root}/${id}`;
-  if (bt === null) return [];
-  if ((await IO.statIf(host, `${dir}/held`))?.kind !== "dir") return [];
-  const proc = await IO.runProc(host, home, ["python3", bt, "held", "list", id]);
-  if (proc.error) return [];
-  let out;
-  try { out = JSON.parse(proc.stdout); } catch { return []; }
-  if (!Array.isArray(out?.held)) return [];
-  return out.held
-    .map((h) => ({
-      hash: typeof h?.hash === "string" ? h.hash : "",
-      rendered: typeof h?.rendered === "string" ? h.rendered : "",
-      reasons: Array.isArray(h?.reasons) ? h.reasons.map(String) : [],
-      heldAt: typeof h?.held_at === "string" ? h.held_at : "",
-      approved: h?.approved === true,
-    }))
-    .filter((h) => h.hash !== "");
-}
-
-// The case-folder snapshot every hook draws from: brief, plan (the
-// offer bar's targets), thread, draft, gate.json, held/, ledger.
-// .floor is not scanned here; the terms editor reads it at `t`
-// only to show the user (ui/terms.js).
-export async function scanCases(host) {
-  const home = await IO.homeDir(host);
-  if (home === null) return A.EMPTY_SNAP;
-  const ledger = C.parseLedger((await IO.readIf(host, `${home}/ledger.jsonl`)) ?? "");
-  const root = `${home}/cases`;
-  const rootStat = await IO.statIf(host, root, { resolve: true });
-  if (rootStat?.kind !== "dir") {
-    return { home, root, resolvedRoot: null, cases: [], savedPerYear: ledger.savedPerYear };
-  }
-  const bt = await IO.findBt(host);
-  const cases = [];
-  for (const ent of await IO.listIf(host, root)) {
-    if (ent.kind !== "dir" || ent.isLink || !C.safeCaseId(ent.name)) continue;
-    const dir = `${root}/${ent.name}`;
-    const read = (n) => IO.readIf(host, `${dir}/${n}`);
-    const stat = (n) => IO.statIf(host, `${dir}/${n}`);
-    const texts = ["brief.yaml", "thread.md", "draft.yaml", "gate.json", "plan.yaml"];
-    const [briefText, threadText, draftText, gateText, planText] =
-      await Promise.all(texts.map(read));
-    const names = ["draft.yaml", "gate.json", "thread.md"];
-    const [draftSt, gateSt, threadSt] = await Promise.all(names.map(stat));
-    const [sources, held] = await Promise.all([
-      IO.listIf(host, `${dir}/sources`), heldForCase(host, home, root, bt, ent.name),
-    ]);
-    cases.push(C.deriveCase({
-      id: ent.name,
-      briefText, threadText, draftText, gateText, planText,
-      draftMtimeMs: draftSt?.mtimeMs ?? 0,
-      gateMtimeMs: gateSt?.mtimeMs ?? 0,
-      threadMtimeMs: threadSt?.mtimeMs ?? 0,
-      sourceCount: sources.length,
-      closed: ledger.closed.has(ent.name),
-      held,
-    }));
-  }
-  return { home, root, resolvedRoot: rootStat.realPath ?? root, cases, savedPerYear: ledger.savedPerYear };
-}
+// The case scan lives in lib/scan.js behind stat-fingerprint caching;
+// `burst` reuses the snapshot inside a redraw storm.
+export const scanCases = scan;
 
 // A write whose path resolves inside a case dir is bookkeeping, not a
 // send; the resolve stops a link under cases/ masquerading as one.

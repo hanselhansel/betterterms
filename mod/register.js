@@ -24,6 +24,7 @@
 import * as C from "./lib/cases.js";
 import * as A from "./lib/approvals.js";
 import * as IO from "./lib/hostio.js";
+import * as S from "./lib/scan.js";
 import * as W from "./lib/wiring.js";
 import * as T from "./ui/terms.js";
 import { paneTree } from "./ui/pane.js";
@@ -78,6 +79,7 @@ const plausible = (ss) => ss.some((s) => s.length >= C.SEND_MIN_CHARS || /-\d{8}
 
 export function register(on) {
   IO.resetBt();
+  S.resetScan();
   on("session.start", async ($, e, next) => W.sessionStart(hostOf($), e, next));
 
   on("command.run", { command: "betterterms" }, ($) => W.runCommand(hostOf($)));
@@ -105,7 +107,9 @@ export function register(on) {
   on("ui.render", { component: "AbovePrompt" }, async ($, e, next) => {
     if (e.props?.hasSurvey) return next(e);
     const host = hostOf($);
-    const snap = await W.scanCases(host).catch(() => A.EMPTY_SNAP);
+    // A redraw or drag storm may call this many times inside the
+    // burst window; the scan is fingerprint-cached anyway.
+    const snap = await W.scanCases(host, { burst: true }).catch(() => A.EMPTY_SNAP);
     const counts = {
       held: C.heldTotal(snap.cases),
       pending: C.pendingWithoutHeld(snap.cases),
@@ -120,7 +124,7 @@ export function register(on) {
   on("ui.render", { component: "Pane", requestId: PANE_ID }, async ($, e) => {
     const el = $.ui.resolve(e);
     const host = hostOf($);
-    const snap = await W.scanCases(host).catch(() => A.EMPTY_SNAP);
+    const snap = await W.scanCases(host, { burst: true }).catch(() => A.EMPTY_SNAP);
     const act = W.paneActions(host, snap);
     const view = {
       tab: await W.getTab(host),
