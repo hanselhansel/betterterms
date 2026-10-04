@@ -93,7 +93,10 @@ or ask for their offer when it is not. Then gate, send, and log as below.
      second send is held again.
    - Exit 1, `block`: when the reason is "outside your limits; escalate
      to the user", escalate to the user and do not redraft toward a
-     guessed limit. On any other block, redraft once without the blocked
+     guessed limit. When the reason is "the message contains your
+     walk-away amount", the number reached the text through a fact or a
+     verbatim quote: redraft without the fact or quote that carried it.
+     On any other block, redraft once without the blocked
      content and re-gate. A second block means escalate to the user.
      The gate may be probed by repeated calls, so this redraft-once
      then-escalate rule is the cap on gate calls per turn.

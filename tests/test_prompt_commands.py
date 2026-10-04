@@ -220,6 +220,52 @@ class RejectAndTermsTest(HookCase):
         note = additional_context(hook_json(proc))
         self.assertIn("terms", note)
 
+    def test_terms_target_key_only(self):
+        # The terms widget sends only the keys the user filled.
+        case_dir = self.make_case()
+        proc = run_hook(self.home, "bt terms case-1 target=80")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        plan = yaml.load((case_dir / "plan.yaml").read_text())
+        self.assertEqual(plan["target"], 80)
+        self.assertIsNone(plan.get("best_alternative"))
+        self.assertIn("terms", additional_context(hook_json(proc)))
+
+    def test_terms_alternative_key_only(self):
+        case_dir = self.make_case()
+        proc = run_hook(self.home, "bt terms case-1 alternative=55")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        plan = yaml.load((case_dir / "plan.yaml").read_text())
+        self.assertIsNone(plan.get("target"))
+        self.assertEqual(plan["best_alternative"]["amount"], 55)
+
+    def test_terms_reversed_order(self):
+        case_dir = self.make_case()
+        proc = run_hook(
+            self.home,
+            "bt terms case-1 alternative=50 target=60",
+        )
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        plan = yaml.load((case_dir / "plan.yaml").read_text())
+        self.assertEqual(plan["target"], 60)
+        self.assertEqual(plan["best_alternative"]["amount"], 50)
+
+    def test_terms_repeated_key_blocks(self):
+        case_dir = self.make_case()
+        proc = run_hook(
+            self.home, "bt terms case-1 target=60 target=70"
+        )
+        out = hook_json(proc)
+        self.assertEqual(out["decision"], "block")
+        self.assertIn("bt terms", out["reason"])
+        self.assertFalse((case_dir / "plan.yaml").exists())
+
+    def test_terms_no_keys_blocks(self):
+        self.make_case()
+        proc = run_hook(self.home, "bt terms case-1")
+        out = hook_json(proc)
+        self.assertEqual(out["decision"], "block")
+        self.assertIn("bt terms", out["reason"])
+
 
 class NonCommandTest(HookCase):
     def test_plain_text_passes_silently(self):
@@ -259,6 +305,32 @@ class ParseTest(unittest.TestCase):
                 "target": "60",
                 "alternative": "50",
             },
+        )
+        self.assertEqual(
+            prompt_commands.parse(
+                "bt terms case-1 alternative=50 target=60"
+            ),
+            {
+                "verb": "terms",
+                "case_id": "case-1",
+                "target": "60",
+                "alternative": "50",
+            },
+        )
+        self.assertEqual(
+            prompt_commands.parse("bt terms case-1 target=60"),
+            {
+                "verb": "terms",
+                "case_id": "case-1",
+                "target": "60",
+                "alternative": None,
+            },
+        )
+        self.assertIsNone(
+            prompt_commands.parse("bt terms case-1 target=1 target=2")
+        )
+        self.assertIsNone(
+            prompt_commands.parse("bt terms case-1 bogus=1")
         )
         self.assertIsNone(prompt_commands.parse("hello"))
         self.assertIsNone(

@@ -10,8 +10,8 @@ grammar is handled here:
   bt approve <case_id> <hash8>   -> held approve, pass with a note
   bt reject  <case_id> <hash8>   -> held reject, pass with a note
   bt floor   <case_id> <amount>  -> case set-floor on stdin, then block
-  bt terms   <case_id> target=<a> alternative=<b> -> case set-terms,
-                                   pass with a note
+  bt terms   <case_id> target=<a> and/or alternative=<b> ->
+                                  case set-terms, pass with a note
 
 ``bt floor`` always blocks, so the walk-away is never forwarded to
 the model; its reason never carries the amount. A line that opens
@@ -33,21 +33,25 @@ USAGE = {
     "approve": "bt approve <case> <hash8>",
     "reject": "bt reject <case> <hash8>",
     "floor": "bt floor <case> <amount>",
-    "terms": "bt terms <case> target=<amount> alternative=<amount>",
+    "terms": (
+        "bt terms <case> target=<amount> and/or "
+        "alternative=<amount>"
+    ),
 }
 
 _GRAMMAR = (
     ("approve", re.compile(r"bt\s+approve\s+(\S+)\s+(\S+)", re.I)),
     ("reject", re.compile(r"bt\s+reject\s+(\S+)\s+(\S+)", re.I)),
     ("floor", re.compile(r"bt\s+floor\s+(\S+)\s+(\S+)", re.I)),
+    # The tail is key=value pairs; _terms_args enforces the keys.
     (
         "terms",
-        re.compile(
-            r"bt\s+terms\s+(\S+)\s+target=(\S+)\s+alternative=(\S+)",
-            re.I,
-        ),
+        re.compile(r"bt\s+terms\s+(\S+)((?:\s+\w+=\S+)+)", re.I),
     ),
 )
+
+_TERMS_KV = re.compile(r"(\w+)=(\S+)")
+_TERMS_KEYS = ("target", "alternative")
 
 _OPENER = re.compile(r"bt\s+(approve|reject|floor|terms)\b", re.I)
 _MESSAGE = re.compile(r"<message\b([^>]*)>(.*?)</message>", re.DOTALL)
@@ -85,6 +89,25 @@ def user_text(prompt):
     return ""
 
 
+def _terms_args(pairs_text):
+    """The ``key=value`` tail of a ``bt terms`` message: each key at
+    most once, at least one of ``target`` or ``alternative`` present,
+    no other keys. Anything else returns None, which lands the line
+    in the usage block."""
+    pairs = _TERMS_KV.findall(pairs_text)
+    keys = [k.lower() for k, _v in pairs]
+    if (
+        not pairs
+        or len(set(keys)) != len(keys)
+        or any(k not in _TERMS_KEYS for k in keys)
+    ):
+        return None
+    return {
+        key: dict((k.lower(), v) for k, v in pairs).get(key)
+        for key in _TERMS_KEYS
+    }
+
+
 def parse(text):
     """The command a whole trimmed message names, or None. Returns a
     dict with ``verb`` and ``case_id`` plus ``hash8``, ``amount`` or
@@ -100,7 +123,10 @@ def parse(text):
         elif verb == "floor":
             out["amount"] = m.group(2)
         else:
-            out["target"], out["alternative"] = m.group(2), m.group(3)
+            args = _terms_args(m.group(2))
+            if args is None:
+                return None
+            out.update(args)
         return out
     return None
 
@@ -193,23 +219,21 @@ def _held(verb, case_id, hash8):
 
 
 def _terms(case_id, target, alternative):
-    code, _out, err = _run_bt(
-        [
-            "case",
-            "set-terms",
-            case_id,
-            "--target",
-            target,
-            "--alternative",
-            alternative,
-        ]
-    )
+    args = ["case", "set-terms", case_id]
+    parts = []
+    if target is not None:
+        args += ["--target", target]
+        parts.append(f"target {target}")
+    if alternative is not None:
+        args += ["--alternative", alternative]
+        parts.append(f"best alternative {alternative}")
+    code, _out, err = _run_bt(args)
     if code != 0:
         _block(f"betterterms: {err}")
         return
     _pass(
         f"betterterms: the user updated terms for {case_id}: "
-        f"target {target}, best alternative {alternative}."
+        f"{', '.join(parts)}."
     )
 
 

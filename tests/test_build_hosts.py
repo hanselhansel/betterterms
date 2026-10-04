@@ -19,14 +19,15 @@ KIT = json.loads((REPO / "kit.config.json").read_text(encoding="utf-8"))
 
 GENERATORS = (gen_agent_plugins,)
 
-# Agent Plugins 1.0.0: closed manifest schema, section 5.2. Skills are
-# discovered from the fixed skills/ location, never declared inline.
+# Agent Plugins 1.0.0: closed manifest schema, section 5.2. The skills
+# key names the skills/ tree the README promises; clients also discover
+# it from the fixed location.
 AGENT_PLUGINS_SCHEMA = (
     "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json"
 )
 AGENT_PLUGINS_FIELDS = {
     "$schema", "name", "version", "description", "author", "homepage",
-    "repository", "license", "keywords", "extensions",
+    "repository", "license", "keywords", "extensions", "skills",
 }
 AGENT_PLUGINS_NAME = re.compile(r"[a-z0-9][a-z0-9.-]*[a-z0-9]|[a-z0-9]")
 
@@ -99,11 +100,15 @@ class AgentPluginsShapeTest(unittest.TestCase):
         )
         self.assertEqual(data["license"], KIT["license"])
 
-    def test_no_inline_component_fields(self):
-        # Component discovery is fixed-location only: no skills, hooks,
-        # or mcpServers keys may appear in the manifest.
+    def test_skills_key_names_the_tree(self):
         data = json.loads(self.files["plugin.json"])
-        for key in ("skills", "hooks", "mcpServers", "commands"):
+        self.assertEqual(data["skills"], "./skills/")
+
+    def test_no_inline_component_fields(self):
+        # Component discovery is fixed-location only: no hooks,
+        # mcpServers or commands keys may appear in the manifest.
+        data = json.loads(self.files["plugin.json"])
+        for key in ("hooks", "mcpServers", "commands"):
             self.assertNotIn(key, data)
 
 

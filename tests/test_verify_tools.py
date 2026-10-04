@@ -75,6 +75,31 @@ class VerifyToolChecksTest(unittest.TestCase):
         self.assertIn("SKIP claude-validate: claude not installed", proc.stdout)
         self.assertNotIn("FAIL", proc.stdout)
 
+    def test_mod_checks_registered(self):
+        names = [name for name, _ in VERIFY_MOD.CHECKS]
+        self.assertIn("mod-tests", names)
+        self.assertIn("mod-validate", names)
+
+    @unittest.skipIf(os.name == "nt", "fake binaries are POSIX shell scripts")
+    def test_mod_validate_skips_without_claude(self):
+        root = Path(self.tmp.name)
+        make_repo_root(root)
+        (root / "mod" / ".claude-plugin").mkdir(parents=True)
+        (root / "mod" / ".claude-plugin" / "plugin.json").write_text(
+            '{"name": "betterterms-mod"}\n'
+        )
+        fakebin = root / "fakebin"
+        fakebin.mkdir()
+        node = fakebin / "node"
+        node.write_text("#!/bin/sh\nexit 0\n")
+        node.chmod(0o755)
+        with mock.patch.dict(os.environ, {"PATH": str(fakebin)}):
+            proc = run_verify(root)
+        self.assertIn(
+            "SKIP mod-validate: claude not installed", proc.stdout
+        )
+        self.assertNotIn("FAIL", proc.stdout)
+
     def test_eval_smoke_registered_after_version_sync(self):
         names = [name for name, _ in VERIFY_MOD.CHECKS]
         self.assertEqual(

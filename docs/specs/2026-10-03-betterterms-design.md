@@ -2,7 +2,11 @@
 
 Better terms on every bill, plan, and offer.
 
-Status: draft for review, not implemented. Date: 2026-10-03. Owner: Hansel.
+Status: implemented in 0.10.0 (release 2026-10-04); this document still
+reads as the day-zero draft. The 2026-10-04 release spec and decisions
+0012 to 0017 record where the shipped kit differs (removed hosts, the
+floor file, held drafts, typed commands, the mod, display modes).
+Date: 2026-10-03. Owner: Hansel.
 Location: `~/conductor/repos/betterterms/docs/specs/`. The folder is not a git repo yet.
 Companion spec: `2026-10-03-betterterms-negotiation-procedure.md` (how the agent negotiates).
 Research behind both: `docs/research/` in this folder.

@@ -45,18 +45,70 @@ Exit codes and results:
 - 0, `pass`: send the `rendered` text verbatim per the autonomy level.
 - 1, `block`: the draft breaks a hard rule. On a floor-related block the
   reason is generic; do not redraft toward a guessed limit, escalate
-  to the user. On any other block, redraft without the blocked content.
+  to the user. When the reason is `the message contains your
+  walk-away amount`, the rendered text itself stated the number, so
+  redraft without the fact or quote that carried it. On any other
+  block, redraft without the blocked content.
 - 2: usage or file error. Fix the call.
 - 3, `needs_approval`: the action is irreversible, coach mode,
   autonomy level 1, a `send` offer at the user's limit, a `send`
   offer in a period the floor cannot compare, or the review scan
-  flagged the rendered text.
-  Show the user the `rendered` text and the plain-word reasons, ask
-  for an explicit yes, then re-run with `--approved`.
+  flagged the rendered text. The draft is held: the gate writes
+  `held/<hash>.yaml` in the case folder (the rendered text and the
+  reasons) and returns `hash` in the JSON. Show the `rendered` text
+  and the reasons per the display mode below. A held draft waits as
+  long as the user takes and survives restarts: a new session lists
+  the same `held/` files again.
 
-`--approved` is only honest after the user's explicit yes in this
-conversation. Quote that yes in `thread.md` next to
-`approved_by_user: yes`. Never pass `--approved` on a guess.
+An approval binds to the SHA-256 of the exact rendered text. Only a
+user action writes `held/<hash>.approved`, through one of three
+paths:
+
+- a keypress or click on Approve in the `betterterms-mod` Approvals
+  tab,
+- the user's own `bt approve <case_id> <hash8>` message, which the
+  prompt hook catches (a widget button can type it for them), or
+- `python3 ../betterterms-guardrails/scripts/bt.py held approve
+  <case_id> <hash8>`, which the agent runs only in a host with no
+  prompt hook and only after the user typed `bt approve` for that
+  draft.
+
+The agent then re-runs the gate with `--approved`. It passes only
+when an approval file matches the hash of the newly rendered text,
+and the file is consumed after one use: a changed text, a second
+send, or no matching approval holds the draft again with the reason
+`no approval recorded for this exact text`. Typing "yes" in chat
+approves nothing. `held reject` is the matching drop:
+`bt reject <case_id> <hash8>` or `bt.py held reject` removes the
+held draft and stamps `rejected` in `thread.md`.
+
+`hash8` is the first 8 or more hex characters of the draft hash and
+must name exactly one held draft: zero or several matches is exit 2,
+and several names every full hash. The agent can write files, so the
+`PreToolUse` hook that denies writes under `held/` is the guard
+against a forged approval; it is best effort. Counterparty text can
+still never approve: it can never become a user message.
+
+## Display modes
+
+How a held draft reaches the user depends on the session (spec 6.8):
+
+- Mod: the `betterterms-mod` pane draws (Claude Code terminal or
+  Desktop). Held drafts sit in its Approvals tab and the user's
+  keypress or click approves. The agent posts nothing.
+- Widget: the session has a tool that posts interactive widgets
+  (Projects cloud threads). The agent posts the `html` from
+  `python3 ../betterterms-guardrails/scripts/bt.py widget approval <case_id> <hash8>`
+  as is. Its buttons type the `bt` command into the user's message
+  box, and the user presses Enter. `bt.py widget cases`,
+  `bt.py widget terms <case_id>` and `bt.py widget savings` cover
+  the other views.
+- Chat: neither (Codex, plain cloud sessions, `claude -p`). The
+  agent prints the rendered text and the reasons, then the typed
+  commands: `bt approve <case_id> <hash8>` to approve and send, or
+  `bt reject <case_id> <hash8>` to drop the draft. In a host with no
+  prompt hook the agent records the user's typed answer itself with
+  `bt.py held approve` or `bt.py held reject`.
 
 Drafts are structured, not free text. Prices reach the message only
 through placeholders the gate renders itself:

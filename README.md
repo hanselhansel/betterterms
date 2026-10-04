@@ -35,7 +35,7 @@ hold yourself: fixed numbers, a script, and a rehearsal before the call.
 |---|---|
 | Claude Code (terminal, desktop) | `/plugin marketplace add hanselhansel/betterterms`, then `/plugin install betterterms@betterterms`. Auto-update for third-party marketplaces is off until you enable it. |
 | Claude Code cloud sessions | Marketplace plugins do not load there. Run `python3 scripts/vendor-into-repo <repo>` to copy the skills into a repo's `.claude/skills/`. |
-| Codex | `codex plugin marketplace add hanselhansel/betterterms`, then `codex plugin add betterterms@betterterms`. |
+| Codex | `codex plugin marketplace add hanselhansel/betterterms`, then `codex plugin add betterterms@betterterms`. Codex has no slash commands: name the skill instead (`betterterms-start` routes, `betterterms-subscriptions` starts a pack). |
 | Other Agent Plugins readers | The repo root carries an Agent Plugins 1.0 `plugin.json` pointing at `skills/`; add the repo as a plugin source in your host. |
 | Any Agent Skills reader | `python3 scripts/install-skills --target ~/.agents/skills`. |
 
@@ -44,12 +44,17 @@ Per-host detail, updating, and uninstall: [docs/guides/install.md](docs/guides/i
 ## Quickstart
 
 **Lower a subscription (Act).** Run `/betterterms:subscriptions`. Answer the
-intake questions, then set your walk-away number in your own terminal when
-the skill prints the `bt.py case set-floor` command; the prompt hides what
-you type. Discovery asks permission before reading receipts and renewal mail,
-then returns a target list. Pick targets; the agent researches each vendor's
+intake questions, then set your walk-away number yourself: the skill prints
+an absolute `bt.py case set-floor` command for your terminal (hidden
+prompt), or you type `bt floor <case_id> <amount>` as a chat message the
+prompt hook intercepts before the model sees it. Discovery asks permission
+before reading receipts and renewal mail, then returns a target list. Pick
+targets; each pick is its own case. The agent researches each vendor's
 policies and current promotions, builds a plan, and drafts messages in your
-voice. You approve each send. The ledger records what you saved.
+voice. Drafts the gate holds wait as files; you approve the exact rendered
+text by keypress in the mod's Approvals tab or a typed `bt approve`, and
+the hash of that text binds the approval to one send. The ledger records
+what you saved.
 
 **Negotiate a job offer (Coach).** Run `/betterterms:salary`. Share the offer,
 the deadline, and your priorities, and set your walk-away number the same
@@ -92,15 +97,23 @@ every send. Full detail: [docs/guides/safety-model.md](docs/guides/safety-model.
 There is no server and no account. Case files, the ledger, and your settings
 live in `~/.betterterms` on your machine. Skills read your connected data
 only after asking, per source. Research queries never contain personal
-details. Optional anonymized response sharing is off.
+details.
 
 ## The optional mod
 
 `betterterms-mod` is a separate Claude Code plugin in the same marketplace
-(`/plugin install betterterms-mod@betterterms`). It adds a case-pipeline
-pane, a band counting drafts waiting for approval, and toasts on new
-counterparty replies. It reads only your case files and ledger. The core kit
-never depends on it.
+(`/plugin install betterterms-mod@betterterms`). It adds a cockpit pane
+(Cases, Approvals, Savings tabs), a terms editor, a band over the prompt
+counting held drafts, one-line gate rows, and toasts on new counterparty
+replies. It reads only your case files and ledger. The core kit never
+depends on it.
+
+Where the mod cannot draw, the same surfaces come through two fallbacks:
+in sessions that can post interactive widgets (Projects cloud threads)
+the skills post `bt.py widget` HTML whose buttons type `bt` commands into
+your message box, and everywhere else you get plain text plus the same
+typed commands. Full detail and what each mode guarantees:
+[docs/guides/quickstart.md](docs/guides/quickstart.md).
 
 ## Troubleshooting
 

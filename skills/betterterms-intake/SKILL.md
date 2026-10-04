@@ -28,10 +28,27 @@ drafted: misreading them is the biggest source of lost value.
 
 ## Procedure
 
-1. Create the case:
+1. Resolve the runtime's absolute path once and keep it: every command
+   this skill prints for the user carries that path, never a relative
+   one.
 
-   `python3 ../betterterms-guardrails/scripts/bt.py case new --pack <pack> --mode <mode> --direction <direction>`
+   `python3 ../betterterms-guardrails/scripts/bt.py where`
 
+   Use the `bt` value it returns in place of `<bt>` below. Then create
+   the case:
+
+   `python3 <bt> case new --pack <pack> --mode <mode> --direction <direction>`
+
+   A case holds exactly one counterparty. When discovery later returns
+   several picked targets, run `case new` once per extra target and
+   repeat step 3 for each: every case gets its own walk-away. The rest
+   of the brief carries over.
+   `case new` prefills the new case's `autonomy` and `currency` from
+   `~/.betterterms/config.yaml` when that file exists; the values copy
+   into `brief.yaml` and `plan.yaml`, so a later config edit never
+   changes an existing case. A bad value stops the command with a
+   plain error naming the key; the user fixes it with
+   `python3 <bt> config set <key> <value>`.
    Use the pack's declared mode and direction. When the pack allows both
    modes, ask the user whether you run the exchange in writing (act) or
    prepare them for a live conversation (coach). Note the `case_id` and
@@ -43,18 +60,22 @@ drafted: misreading them is the biggest source of lost value.
    The user enters it themselves, in their own terminal. Tell them to run
    this exact command:
 
-   `python3 ../betterterms-guardrails/scripts/bt.py case set-floor <case_id>`
+   `python3 <bt> case set-floor <case_id>`
 
    - On a terminal it asks `Walk-away number (hidden): ` and does not
      echo what they type.
    - In a session with a tool that posts interactive widgets (a
      Projects cloud thread), post the `html` from
-     `python3 ../betterterms-guardrails/scripts/bt.py widget terms <case_id>`
+     `python3 <bt> widget terms <case_id>`
      as is. Its walk-away field types `bt floor <case_id> <amount>`
      as the user's own message, and the prompt hook writes it like
      the terminal command. That value stays visible in the thread,
      so the terminal command stays the better path whenever the
      user has a terminal.
+   - In Claude Code with the `betterterms-mod` plugin, the terms
+     editor in the BetterTerms pane (`t` on the case) sets the same
+     value by drag, nudge, or a typed field, and writes it through
+     `case set-floor` itself.
    - Never repeat the value back. Never write it into `brief.yaml`,
      `plan.yaml`, `thread.md`, a draft, or any other file. Only the gate
      and the scorer can read it.
@@ -63,7 +84,7 @@ drafted: misreading them is the biggest source of lost value.
      pass the value on stdin with a quoted heredoc:
 
      ```
-     python3 ../betterterms-guardrails/scripts/bt.py case set-floor <case_id> <<'EOF'
+     python3 <bt> case set-floor <case_id> <<'EOF'
      <value>
      EOF
      ```

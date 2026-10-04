@@ -13,6 +13,15 @@ You type the walk-away number in your own terminal
 `bt.py case show` never prints it, and block reasons never contain it.
 Detail: [decision 0001](../decisions/0001-floor-in-separate-file.md).
 
+Two other entry paths land in the same file: the mod's terms editor
+writes it through `case set-floor` on stdin, and a `bt floor
+<case_id> <amount>` chat message is caught by a `UserPromptSubmit`
+hook, written through stdin, and blocked so the model never receives
+it. In a Projects thread that message stays visible to project
+members, so the terminal stays the better path there; a
+`PreToolUse` hook also denies reads of `.floor` files, `held/`
+records, and the session transcript.
+
 ## The gate's two tiers
 
 `bt.py gate` checks each draft and returns `pass`, `block`, or
@@ -43,6 +52,47 @@ placeholders the gate renders itself: `{offer}`, `{target}`,
 Every floor-related block reports one generic reason ("outside your limits;
 escalate to the user"), so the gate's own output cannot leak the number. See
 [decision 0007](../decisions/0007-gate-hardening.md).
+
+## Held drafts and hash-bound approvals
+
+A `needs_approval` verdict does not hold a send open; it parks the
+draft. The gate writes `held/<hash>.yaml` in the case folder with the
+rendered text and reasons, and returns the `hash`. The draft waits for
+you there, minutes or days, and survives restarts.
+
+Approval is bound to the SHA-256 of the exact rendered text, recorded
+as `held/<hash>.approved`, and written only by a user action:
+
+- a keypress or click on Approve in the `betterterms-mod` Approvals
+  tab,
+- your own `bt approve <case_id> <hash8>` message caught by the
+  prompt hook (a widget button types it for you), or
+- `bt.py held approve`, run by the agent only in a host with no
+  prompt hook and only after you typed `bt approve`.
+
+The gate accepts `--approved` only when an approval file matches the
+hash of the newly rendered text, and it consumes the file after one
+use. Edit the text and the old approval no longer matches: the send is
+denied and the draft is held again. Typing "yes" in chat approves
+nothing.
+
+`bt reject <case_id> <hash8>` drops the held draft. `bt terms
+<case_id> target=<a> alternative=<b>` writes target and best
+alternative to `plan.yaml` (`bt terms` takes either key alone, in any
+order). Both come through the same prompt hook.
+
+## Display modes, stated plainly
+
+| Mode | Where | What approval means |
+|---|---|---|
+| Mod | Claude Code terminal or Desktop with `betterterms-mod` | A keypress or click recorded in mod state the agent cannot write. The strongest path: no file the agent creates, and no text in a counterparty's email, can approve a draft. |
+| Widget | Projects cloud threads with a widget-posting tool | A `held/<hash>.approved` file written by the prompt hook after your typed `bt approve` (the widget button only fills the message box; you press Enter). Weaker than the mod: the agent can write files, so the `PreToolUse` guard denying writes under `held/` is the only guard against a forged approval, and it is best effort. |
+| Chat | Codex, plain cloud sessions, `claude -p` | The same typed commands and the same approval file; with no prompt hook the agent runs `bt.py held approve` after you type `bt approve`. Same strength as the widget mode. |
+
+Every mode shares the guarantee that counts most: text inside an
+inbound message can never become a user message, so it can never
+approve a draft. In a Projects wake envelope, only the `from="human"`
+triggering body counts as you.
 
 ## What the gate does not do
 

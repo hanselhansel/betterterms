@@ -4,9 +4,9 @@ gen(root, version) -> {relpath: content} produces plugin.json at the
 repo root, the portable manifest that Agent Plugins clients (Codex,
 Cursor, Copilot, VS Code, Kiro) read. The manifest schema is closed:
 only $schema, name, version, description, author, homepage,
-repository, license, keywords, and extensions are permitted.
-Components live at fixed locations, so no skills or mcpServers keys
-appear here: skills/ is discovered by the client.
+repository, license, keywords, and extensions are permitted. The
+skills key names the skills/ tree the README promises; clients also
+discover it by convention.
 """
 
 import json
@@ -43,5 +43,6 @@ def gen(root, version):
             "repository": kit["repository"],
             "license": kit["license"],
             "keywords": kit["keywords"],
+            "skills": "./skills/",
         }),
     }

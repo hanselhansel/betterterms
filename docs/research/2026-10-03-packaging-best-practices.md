@@ -1,6 +1,12 @@
 # Packaging a cross-agent negotiation toolkit (2026-10-03)
 
-Working name `askmore` (from naming.md). Docs fetched 2026-10-03; versions noted where stated.
+Working name `askmore` (from naming.md); shipped as `betterterms`. Docs
+fetched 2026-10-03; versions noted where stated. What 0.10.0 shipped:
+Claude Code plugin and optional mod, Codex plugin, Agent Plugins
+`plugin.json` for other readers, and `scripts/install-skills` for
+generic `skills/` readers. Gemini, Cursor, Muse, and claude.ai skill
+zips are out of this release (decision 0013); the research on them
+below stays for when they come back.
 
 ## 1. Agent Skills spec (agentskills.io/specification, unversioned)
 

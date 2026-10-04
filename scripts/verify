@@ -35,6 +35,8 @@ from _lib.checks_tools import (
     check_build_fresh,
     check_claude_validate,
     check_eval_smoke,
+    check_mod_tests,
+    check_mod_validate,
     check_unit_tests,
     check_vendor_sync,
     check_version_sync,
@@ -59,6 +61,8 @@ CHECKS = [
     ("eval-smoke", check_eval_smoke),
     ("templates-gate", check_templates_gate_status),
     ("claude-validate", check_claude_validate),
+    ("mod-tests", check_mod_tests),
+    ("mod-validate", check_mod_validate),
 ]
 
 

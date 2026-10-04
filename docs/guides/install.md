@@ -28,6 +28,12 @@ Marketplace plugins do not load in cloud sessions. Two paths work:
   `<repo>/.claude/skills/` and writes a `.betterterms-version` marker. Commit
   the result; the cloud session clones the repo and gets the skills with it.
 
+In a Projects thread, the skills post the same views as interactive
+widgets: cases, the approval card, the terms editor, savings. A widget
+button fills your message box with a typed `bt` command; you press
+Enter to send it. See the display modes table in
+[quickstart](quickstart.md).
+
 Cloud case folders are temporary. Treat a cloud case as short-lived: export
 anything you want to keep before the session ends.
 
@@ -37,6 +43,16 @@ anything you want to keep before the session ends.
 codex plugin marketplace add hanselhansel/betterterms
 codex plugin add betterterms@betterterms
 ```
+
+Codex has no slash commands: name the skill instead. Ask for
+`betterterms-start` and it routes you, or name a pack skill directly
+(`betterterms-subscriptions`, `betterterms-bills`,
+`betterterms-refunds`, `betterterms-cancellations`,
+`betterterms-ai-api`, `betterterms-job-offer`,
+`betterterms-promotion`). Codex also has no prompt hook in this
+release: you set the walk-away with the `bt.py case set-floor`
+terminal command, and approve held drafts by typing `bt approve
+<case_id> <hash8>` in chat.
 
 ## Other Agent Plugins readers
 
@@ -62,9 +78,12 @@ Point any other reader at `skills/` directly.
 /plugin install betterterms-mod@betterterms
 ```
 
-It adds a case-pipeline pane, a band counting drafts waiting for approval, and
-toasts on new counterparty replies. It reads only `~/.betterterms`. The core
-kit never depends on it, and it does not run in cloud sessions.
+It adds a pane with Cases, Approvals, and Savings tabs, a band above the
+prompt when a draft waits for you, one-line gate rows in the transcript,
+and toasts on new counterparty replies. Its terms editor sets the
+walk-away without typing it in a terminal. It reads only
+`~/.betterterms`. The core kit never depends on it. Its pane, band and
+toasts do not draw in cloud sessions; the widget fallback covers those.
 
 ## Keeping installs honest
 
