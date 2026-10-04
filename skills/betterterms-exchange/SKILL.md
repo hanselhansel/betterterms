@@ -67,17 +67,30 @@ or ask for their offer when it is not. Then gate, send, and log as below.
    Read the band and the escalate list:
 
    - `unknown`, `near_floor`, `below_floor`: escalate to the user.
+     Escalate means the turn ends here: do not write `draft.yaml`,
+     do not call the gate, and do not counter. Show the user the
+     counterparty's offer, the band in plain words (`unknown`: "the
+     offer cannot be scored against your limits", `near_floor`:
+     "close to your walk-away", `below_floor`: "past your
+     walk-away"), and one recommendation: accept, counter at a
+     named amount from the plan, or walk away. Then wait for the
+     user's decision.
    - `at_or_above_target`: ask the user to approve acceptance.
    - `in_band`: negotiate per the plan.
 3. Verify new claims in the message ("lowest price", "expires today",
    rival quotes) against the fact list or a fresh source check.
 4. Pick one move per the turn procedure. Draft `draft.yaml`. Every id
-   in `claims` must exist in `plan.yaml` facts. Write money only
-   through placeholders: `{offer}` for your offer with its period,
+   in `claims` must exist in `plan.yaml` facts. Cite every plan fact
+   the message relies on: put `{fact:<id>}` in `template` and the id
+   in `claims`, never one without the other. When the counterparty
+   sets a deadline or makes a claim the plan has a fact about, cite
+   that fact (pushing back on a deadline needs the fact about a
+   reasonable decision window). Write money only through
+   placeholders: `{offer}` for your offer with its period,
    `{target}`, `{option:<label>}`, `{ladder:<n>}` for plan values,
    `{fact:<id>}` for a fact's text (this claims the id too), and
-   `{quote:<n>}` for the n-th amount in inbound `amounts`. Never type a
-   price into the template directly.
+   `{quote:<n>}` for the n-th amount in inbound `amounts`. Never type
+   a price into the template directly.
 5. Gate it. When this turn answers an inbound message, pass it so
    `{quote:n}` placeholders resolve:
 
