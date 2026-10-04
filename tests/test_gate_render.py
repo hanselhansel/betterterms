@@ -375,15 +375,17 @@ class ReviewTierTest(RenderTest):
 
     def test_rendered_over_64kb_blocks_before_scanning(self):
         # The cap applies to the rendered message, including fact
-        # expansion, not the template.
-        big = "word " * 14000  # ~70 KB once rendered
+        # expansion, not the template. One ~20 KB fact cited five
+        # times renders ~100 KB from a plan file well under 64 KB.
+        big = "word " * 4200  # ~21 KB
         plan = dict(
             plan_for("pay", 1200),
             facts=[{"id": "fbig", "text": big, "source": "x"}],
         )
         case_id = self.make_case(plan=plan)
         proc, out = self.gate(
-            case_id, send_draft(template="note {fact:fbig}"),
+            case_id,
+            send_draft(template="note " + "{fact:fbig} " * 5),
         )
         self.assertEqual(proc.returncode, 1, out)
         self.assertIn("too large", " ".join(out["reasons"]))

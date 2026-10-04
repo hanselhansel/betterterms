@@ -309,25 +309,23 @@ class Pass3ProbeTest(ProbeTest):
 
     def test_once_offer_against_month_floor(self):
         # Floor declared monthly; a once offer cannot convert, so the
-        # draft routes to the user. A clearly worse raw value still
-        # fails closed.
+        # raw values are never compared: every send routes to the
+        # user, however large the raw number reads.
         plan = dict(PLAN_BILLS, period="month")
         case_id = self.make_case(plan=plan)
-        out = self.blocked(
-            case_id,
-            send_draft(offer=14400, period="once",
-                       template="I can do {offer} prepaid"),
-        )
-        self.assertIn(LIMITS, out["reasons"])
-        draft = send_draft(
-            offer=1100, period="once",
-            template="I can do {offer} prepaid",
-        )
-        proc, out = self.gate(case_id, draft)
-        self.assertEqual(proc.returncode, 3, out)
-        self.assertIn("period differs", " ".join(out["reasons"]))
-        proc, out = self.gate(case_id, draft, approved=True)
-        self.assertEqual(proc.returncode, 0, out)
+        for offer in (14400, 1100):
+            with self.subTest(offer=offer):
+                draft = send_draft(
+                    offer=offer, period="once",
+                    template="I can do {offer} prepaid",
+                )
+                proc, out = self.gate(case_id, draft)
+                self.assertEqual(proc.returncode, 3, out)
+                self.assertEqual(
+                    out["reasons"], ["period differs from your limit"]
+                )
+                proc, out = self.gate(case_id, draft, approved=True)
+                self.assertEqual(proc.returncode, 0, out)
 
     def test_month_offer_against_once_floor(self):
         # Floor declared once; a monthly offer cannot convert, so the

@@ -149,3 +149,40 @@ class BtTestCase(unittest.TestCase):
         self.addCleanup(self._tmp.cleanup)
         self.home = Path(self._tmp.name) / "bthome"
         self.tmp = Path(self._tmp.name)
+
+
+class PriceCase(BtTestCase):
+    """A pay case with a floor, shared by the period and rendered-value
+    tests: ``gate`` runs ``bt.py gate`` and ``score`` runs
+    ``bt.py score`` against it."""
+
+    def make_case(self, direction="pay", floor=100, plan=None, brief=None):
+        case_id, case_dir = new_case(self.home, direction=direction)
+        b = dict(BRIEF_PAY, direction=direction)
+        if brief:
+            b.update(brief)
+        write_case_files(
+            case_dir,
+            brief=b,
+            plan=plan_for(direction, floor) if plan is None else plan,
+            floor=floor,
+        )
+        return case_id
+
+    def gate(self, case_id, draft, approved=False, inbound=None):
+        path = write_draft(self.tmp, draft)
+        args = ["gate", case_id, "--draft", str(path)]
+        if approved:
+            args.append("--approved")
+        if inbound is not None:
+            ipath = self.tmp / "inbound.yaml"
+            ipath.write_text(yaml.dump(inbound))
+            args += ["--inbound", str(ipath)]
+        return run_bt_json(self.home, *args)
+
+    def score(self, case_id, inbound):
+        ipath = self.tmp / "inbound.yaml"
+        ipath.write_text(yaml.dump(inbound))
+        return run_bt_json(
+            self.home, "score", case_id, "--inbound", str(ipath)
+        )

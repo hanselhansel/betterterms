@@ -1,15 +1,17 @@
 """Savings ledger. One JSON line per closed case in
 ``$BETTERTERMS_HOME/ledger.jsonl``. ``saved_per_year`` is positive when
 the outcome is better than before: ``before - after`` for ``pay`` cases,
-``after - before`` for ``receive`` cases, times the periods per year.
+``after - before`` for ``receive`` cases, times the periods per year,
+rounded to the currency minor unit.
 """
 
 import json
 import math
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 
-from . import BtError, MAX_AMOUNT, cases
+from . import BtError, MAX_AMOUNT, cases, minor
 
 PERIODS_PER_YEAR = {"month": 12, "year": 1}
 
@@ -23,15 +25,19 @@ def _clean_number(value):
 
 
 def _records():
-    """(records, skipped): every line that fails to parse, is not an
-    object or carries a non-numeric or over-cap ``saved_per_year`` is
-    skipped and counted. A corrupt or oversized line warns, it never
-    sinks the whole ledger."""
+    """(records, skipped): every line that fails to decode as UTF-8,
+    fails to parse, is not an object or carries a non-numeric or
+    over-cap ``saved_per_year`` is skipped and counted. A corrupt or
+    oversized line warns, it never sinks the whole ledger."""
     path = ledger_path()
     records, skipped = [], 0
     if path.is_file():
-        for line in path.read_text(encoding="utf-8").splitlines():
-            line = line.strip()
+        for raw_line in path.read_bytes().splitlines():
+            try:
+                line = raw_line.decode("utf-8").strip()
+            except UnicodeDecodeError:
+                skipped += 1
+                continue
             if not line:
                 continue
             try:
@@ -68,11 +74,13 @@ def add(case_dir, before, after, period):
     if any(r.get("case_id") == case_id for r in records):
         raise BtError("case already recorded in ledger")
     brief = cases.load_brief(case_dir)
+    plan = cases.load_plan(case_dir)
     pack = str(brief.get("pack") or case_id.rsplit("-", 2)[0])
     direction = cases.direction_of(brief)
+    currency = cases.currency_of(plan, brief)
     multiplier = PERIODS_PER_YEAR[period]
     delta = (after - before) if direction == "receive" else (before - after)
-    saved = _clean_number(delta * multiplier)
+    saved = _clean_number(minor(delta * multiplier))
     if abs(saved) > MAX_AMOUNT:
         # A legal pair can still compound past the cap; it must not
         # land a line the total would only skip.
@@ -81,6 +89,7 @@ def add(case_dir, before, after, period):
         "case_id": case_id,
         "pack": pack,
         "direction": direction,
+        "currency": currency,
         "before": _clean_number(before),
         "after": _clean_number(after),
         "period": period,
@@ -88,24 +97,37 @@ def add(case_dir, before, after, period):
         "recorded_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
     }
     path = ledger_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a", encoding="utf-8") as f:
+    cases.ensure_home()
+    # The ledger holds per-case savings; like .floor it is created
+    # owner-only.
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+    with os.fdopen(fd, "a", encoding="utf-8") as f:
         f.write(json.dumps(record, sort_keys=True) + "\n")
     return saved
 
 
 def total():
+    """Totals grouped by currency: 240 USD a year and 240 EUR a year
+    are two answers, never 480. A record without a ``currency`` lands
+    in ``unknown`` rather than being guessed into one."""
     records, skipped = _records()
+    by_currency = {}
     by_pack = {}
-    saved_total = 0
     for r in records:
         saved = cases.num(r.get("saved_per_year")) or 0
-        saved_total += saved
+        cur = str(r.get("currency") or "unknown")
+        by_currency[cur] = by_currency.get(cur, 0) + saved
         pack = str(r.get("pack") or "unknown")
-        by_pack[pack] = by_pack.get(pack, 0) + saved
+        by_pack.setdefault(pack, {})
+        by_pack[pack][cur] = by_pack[pack].get(cur, 0) + saved
     return {
         "cases": len(records),
-        "saved_per_year": _clean_number(saved_total),
-        "by_pack": {p: _clean_number(v) for p, v in sorted(by_pack.items())},
+        "by_currency": {
+            c: _clean_number(v) for c, v in sorted(by_currency.items())
+        },
+        "by_pack": {
+            p: {c: _clean_number(v) for c, v in sorted(cs.items())}
+            for p, cs in sorted(by_pack.items())
+        },
         "warnings": skipped,
     }

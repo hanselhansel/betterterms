@@ -35,11 +35,10 @@ class SetFloorParseTest(BtTestCase):
     def test_accepts_plain_numbers(self):
         case_id, case_dir = self.make_case()
         for raw, want in (
-            ("1200", "1200"),
-            ("1200.50", "1200.5"),
-            ("0", "0"),
-            ("99.9", "99.9"),
-            ("  1200 \n", "1200"),
+            ("1200", "1200.00"),
+            ("1200.50", "1200.50"),
+            ("99.9", "99.90"),
+            ("  1200 \n", "1200.00"),
         ):
             with self.subTest(raw=raw):
                 proc, out = run_bt_json(
@@ -95,7 +94,7 @@ class SetFloorParseTest(BtTestCase):
         self.assertEqual(proc.returncode, 2)
         self.assertNotIn("1,200", proc.stdout)
         self.assertNotIn("1,200", proc.stderr)
-        self.assertEqual((case_dir / ".floor").read_text().strip(), "900")
+        self.assertEqual((case_dir / ".floor").read_text().strip(), "900.00")
 
 
 class SetFloorTtyTest(BtTestCase):
@@ -115,7 +114,7 @@ class SetFloorTtyTest(BtTestCase):
         self.assertEqual(code, 0, out.getvalue())
         gp.assert_called_once_with("Walk-away number (hidden): ")
         self.assertFalse(fake_stdin.read.called)
-        self.assertEqual((case_dir / ".floor").read_text().strip(), "1200")
+        self.assertEqual((case_dir / ".floor").read_text().strip(), "1200.00")
         self.assertNotIn("1200", out.getvalue())
 
     def test_non_tty_reads_stdin(self):
@@ -133,7 +132,7 @@ class SetFloorTtyTest(BtTestCase):
             code = bt_cli.main(["case", "set-floor", case_id])
         self.assertEqual(code, 0, out.getvalue())
         self.assertFalse(gp.called)
-        self.assertEqual((case_dir / ".floor").read_text().strip(), "1100")
+        self.assertEqual((case_dir / ".floor").read_text().strip(), "1100.00")
 
 
 class CorruptFloorTest(BtTestCase):

@@ -97,7 +97,7 @@ class RenderPerfTest(BtTestCase):
 
     def test_64kb_template_gate_run_under_one_second(self):
         case_id = self.make_case()
-        template = "word " * 13000  # 65000 bytes, under the 64 KB cap
+        template = "word " * 12000  # ~61.5 KB dumped, under the 64 KB cap
         start = time.monotonic()
         proc, out = self.gate(case_id, send_draft(template=template))
         elapsed = time.monotonic() - start

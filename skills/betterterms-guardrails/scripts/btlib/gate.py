@@ -32,10 +32,14 @@ guarantees and fail closed:
    limit``): inside the band, but it reveals the walk-away number;
    ``accept``, ``sign`` and ``pay`` may sit exactly on it. A price
    value (target, ladder, price option, quote or fact amount not on
-   ``send``) worse than the floor blocks too; fact values read the
-   structured ``amount`` field only, never the text (decision 0010).
-   Bonus and fee options are not offers, so only the equal-to-floor
-   rule reaches them
+   ``send``) worse than the floor blocks too, and a price value
+   whose period cannot convert to the floor's fails closed like an
+   unconvertible offer; fact values read the structured ``amount``
+   field only, never the text (decision 0010). A ``send`` may
+   render a quote or fact worse than the floor: restating a price
+   the counterparty named is not the agent's offer. Bonus and fee
+   options are not offers, so only the equal-to-floor rule reaches
+   them
 9. rendered message over 64 KB, checked after fact expansion and
    before any text scanning -> block
 10. any claim id (draft or auto-claimed by ``{fact:id}``) not in
@@ -63,13 +67,40 @@ every floor-related block reports the same generic reason so the
 output can never leak the floor's value, direction or distance.
 """
 
-from . import BtError, FLOOR_TOL, PERIODS, cases, render, review
+from . import BtError, FLOOR_TOL, PERIODS, cases, minor, render, review
 
 IRREVERSIBLE = {"accept", "cancel", "pay", "sign", "dispute"}
 OFFERED = {"accept", "pay", "sign"}
 ACTIONS = IRREVERSIBLE | {"send"}
 DRAFT_KEYS = {"action", "offer", "period", "template", "claims"}
 LIMITS = "outside your limits; escalate to the user"
+PRICE_KINDS = ("target", "ladder", "option:price", "quote", "fact")
+
+# A block never reports the converted-limit or same-digits review
+# hits: on a block they would each leak one bit about the floor, so
+# only the generic limit reason (and any structural blocks) reports.
+DROP_ON_BLOCK = {
+    "amount matches a converted limit",
+    "amount matches your limit's digits",
+}
+
+
+def _safe_str(value):
+    """``str()`` that cannot raise: a value whose conversion fails
+    (an int past the int-to-str digit limit) becomes a type tag, so
+    it can only fail a comparison, never turn a block into a crash."""
+    try:
+        return str(value)
+    except Exception:
+        return f"<{type(value).__name__}>"
+
+
+def _shown(value):
+    """A draft value as a block reason reports it, capped short so a
+    hostile scalar cannot blow up either the conversion or the reason
+    itself."""
+    s = _safe_str(value)
+    return s if len(s) <= 40 else s[:40] + "..."
 
 
 def _worse(value, floor, direction):
@@ -78,6 +109,12 @@ def _worse(value, floor, direction):
 
 def _same(a, values):
     return any(abs(a - v) <= FLOOR_TOL for v in values)
+
+
+def _in_floor_period(value, from_period, plan_period):
+    """``value`` as it renders (minor unit), converted and rounded
+    again: comparisons always read rendered amounts."""
+    return minor(render.convert(minor(value), from_period, plan_period))
 
 
 def _check_values(find, action, floor, direction, plan_period, findings):
@@ -89,14 +126,23 @@ def _check_values(find, action, floor, direction, plan_period, findings):
     field only, never parsed text (decision 0010). Equality with only
     a period conversion is a review hit, not a block; it is checked
     in ``_converted_match`` under the review tier. Bonus and fee
-    options are not offers, so only the equality rule reaches them."""
+    options are not offers, so only the equality rule reaches them.
+    A price value whose period cannot convert to the floor's (``once``
+    on either side) fails closed like an unconvertible offer."""
     for v in find.values:
-        nv = render.convert(v.value, v.period, plan_period)
-        if v.kind != "offer" and (_same(nv, (floor,)) or _same(v.value, (floor,))):
+        quoted = v.kind in ("quote", "fact") and action == "send"
+        priced = v.kind in PRICE_KINDS and not quoted
+        if priced and v.period != plan_period and "once" in (
+            v.period, plan_period
+        ):
+            findings.append(("block", "period differs from your limit"))
+            continue
+        nv = _in_floor_period(v.value, v.period, plan_period)
+        if v.kind != "offer" and (
+            _same(nv, (floor,)) or _same(minor(v.value), (floor,))
+        ):
             findings.append(("block", LIMITS))
-        elif v.kind in ("target", "ladder", "option:price", "quote", "fact") and not (
-            v.kind in ("quote", "fact") and action == "send"
-        ) and _worse(nv, floor, direction):
+        elif priced and _worse(nv, floor, direction):
             findings.append(("block", LIMITS))
 
 
@@ -108,8 +154,8 @@ def _converted_match(find, floor, plan_period):
     for v in find.values:
         if v.kind == "offer":
             continue
-        nv = render.convert(v.value, v.period, plan_period)
-        for val in (nv, v.value):
+        nv = _in_floor_period(v.value, v.period, plan_period)
+        for val in (nv, minor(v.value)):
             if _same(val, (floor * 12, floor / 12)) and not _same(
                 val, (floor,)
             ):
@@ -131,8 +177,8 @@ def _floor_digits(find, floor, plan_period, action):
     for v in find.values:
         if v.kind != "offer":
             continue
-        nv = render.convert(v.value, v.period, plan_period)
-        if _same(v.value, (floor,)) and not _same(nv, (floor,)):
+        nv = _in_floor_period(v.value, v.period, plan_period)
+        if _same(minor(v.value), (floor,)) and not _same(nv, (floor,)):
             return True
     return False
 
@@ -150,10 +196,11 @@ def check(case_dir, draft, approved=False, inbound=None):
     floor = cases.read_floor(case_dir)
     cases.check_plan_limits(plan, floor, direction, brief)
     plan_period = cases.floor_period(plan, brief)
+    currency = cases.currency_of(plan, brief)
 
     findings = []  # (kind, message); kind is "block" or "approval"
 
-    extra = sorted(str(k) for k in draft if k not in DRAFT_KEYS)
+    extra = sorted(_shown(k) for k in draft if k not in DRAFT_KEYS)
     if extra:
         findings.append(("block", "unknown draft keys: " + ", ".join(extra)))
     if "text" in draft:
@@ -161,7 +208,7 @@ def check(case_dir, draft, approved=False, inbound=None):
 
     action = draft.get("action")
     if not isinstance(action, str) or action not in ACTIONS:
-        findings.append(("block", f"draft action {action!r} not one of {sorted(ACTIONS)}"))
+        findings.append(("block", f"draft action {_shown(action)!r} not one of {sorted(ACTIONS)}"))
         action = None
 
     raw_offer = draft.get("offer")
@@ -174,8 +221,12 @@ def check(case_dir, draft, approved=False, inbound=None):
         findings.append(("block", "offer must be a number"))
         offer = None
 
-    raw_period = draft.get("period", "once")
-    if not isinstance(raw_period, str) or raw_period.lower() not in PERIODS:
+    # A null draft period means "not set" and defaults to once, like
+    # the plan, fact and inbound period keys.
+    raw_period = draft.get("period")
+    if raw_period is None:
+        period = "once"
+    elif not isinstance(raw_period, str) or raw_period.lower() not in PERIODS:
         findings.append(("block", "period must be once, month or year"))
         period = "once"
     else:
@@ -203,7 +254,7 @@ def check(case_dir, draft, approved=False, inbound=None):
             in_period = raw_in.lower()
 
     find = render.render(
-        template, offer, period, plan, plan_period, in_amounts
+        template, offer, period, plan, plan_period, in_amounts, currency
     ) if template is not None else None
     clean = find is not None and not find.errors
     if find is not None:
@@ -231,39 +282,29 @@ def check(case_dir, draft, approved=False, inbound=None):
                     findings.append(
                         ("block", "period differs from your limit")
                     )
-                in_floor = render.convert(in_offer, in_period, plan_period)
-                if offer is not None and abs(
-                    render.convert(offer, period, plan_period) - in_floor
-                ) > FLOOR_TOL:
+                in_floor = _in_floor_period(
+                    in_offer, in_period, plan_period
+                )
+                if offer is not None and not _same(
+                    _in_floor_period(offer, period, plan_period),
+                    (in_floor,),
+                ):
                     findings.append(("block", "accept must equal the counterparty's offer"))
                 if floor is not None and _worse(in_floor, floor, direction):
                     findings.append(("block", LIMITS))
 
     if floor is not None:
         if offer is not None:
-            offer_floor = render.convert(offer, period, plan_period)
+            offer_floor = _in_floor_period(offer, period, plan_period)
             # "once" has no conversion factor, so a period mismatch
             # with it can never verify the offer against the floor:
-            # a send routes to the user, an agreeing action fails
-            # closed. A raw equal value there is a coincidence, not
-            # "at your limit", so the at-limit route skips it too.
+            # the raw values are unlike units, so the worse-than and
+            # at-limit comparisons are skipped entirely. A send routes
+            # to the user, an agreeing action fails closed.
             unconvertible = (
                 period != plan_period
                 and "once" in (period, plan_period)
             )
-            if _worse(offer_floor, floor, direction):
-                findings.append(("block", LIMITS))
-            elif (
-                not approved
-                and action == "send"
-                and not unconvertible
-                and _same(offer_floor, (floor,))
-            ):
-                # A send offer at the floor is inside the band, but it
-                # hands the counterparty the user's walk-away number.
-                # accept, sign and pay may sit on it: they take a price
-                # already on the table.
-                findings.append(("approval", "offer is at your limit"))
             if unconvertible:
                 if action == "send":
                     if not approved:
@@ -274,20 +315,32 @@ def check(case_dir, draft, approved=False, inbound=None):
                     findings.append(
                         ("block", "period differs from your limit")
                     )
+            elif _worse(offer_floor, floor, direction):
+                findings.append(("block", LIMITS))
+            elif (
+                not approved
+                and action == "send"
+                and _same(offer_floor, (floor,))
+            ):
+                # A send offer at the floor is inside the band, but it
+                # hands the counterparty the user's walk-away number.
+                # accept, sign and pay may sit on it: they take a price
+                # already on the table.
+                findings.append(("approval", "offer is at your limit"))
         if clean:
             _check_values(find, action, floor, direction, plan_period, findings)
 
     fact_ids = {
-        str(f["id"])
+        _safe_str(f["id"])
         for f in cases.as_list(plan.get("facts"))
         if isinstance(f, dict) and f.get("id") is not None
     }
-    claims = {str(c) for c in cases.as_list(draft.get("claims"))}
+    claims = {_safe_str(c) for c in cases.as_list(draft.get("claims"))}
     if find is not None:
         claims |= find.fact_ids
     for c in sorted(claims):
         if c not in fact_ids:
-            findings.append(("block", f"claim {c} not in plan facts"))
+            findings.append(("block", f"claim {_shown(c)} not in plan facts"))
 
     if action in IRREVERSIBLE and not approved:
         findings.append(("approval", f"action {action!r} requires --approved"))
@@ -311,13 +364,16 @@ def check(case_dir, draft, approved=False, inbound=None):
                         ("approval", "amount matches your limit's digits")
                     )
 
+    blocked = any(kind == "block" for kind, _ in findings)
     reasons = []
     seen = set()
     for _, msg in findings:
+        if blocked and msg in DROP_ON_BLOCK:
+            continue
         if msg not in seen:
             seen.add(msg)
             reasons.append(msg)
-    if any(kind == "block" for kind, _ in findings):
+    if blocked:
         return "block", reasons, None
     if findings:
         return "needs_approval", reasons, find.text if find else None

@@ -131,3 +131,16 @@ superseded forms; 0010's review list is the current contract. Its
 latest amendment removes the last exceptions too: the small-integer
 and month-name-date passes in section D are gone, and any ASCII
 digit in the text routes to the user.
+
+## Amendment (2026-10-04): bounded indexes, strict period keys
+
+- Section E's placeholder rule tightens: an index accepts at most
+  four ASCII digits. A longer digit run is a malformed placeholder
+  (hard block) and is rejected before any integer conversion, so an
+  oversized index can neither crash the gate nor read a different
+  slot by accident.
+- Section B's "default `once`" applies only when a period key is
+  absent. A `period` or `floor_period` that is present but not a
+  string, or names no known period, on the plan, an option, a
+  ladder step or a fact is a broken plan (exit 2), never a silent
+  default.

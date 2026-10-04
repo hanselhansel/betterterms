@@ -25,20 +25,17 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from btlib import BtError, cases, gate, ledger, score, sources, yaml
+from btlib import BtError, cases, gate, inputs, ledger, score, sources, yaml
 
 
-def _load_yaml_file(path, what):
-    p = Path(path)
-    if not p.is_file():
-        raise BtError(f"{what} file not found: {path}")
-    try:
-        data = yaml.load(p.read_text(encoding="utf-8"))
-    except yaml.Error as e:
-        raise BtError(f"{what}: {e}")
-    if not isinstance(data, dict):
-        raise BtError(f"{what}: expected a mapping")
-    return data
+def _blocked_input(e):
+    """A draft or inbound file refused on size or depth fails closed:
+    the gate or the scorer reports a block, never a usage error."""
+    return 1, {
+        "result": "block",
+        "reasons": [str(e)],
+        "rendered": None,
+    }
 
 
 def cmd_case_new(args):
@@ -68,8 +65,15 @@ def cmd_case_show(args):
 
 def cmd_gate(args):
     d = cases.require_case(args.case_id)
-    draft = _load_yaml_file(args.draft, "draft")
-    inbound = _load_yaml_file(args.inbound, "inbound") if args.inbound else None
+    try:
+        draft = inputs.load_yaml_file(args.draft, "draft")
+        inbound = (
+            inputs.load_yaml_file(args.inbound, "inbound")
+            if args.inbound
+            else None
+        )
+    except inputs.UnsafeInput as e:
+        return _blocked_input(e)
     result, reasons, rendered = gate.check(d, draft, approved=args.approved, inbound=inbound)
     return {"pass": 0, "block": 1, "needs_approval": 3}[result], {
         "result": result,
@@ -80,7 +84,10 @@ def cmd_gate(args):
 
 def cmd_score(args):
     d = cases.require_case(args.case_id)
-    inbound = _load_yaml_file(args.inbound, "inbound")
+    try:
+        inbound = inputs.load_yaml_file(args.inbound, "inbound")
+    except inputs.UnsafeInput as e:
+        return _blocked_input(e)
     return 0, score.classify(d, inbound)
 
 
@@ -183,15 +190,34 @@ def build_parser():
     return parser
 
 
+def _jsonable(value):
+    """Coerce a parsed YAML value into JSON-safe shape: mapping keys
+    stringify (a ``2026-11-01`` key loads as a datetime.date), and any
+    scalar JSON cannot carry becomes ``str()``."""
+    if isinstance(value, dict):
+        return {
+            key if isinstance(key, str) else str(key): _jsonable(item)
+            for key, item in value.items()
+        }
+    if isinstance(value, (list, tuple)):
+        return [_jsonable(item) for item in value]
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    return str(value)
+
+
 def main(argv):
     args = build_parser().parse_args(argv)
     try:
         code, out = args.fn(args)
+        text = json.dumps(_jsonable(out), default=str)
     except (BtError, OSError, ValueError) as e:
-        code, out = 2, {"error": str(e)}
+        code, text = 2, json.dumps({"error": str(e)})
     except Exception as e:  # never a traceback; JSON or nothing
-        code, out = 2, {"error": f"unexpected {type(e).__name__}: {e}"}
-    print(json.dumps(out, default=str))
+        code, text = 2, json.dumps(
+            {"error": f"unexpected {type(e).__name__}: {e}"}
+        )
+    print(text)
     return code
 
 

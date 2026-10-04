@@ -90,22 +90,45 @@ def convert(value, from_period, to_period):
     return value * _MONTHS[to_period] / _MONTHS[from_period]
 
 
-def money_text(value, period=None):
-    """``$1,200`` / ``$85.50`` with an optional ``/month`` or ``/year``."""
+_SYMBOLS = {"USD": "$", "SGD": "S$", "EUR": "€", "GBP": "£"}
+
+
+def money_text(value, period=None, currency="USD"):
+    """``$1,200`` / ``€85.50`` / ``S$1,200`` / ``CHF 90`` with an
+    optional ``/month`` or ``/year``: the declared ISO code's symbol,
+    or the code itself before the number."""
     f = float(value)
     s = f"{int(f):,}" if f.is_integer() else f"{f:,.2f}"
+    mark = _SYMBOLS.get(currency)
+    body = f"{mark}{s}" if mark else f"{currency} {s}"
     if period in ("month", "year"):
-        return f"${s}/{period}"
-    return f"${s}"
+        return f"{body}/{period}"
+    return body
 
 
 def _parse_index(arg):
     # str.isdigit accepts superscripts and non-ASCII digits that int()
-    # either crashes on or silently misreads; indexes are ASCII only.
-    if not arg.isascii() or not arg.isdigit():
+    # either crashes on or silently misreads; indexes are ASCII only,
+    # and a run longer than four digits never reaches int() at all.
+    if not arg.isascii() or not arg.isdigit() or len(arg) > 4:
         return None
-    n = int(arg)
-    return n if n >= 1 else None
+    return int(arg)
+
+
+def _short(text):
+    return text if len(text) <= 20 else text[:20] + "..."
+
+
+def _enc_len(piece, find):
+    """UTF-8 length of one rendered piece. A lone surrogate or any
+    character UTF-8 cannot carry is a blocking error, never an
+    uncaught exception: the message could never be sent verbatim.
+    The replacement width only feeds the size cap."""
+    try:
+        return len(piece.encode("utf-8"))
+    except UnicodeEncodeError:
+        find.errors.append("unusual characters in the message")
+        return len(piece.encode("utf-8", "replace"))
 
 
 def _index(items, key):
@@ -119,7 +142,8 @@ def _index(items, key):
     return index
 
 
-def render(template, offer, offer_period, plan, plan_period, in_amounts):
+def render(template, offer, offer_period, plan, plan_period,
+           in_amounts, currency="USD"):
     """Render ``template``. ``in_amounts`` is the raw inbound ``amounts``
     list; entries are coerced with :func:`cases.num` at lookup time.
     The rendered byte size is summed from each piece as it resolves,
@@ -139,13 +163,13 @@ def render(template, offer, offer_period, plan, plan_period, in_amounts):
         _bad_brace(literal, find)
         out.append(literal)
         masked.append(literal)
-        size += len(literal.encode("utf-8"))
+        size += _enc_len(literal, find)
         text, mask = _resolve(m.group(1), find, offer, offer_period,
                               plan, plan_period, in_amounts,
-                              options, facts)
+                              options, facts, currency)
         out.append(text)
         masked.append(mask)
-        size += len(text.encode("utf-8"))
+        size += _enc_len(text, find)
         pos = m.end()
         if size > MAX_TEXT:
             find.oversized = True
@@ -154,7 +178,7 @@ def render(template, offer, offer_period, plan, plan_period, in_amounts):
     _bad_brace(tail, find)
     out.append(tail)
     masked.append(tail)
-    size += len(tail.encode("utf-8"))
+    size += _enc_len(tail, find)
     if size > MAX_TEXT:
         find.oversized = True
     else:
@@ -174,7 +198,7 @@ def _bad_brace(seg, find):
 
 
 def _resolve(tag, find, offer, offer_period, plan, plan_period,
-             in_amounts, options, facts):
+             in_amounts, options, facts, currency):
     """Resolve one placeholder to ``(text, masked)``: fact text passes
     through into the masked form, every other rendered value becomes
     the mask character, and an error resolves to nothing."""
@@ -184,14 +208,14 @@ def _resolve(tag, find, offer, offer_period, plan, plan_period,
             find.errors.append("{offer} needs a draft offer")
             return "", ""
         find.values.append(Value("offer", offer, offer_period))
-        return money_text(offer, offer_period), _MASK
+        return money_text(offer, offer_period, currency), _MASK
     if name == "target" and not arg:
         v = cases.num(plan.get("target"))
         if v is None or not math.isfinite(v):
             find.errors.append("{target} has no plan value")
             return "", ""
         find.values.append(Value("target", v, plan_period))
-        return money_text(v, plan_period), _MASK
+        return money_text(v, plan_period, currency), _MASK
     if name == "option" and arg:
         item = options.get(arg)
         if item is None:
@@ -204,11 +228,15 @@ def _resolve(tag, find, offer, offer_period, plan, plan_period,
         kind = str(item.get("kind") or "price").lower()
         period = str(item.get("period") or plan_period).lower()
         find.values.append(Value(f"option:{kind}", v, period))
-        return money_text(v, period), _MASK
+        return money_text(v, period, currency), _MASK
     if name == "ladder" and arg:
         n = _parse_index(arg)
         items = cases.as_list(plan.get("ladder"))
-        if n is None or n > len(items):
+        if n is None:
+            find.errors.append(
+                f"malformed placeholder {{ladder:{_short(arg)}}}")
+            return "", ""
+        if not 1 <= n <= len(items):
             find.errors.append(f"{{ladder:{arg}}} needs an index 1..{len(items)}")
             return "", ""
         item = items[n - 1]
@@ -218,7 +246,7 @@ def _resolve(tag, find, offer, offer_period, plan, plan_period,
             return "", ""
         period = str(item.get("period") or plan_period).lower()
         find.values.append(Value("ladder", v, period))
-        return money_text(v, period), _MASK
+        return money_text(v, period, currency), _MASK
     if name == "fact" and arg:
         item = facts.get(arg)
         if item is None:
@@ -245,7 +273,11 @@ def _resolve(tag, find, offer, offer_period, plan, plan_period,
         return text, text
     if name == "quote" and arg:
         n = _parse_index(arg)
-        if n is None or n > len(in_amounts):
+        if n is None:
+            find.errors.append(
+                f"malformed placeholder {{quote:{_short(arg)}}}")
+            return "", ""
+        if not 1 <= n <= len(in_amounts):
             find.errors.append(
                 f"{{quote:{arg}}} needs {arg} inbound amounts"
             )
@@ -255,6 +287,6 @@ def _resolve(tag, find, offer, offer_period, plan, plan_period,
             find.errors.append(f"inbound amount {n} is not a number")
             return "", ""
         find.values.append(Value("quote", v, "once"))
-        return money_text(v), _MASK
+        return money_text(v, None, currency), _MASK
     find.errors.append(f"unknown placeholder {{{tag}}}")
     return "", ""

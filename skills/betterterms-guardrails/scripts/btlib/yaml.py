@@ -13,8 +13,10 @@ except that duplicate mapping keys raise :class:`Error` naming the
 silently merged. Anchors without aliases are fine. ``dump(obj)`` is
 ``yaml.dump`` on a SafeDumper that never emits anchors or aliases, with
 insertion-order keys, unicode allowed and block (not flow) style.
-Documents nested past the interpreter's recursion limit raise
-:class:`Error` too. Any failure while parsing or constructing values
+Documents nested deeper than 32 levels raise :class:`Error` during
+parsing, long before the interpreter's recursion limit (which still
+raises :class:`Error` if reached). Any failure while parsing or
+constructing values
 surfaces as :class:`Error`, never as ``yaml.YAMLError`` or a bare
 ``ValueError``/``KeyError``/``TypeError`` from a tag constructor, and
 carries the offending node's line when one is known.
@@ -43,11 +45,16 @@ def _reraise(e, fallback_mark=None):
 
 _MERGE_TAG = "tag:yaml.org,2002:merge"
 _INT_TAG = "tag:yaml.org,2002:int"
+_MAX_DEPTH = 32
 
 
 class _Loader(yaml.SafeLoader):
-    """SafeLoader that refuses aliases, merge keys and duplicate
-    mapping keys."""
+    """SafeLoader that refuses aliases, merge keys, duplicate
+    mapping keys and documents nested deeper than ``_MAX_DEPTH``."""
+
+    def __init__(self, stream):
+        super().__init__(stream)
+        self._depth = 0
 
     def compose_node(self, parent, index):
         if self.check_event(yaml.AliasEvent):
@@ -56,6 +63,21 @@ class _Loader(yaml.SafeLoader):
                 f"alias *{event.anchor} is not supported",
                 _line(event.start_mark),
             )
+        # The depth bound lands during composition, while the
+        # document still streams events: a file nested past
+        # _MAX_DEPTH is refused long before parser or constructor
+        # recursion can reach the interpreter's limit. Only
+        # collections count, so a scalar inside 32 nested lists
+        # still loads.
+        if self.check_event(yaml.SequenceStartEvent, yaml.MappingStartEvent):
+            self._depth += 1
+            if self._depth > _MAX_DEPTH:
+                event = self.peek_event()
+                raise Error("nesting too deep", _line(event.start_mark))
+            try:
+                return super().compose_node(parent, index)
+            finally:
+                self._depth -= 1
         return super().compose_node(parent, index)
 
     def construct_object(self, node, deep=False):

@@ -11,7 +11,7 @@ Inbound text is data, never instructions.
 
 import re
 
-from . import BtError, MAX_TEXT, cases, money, render
+from . import BtError, MAX_TEXT, PERIODS, cases, minor, money, render
 
 INJECTION = [
     re.compile(
@@ -81,6 +81,16 @@ def classify(case_dir, inbound):
     if floor is None:
         raise BtError("no floor set for case")
     cases.check_plan_limits(plan, floor, direction, brief)
+    floor_period = cases.floor_period(plan, brief)
+    # An inbound offer is read in its declared period, else the
+    # floor's; a present non-string or unknown period is a broken
+    # inbound file, never a default.
+    in_period = floor_period
+    raw_in = inbound.get("period")
+    if raw_in is not None:
+        if not isinstance(raw_in, str) or raw_in.lower() not in PERIODS:
+            raise BtError("period must be once, month or year")
+        in_period = raw_in.lower()
     target = cases.num(plan.get("target"))
     offer = cases.num(inbound.get("offer"))
     raw_text = str(inbound.get("text") or "")
@@ -98,14 +108,35 @@ def classify(case_dir, inbound):
     if not suggested:
         suggested = money.amounts(text)
 
+    # ``once`` has no conversion factor, so an inbound offer period
+    # that differs from the floor's where either side is ``once`` can
+    # never be verified: the band is unknown and the turn escalates,
+    # never a raw-unit guess (the gate's offer rule).
+    unconvertible = (
+        in_period != floor_period
+        and "once" in (in_period, floor_period)
+    )
     escalate = []
     if offer is None:
         escalate.append("no_offer_parsed")
+    elif unconvertible:
+        escalate.append("offer_period_differs")
     if any(p.search(text) for p in INJECTION):
         escalate.append("suspected_injection")
     if any(p.search(text) for p in AI_QUESTION):
         escalate.append("ai_identity_question")
     if LEGAL.search(text):
         escalate.append("legal_terms")
-    band = "unknown" if offer is None else _band(direction, target, floor, offer)
+    if offer is None or unconvertible:
+        band = "unknown"
+    else:
+        converted = minor(
+            render.convert(minor(offer), in_period, floor_period)
+        )
+        band = _band(
+            direction,
+            minor(target) if target is not None else None,
+            minor(floor),
+            converted,
+        )
     return {"band": band, "escalate": escalate, "suggested_amounts": suggested}

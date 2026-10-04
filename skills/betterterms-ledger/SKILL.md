@@ -32,7 +32,9 @@ has saved.
 
    `python3 ../betterterms-guardrails/scripts/bt.py ledger total`
 
-   Report the case count, `saved_per_year`, and the `by_pack` breakdown.
+   Report the case count and the `by_currency` totals (one per
+   currency; different currencies never add together), with the
+   `by_pack` breakdown per currency.
 3. If the new terms carry a renewal or expiry date, suggest a reminder so
    the next case starts before it.
 4. If the outcome was worse or the case was abandoned, say so plainly.
