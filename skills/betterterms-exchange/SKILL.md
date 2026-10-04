@@ -37,8 +37,8 @@ The full turn procedure is in `references/turn-procedure.md`. Follow it.
   from `plan.yaml`. The sent text is the `rendered` value the gate
   returns, verbatim.
 - `gate.json` in the case folder: the last gate response verbatim
-  (`{result, reasons, rendered}`), saved on every gate call, blocks
-  included.
+  (`{result, reasons, rendered}`, plus `hash` on `needs_approval`),
+  saved on every gate call, blocks included.
 - One appended entry per message in `thread.md`, stamped `in` or `out`
   with ISO time and `approved_by_user: yes|no`.
 
@@ -81,9 +81,16 @@ or ask for their offer when it is not. Then gate, send, and log as below.
      level.
    - Exit 3, `needs_approval`: the action is irreversible, or coach
      mode, autonomy 1, or the review scan flagged the rendered text.
-     Show the user the `rendered` text and reasons, ask for an explicit
-     yes, then re-run with `--approved`. `--approved` is honest only
-     after that yes, and the yes gets quoted in `thread.md`.
+     The draft is held: `held/<hash>.yaml` in the case folder, `hash`
+     in the JSON. Put it in front of the user per the display mode
+     (below). Approval is a user action that writes
+     `held/<hash>.approved` for this exact text: a mod keypress or
+     click, a `bt approve <case_id> <hash8>` reply the prompt hook
+     catches, or `bt.py held approve <case_id> <hash8>` which you run
+     in a host with no prompt hook after the user replies
+     `bt approve`. Then re-run the gate with `--approved`: it
+     consumes the approval once and passes. A changed text or a
+     second send is held again.
    - Exit 1, `block`: when the reason is "outside your limits; escalate
      to the user", escalate to the user and do not redraft toward a
      guessed limit. On any other block, redraft once without the blocked
@@ -96,6 +103,27 @@ or ask for their offer when it is not. Then gate, send, and log as below.
 7. Append the turn to `thread.md`: `in` or `out`, ISO time,
    `approved_by_user`.
 8. Multiple bidders: wait for all bids or the set time before choosing.
+
+## Display modes
+
+Pick one at run time (spec 6.8):
+
+- Mod: the `betterterms-mod` pane draws (Claude Code terminal or
+  Desktop). Held drafts show in its Approvals tab and the user's
+  keypress or click approves; you post nothing.
+- Widget: the session has a tool that posts interactive widgets
+  (Projects cloud threads). Post the `html` field from
+  `python3 ../betterterms-guardrails/scripts/bt.py widget approval <case_id> <hash8>`
+  as is. Its buttons fill the user's message box with the typed
+  command, and the user presses Enter. `bt.py widget cases`,
+  `bt.py widget terms <case_id>` and `bt.py widget savings` cover
+  the other views.
+- Chat: neither (Codex, plain cloud sessions, `claude -p`). Print
+  the rendered text and the reasons, then the typed commands:
+  `bt approve <case_id> <hash8>` to approve and send, or
+  `bt reject <case_id> <hash8>` to drop the draft. When the user
+  replies with one and no prompt hook handles it, record it with
+  `bt.py held approve` or `bt.py held reject` yourself first.
 
 ## Escalate and stop
 

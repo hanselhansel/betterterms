@@ -13,6 +13,7 @@ stdout.
   bt.py held list <case_id>
   bt.py held approve <case_id> <hash8>
   bt.py held reject <case_id> <hash8>
+  bt.py widget cases | widget approval <case_id> <hash8> | widget terms <case_id> | widget savings
   bt.py score <case_id> --inbound <inbound.yaml>
   bt.py ledger add <case_id> --before N --after N --period month|year
   bt.py ledger total

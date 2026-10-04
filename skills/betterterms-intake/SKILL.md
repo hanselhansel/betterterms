@@ -47,11 +47,19 @@ drafted: misreading them is the biggest source of lost value.
 
    - On a terminal it asks `Walk-away number (hidden): ` and does not
      echo what they type.
+   - In a session with a tool that posts interactive widgets (a
+     Projects cloud thread), post the `html` from
+     `python3 ../betterterms-guardrails/scripts/bt.py widget terms <case_id>`
+     as is. Its walk-away field types `bt floor <case_id> <amount>`
+     as the user's own message, and the prompt hook writes it like
+     the terminal command. That value stays visible in the thread,
+     so the terminal command stays the better path whenever the
+     user has a terminal.
    - Never repeat the value back. Never write it into `brief.yaml`,
      `plan.yaml`, `thread.md`, a draft, or any other file. Only the gate
      and the scorer can read it.
-   - Only if the user says they cannot run the command themselves, in a
-     session with no terminal at all (for example a cloud chat), may you
+   - Only if the user says they cannot run the command themselves and
+     the session has no widget tool either, may you
      pass the value on stdin with a quoted heredoc:
 
      ```

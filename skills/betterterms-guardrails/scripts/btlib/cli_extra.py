@@ -1,6 +1,7 @@
 """The smaller subcommands, kept out of bt.py: ``where``, ``config
-show|set``, ``case set-terms``, and ``held list|approve|reject``. Each
-command function returns ``(exit_code, dict)`` like the ones in bt.py.
+show|set``, ``case set-terms``, ``held list|approve|reject``, and
+``widget cases|approval|terms|savings``. Each command function
+returns ``(exit_code, dict)`` like the ones in bt.py.
 """
 
 import math
@@ -14,6 +15,7 @@ from . import (
     cases,
     config,
     held,
+    widgets,
     yaml,
 )
 
@@ -121,6 +123,24 @@ def cmd_held_reject(args):
     return 0, {"ok": True, "hash": h}
 
 
+def cmd_widget_cases(_args):
+    return 0, {"html": widgets.cases_widget()}
+
+
+def cmd_widget_approval(args):
+    d = cases.require_case(args.case_id)
+    return 0, {"html": widgets.approval_widget(d, args.case_id, args.hash8)}
+
+
+def cmd_widget_terms(args):
+    d = cases.require_case(args.case_id)
+    return 0, {"html": widgets.terms_widget(d, args.case_id)}
+
+
+def cmd_widget_savings(_args):
+    return 0, {"html": widgets.savings_widget()}
+
+
 def register(sub, case_sub):
     p_where = sub.add_parser(
         "where", help="print the absolute path of this bt.py"
@@ -176,3 +196,30 @@ def register(sub, case_sub):
     p_rej.add_argument("case_id")
     p_rej.add_argument("hash8")
     p_rej.set_defaults(fn=cmd_held_reject)
+
+    p_widget = sub.add_parser(
+        "widget",
+        help="HTML widget fragments for cloud threads (spec 6.8)",
+    )
+    widget_sub = p_widget.add_subparsers(
+        dest="widget_command", required=True
+    )
+    p_wcases = widget_sub.add_parser(
+        "cases", help="every case as one widget"
+    )
+    p_wcases.set_defaults(fn=cmd_widget_cases)
+    p_wapp = widget_sub.add_parser(
+        "approval", help="one held draft as an approval card"
+    )
+    p_wapp.add_argument("case_id")
+    p_wapp.add_argument("hash8")
+    p_wapp.set_defaults(fn=cmd_widget_approval)
+    p_wterms = widget_sub.add_parser(
+        "terms", help="the terms editor as a widget"
+    )
+    p_wterms.add_argument("case_id")
+    p_wterms.set_defaults(fn=cmd_widget_terms)
+    p_wsave = widget_sub.add_parser(
+        "savings", help="the savings view as a widget"
+    )
+    p_wsave.set_defaults(fn=cmd_widget_savings)

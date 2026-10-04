@@ -1,0 +1,11 @@
+<div class="bt-w bt-terms">
+<style>{{css}}</style>
+<h3>Terms: {{case_id}}</h3>
+<table>
+<tr><td>target</td><td><input id="bt-t-{{case_id}}" type="text" inputmode="decimal" value="{{target}}"></td><td class="bt-muted">now {{target_now}}</td></tr>
+<tr><td>best alternative</td><td><input id="bt-a-{{case_id}}" type="text" inputmode="decimal" value="{{alternative}}"></td><td class="bt-muted">now {{alternative_now}}</td></tr>
+<tr><td>walk-away</td><td><input id="bt-f-{{case_id}}" type="text" inputmode="decimal" value=""></td><td class="bt-muted">walk-away {{floor_state}}</td></tr>
+</table>
+<div class="bt-actions"><button type="button" class="bt-primary" onclick="var t=document.getElementById('bt-t-{{case_id}}').value.trim(),a=document.getElementById('bt-a-{{case_id}}').value.trim(),c='bt terms {{case_id}}';if(t)c+=' target='+t;if(a)c+=' alternative='+a;if(t||a)sendPrompt(c)">Save terms</button><button type="button" onclick="var f=document.getElementById('bt-f-{{case_id}}').value.trim();if(f)sendPrompt('bt floor {{case_id}} '+f)">Save walk-away</button><span class="bt-muted">{{press_enter}}</span></div>
+<p class="bt-muted">The typed command stays visible in the thread.</p>
+</div>

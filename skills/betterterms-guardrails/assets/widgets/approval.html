@@ -1,0 +1,9 @@
+<div class="bt-w bt-approval">
+<style>{{css}}</style>
+<h3>Held draft: {{case_id}} {{status}}</h3>
+<p class="bt-muted">draft {{hash8}}, held {{held_at}}</p>
+<div class="bt-body">{{rendered}}</div>
+<p class="bt-muted">Held because:</p>
+<ul>{{reasons}}</ul>
+<div class="bt-actions"><button type="button" class="bt-primary" onclick="sendPrompt('bt approve {{case_id}} {{hash8}}')">Approve and send</button><button type="button" onclick="sendPrompt('bt reject {{case_id}} {{hash8}}')">Reject</button><span class="bt-muted">{{press_enter}}</span></div>
+</div>
