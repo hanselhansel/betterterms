@@ -298,7 +298,8 @@ skills, so the orchestrator records `scripts/eval --dev` before and after them.
 **Interfaces:**
 - Consumes: R3 held and config data; R4 grammar.
 - Produces: HTML fragments with no `<html>`, `<head>` or `<body>`, inline CSS with light and
-  dark tokens, buttons that call `sendPrompt` with the exact grammar strings.
+  dark tokens, buttons that call `sendPrompt` with the exact grammar strings. `sendPrompt` only fills the
+  user's message box, so each widget shows `Then press Enter to send.` beside its buttons.
 
 - [ ] **Step 1: Write the failing tests**
   - `test_terms_widget_never_contains_floor` (floor 62 set; `62` absent from html),

@@ -256,7 +256,10 @@ The existing `node --test` suites stay.
 Mod hooks run in cloud sessions, but panes, bands and toasts do not draw there. The owner
 uses Projects (beta) cloud threads and needs the same flow there. Spike result, 2026-10-04: a
 widget posted into a project thread called `sendPrompt("bt approve spike-0001 9f2c")` on a
-button press, and the text arrived in the thread as the owner's own message.
+button press. The text landed in the owner's message box, and arrived in the thread as the
+owner's own message once they pressed Enter. A widget can fill the message, never send it, so
+every widget action is two steps: press the button, then press Enter. Each widget says so next
+to its buttons.
 
 **Three display modes, picked at run time by the skills:**
 
