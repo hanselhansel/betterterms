@@ -8,6 +8,7 @@ rounded to the currency minor unit.
 import json
 import math
 import os
+import stat
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -99,8 +100,18 @@ def add(case_dir, before, after, period):
     path = ledger_path()
     cases.ensure_home()
     # The ledger holds per-case savings; like .floor it is created
-    # owner-only.
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+    # owner-only. O_NOFOLLOW refuses a symlinked file, O_NONBLOCK
+    # makes a fifo fail at open instead of blocking, and fstat proves
+    # the fd is a regular file before the append.
+    fd = os.open(
+        path,
+        os.O_WRONLY | os.O_CREAT | os.O_APPEND
+        | os.O_NOFOLLOW | os.O_NONBLOCK,
+        0o600,
+    )
+    if not stat.S_ISREG(os.fstat(fd).st_mode):
+        os.close(fd)
+        raise BtError(f"ledger is not a regular file: {path}")
     with os.fdopen(fd, "a", encoding="utf-8") as f:
         f.write(json.dumps(record, sort_keys=True) + "\n")
     return saved

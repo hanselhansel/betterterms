@@ -243,6 +243,33 @@ class LedgerTest(BtTestCase):
         lines = (self.home / "ledger.jsonl").read_text().splitlines()
         self.assertEqual(len(lines), 1)
 
+    def test_ledger_refuses_a_symlinked_file(self):
+        # The ledger is appended owner-only; a planted symlink must
+        # never redirect the write outside BETTERTERMS_HOME.
+        case_id, _ = new_case(self.home)
+        target = self.tmp / "elsewhere.jsonl"
+        target.write_text("")
+        os.symlink(target, self.home / "ledger.jsonl")
+        proc, out = run_bt_json(
+            self.home, "ledger", "add", case_id,
+            "--before", "80", "--after", "60", "--period", "month",
+        )
+        self.assertEqual(proc.returncode, 2, out)
+        self.assertIn("error", out)
+        self.assertEqual(target.read_text(), "")
+
+    def test_ledger_refuses_a_non_regular_file(self):
+        # A fifo or directory at the ledger path must fail closed,
+        # never block the process or take a write.
+        case_id, _ = new_case(self.home)
+        os.mkfifo(self.home / "ledger.jsonl")
+        proc, out = run_bt_json(
+            self.home, "ledger", "add", case_id,
+            "--before", "80", "--after", "60", "--period", "month",
+        )
+        self.assertEqual(proc.returncode, 2, out)
+        self.assertIn("error", out)
+
 
 if __name__ == "__main__":
     unittest.main()
