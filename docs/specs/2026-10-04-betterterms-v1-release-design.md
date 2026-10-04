@@ -176,7 +176,15 @@ the mod never holds a send open while it waits for the user:
 
 Approvals live in `$.state` only. The agent can write files but cannot write `$.state`, so no
 file it creates, and no text in a counterparty's email, can approve a draft. Typing "yes" in
-chat does not approve a held draft while the mod is loaded. Approvals end with the session.
+chat does not approve a held draft while the mod is loaded.
+
+**Held drafts never expire.** The 10-second limit applies to the hook, which returns at once
+after holding the draft. The draft itself waits in the Approvals tab for as long as the user
+takes: minutes, hours or days. Held drafts are also written to the case folder
+(`held/<hash>.yaml`, rendered text plus gate reasons), so a new session rebuilds the
+Approvals tab from files after Claude Code restarts. Only the approval itself lives in
+`$.state`, so an approval always comes from a press in the current session. Nothing is sent
+while nobody is there to press.
 
 ### 6.4 Terms editor
 
