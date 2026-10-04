@@ -99,7 +99,13 @@ or ask for their offer when it is not. Then gate, send, and log as below.
    call, blocks included; keep it as the record of the last verdict.
 
    - Exit 0, `pass`: send the `rendered` text verbatim per the autonomy
-     level.
+     level, through a send tool with the text as its own argument and
+     nothing added anywhere else in the call. Routing fields (to, cc,
+     bcc, recipient, email, channel or conversation ids) take one
+     token each with no spaces; a subject or title is a short line
+     with no digits. Never send through a shell command: with
+     betterterms-mod loaded the send check denies it, so use a send
+     tool or hand the text to the user.
    - Exit 3, `needs_approval`: the action is irreversible, or coach
      mode, autonomy 1, or the review scan flagged the rendered text.
      The draft is held: `held/<hash>.yaml` in the case folder, `hash`

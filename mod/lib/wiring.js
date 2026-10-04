@@ -175,7 +175,7 @@ export async function gateSend(host, snap, c, e, next) {
   if (C.normalize(c.rendered ?? "") !== C.normalize(gate.rendered ?? "")) {
     return { deny: "betterterms: draft.yaml changed since this text was gated; re-run the gate" };
   }
-  const shape = C.sendShapeError(C.callArgs(e), gate.rendered);
+  const shape = C.sendShapeError(e, gate.rendered);
   if (shape !== null) return { deny: `betterterms: ${shape}` };
   if (verdict.kind === "held") {
     const hash = verdict.hash;

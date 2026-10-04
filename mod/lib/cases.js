@@ -238,38 +238,50 @@ export function callArgs(e) {
   return args;
 }
 
-// Envelope fields a send call may carry beside the message body:
-// where the message goes, never what it says.
-const ENVELOPE_KEYS = new Set([
-  "to", "cc", "bcc", "from", "sender", "subject", "title",
-  "recipient", "recipients", "channel", "channel_id", "chat_id",
-  "thread", "thread_id", "conversation_id", "message_id",
-  "in_reply_to", "reply_to", "email", "address", "phone", "number",
-  "user", "username", "target", "destination", "room",
+// The send-shape rule's key sets. Address/id fields say where the
+// message goes, never what it says, so each value must be a single
+// token. subject/title take one short line with no digits, so a price
+// cannot ride in the header.
+const ADDRESS_KEYS = new Set([
+  "to", "cc", "bcc", "recipient", "recipients", "email",
+  "channel", "channel_id", "thread_id", "chat_id",
+  "conversation_id",
 ]);
+const TITLE_KEYS = new Set(["subject", "title"]);
+const TITLE_MAX = 80;
 
-// (key, value) for every string leaf: the send-shape check needs the
-// field names, not just the texts.
-export function collectPairs(value, key = "", out = []) {
-  if (typeof value === "string") out.push({ key, value });
-  else if (Array.isArray(value)) {
-    for (const v of value) collectPairs(v, key, out);
+// (key, value) for every string or number leaf in the call arguments:
+// the send-shape check needs the field names, not just the texts.
+export function collectLeaves(value, key = "", out = []) {
+  if (typeof value === "string" || typeof value === "number") {
+    out.push({ key, value });
+  } else if (Array.isArray(value)) {
+    for (const v of value) collectLeaves(v, key, out);
   } else if (value && typeof value === "object") {
-    for (const [k, v] of Object.entries(value)) collectPairs(v, k, out);
+    for (const [k, v] of Object.entries(value)) collectLeaves(v, k, out);
   }
   return out;
 }
 
 // null when the call is a clean send of the gated text: exactly one
-// argument equals the freshly rendered message verbatim, and every
-// other string argument is an envelope field. The rendered text inside
-// a longer argument, a second prose field, or no verbatim carrier at
-// all is a send the gate never saw and the user never approved.
-export function sendShapeError(args, rendered) {
+// argument equals the freshly rendered message verbatim, every other
+// string leaf is a whitespace-free address/id field or a short
+// digit-free subject/title, and no numeric leaf is present at all.
+// A Bash call is never a send however it carries the text. Anything
+// else is a send the gate never saw and the user never approved.
+export function sendShapeError(e, rendered) {
   const r = normalize(rendered);
   if (r === "") return "the gate produced no text to send";
+  if (e?.tool === "Bash") {
+    return "a shell command is not a send; use a send tool with the " +
+      "text as its own argument or hand the text to the user";
+  }
   let exact = 0;
-  for (const p of collectPairs(args)) {
+  for (const p of collectLeaves(callArgs(e))) {
+    const k = String(p.key).toLowerCase();
+    if (typeof p.value === "number") {
+      return `argument '${p.key}' carries a number the gate never saw`;
+    }
     const v = normalize(p.value);
     if (v === r) {
       exact += 1;
@@ -278,9 +290,16 @@ export function sendShapeError(args, rendered) {
     if (v.includes(r)) {
       return "the gated text must be the whole argument, not part of a longer one";
     }
-    if (v !== "" && !ENVELOPE_KEYS.has(String(p.key).toLowerCase())) {
-      return `argument '${p.key}' carries text the gate never saw`;
+    if (v === "") continue;
+    if (ADDRESS_KEYS.has(k)) {
+      if (!/\s/.test(p.value)) continue;
+      return `address field '${p.key}' takes a single token, no whitespace`;
     }
+    if (TITLE_KEYS.has(k)) {
+      if (!/\d/.test(p.value) && p.value.length <= TITLE_MAX) continue;
+      return `field '${p.key}' takes at most ${TITLE_MAX} characters and no digits`;
+    }
+    return `argument '${p.key}' carries text the gate never saw`;
   }
   if (exact === 0) return "no argument carries the gated text verbatim";
   if (exact > 1) return "the gated text fills more than one argument";

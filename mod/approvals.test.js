@@ -269,6 +269,24 @@ describe("tool.call held drafts", () => {
     assert.equal(calls.run.some((r) => r.argv.includes("--approved")), true);
   });
 
+  test("a Bash send of the approved text is denied", async () => {
+    // Even with the press recorded, a shell command can never carry
+    // the approved text: the deny names the send tool or the user.
+    const { $, state } = fakeDollar({
+      files: heldFiles(), dirs: caseDirs(), gate: heldGate(), held: heldOpt(),
+    });
+    const on = fakeOn();
+    register(on.on);
+    state.set("approvals", { [HASH]: true });
+    const out = await on.get("tool.call")($, {
+      tool: "Bash", tool_use_id: "t8",
+      command: `printf %s '${RENDERED}' | mail v@x`,
+    }, fired().next);
+    assert.match(out.deny, /send tool/);
+    assert.match(out.deny, /hand .* to the user/);
+    assert.equal(state.get("approvals")?.[HASH], true);
+  });
+
   test("a send with extra text after the draft is denied", async () => {
     const { $, calls } = fakeDollar({
       files: heldFiles(), dirs: caseDirs(), gate: heldGate(), held: heldOpt(),

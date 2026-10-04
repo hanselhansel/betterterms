@@ -61,8 +61,10 @@
   display modes (mod, widget, chat) and what each guarantees.
 - The mod finds the core `bt.py` through the marketplace cache layout,
   scans case folders on stat fingerprints with burst reuse, and its
-  send guard passes only when one argument equals the freshly
-  re-gated rendered text.
+  send guard applies one strict shape: exactly one argument equals the
+  freshly re-gated rendered text, other string leaves are
+  whitespace-free address/id fields or a short digit-free
+  subject/title, numeric leaves deny, and a Bash call is never a send.
 - `bt.py ledger add` accepts `--period once` for one-time savings.
   `case new` validates `config.yaml` before touching the case tree.
 - `scripts/vendor-into-repo` enables the plugin without copying the

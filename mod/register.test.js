@@ -123,8 +123,9 @@ describe("register", () => {
   });
 
   test("a send whose arg wraps the gated text is denied", async () => {
-    // The draft may only travel verbatim as its own argument; a shell
-    // command or body with the text embedded goes nowhere.
+    // The draft may only travel verbatim as its own argument: a shell
+    // command is never a send, and a body with the text embedded goes
+    // nowhere either.
     const files = caseFiles({ [`${DIR}/draft.yaml`]: DRAFT, [`${DIR}/gate.json`]: GATE });
     const { $, calls } = fakeDollar({ files, dirs: caseDirs(), answer: "Send" });
     const on = fakeOn();
@@ -134,8 +135,12 @@ describe("register", () => {
       tool: "Bash", tool_use_id: "t4b", command: `mail v@x <<EOF\n${RENDERED}\nEOF`,
     }, next);
     assert.equal(went.length, 0);
-    assert.match(out.deny, /whole argument/);
+    assert.match(out.deny, /send tool/);
     assert.equal(calls.ask.length, 0);
+    const wrapped = await on.get("tool.call")($, {
+      tool: "gmail.send", tool_use_id: "t4c", body: `${RENDERED} -- and a word more`,
+    }, fired().next);
+    assert.match(wrapped.deny, /whole argument/);
   });
 
   test("needs_approval is held for the pane, never asked inline", async () => {
