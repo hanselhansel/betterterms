@@ -222,9 +222,12 @@ export function parseThread(text) {
   return entries;
 }
 
+// saved stays a per-currency map: USD and EUR never sum into one
+// figure (finding 12). A record without a currency counts as USD,
+// matching bt.py ledger add's default.
 export function parseLedger(text) {
   const closed = new Set();
-  let savedPerYear = 0;
+  const saved = {};
   for (const line of String(text ?? "").split(/\r?\n/)) {
     const s = line.trim();
     if (!s) continue;
@@ -233,10 +236,14 @@ export function parseLedger(text) {
     if (rec && typeof rec === "object") {
       if (typeof rec.case_id === "string") closed.add(rec.case_id);
       const v = Number(rec.saved_per_year);
-      if (Number.isFinite(v)) savedPerYear += v;
+      if (Number.isFinite(v)) {
+        const cur = typeof rec.currency === "string" && rec.currency !== ""
+          ? rec.currency : "USD";
+        saved[cur] = (saved[cur] ?? 0) + v;
+      }
     }
   }
-  return { closed, savedPerYear };
+  return { closed, saved };
 }
 
 export function safeCaseId(name) {

@@ -129,7 +129,7 @@ export async function scanCases(host, { burst = false } = {}) {
   const root = `${home}/cases`;
   const rootStat = await IO.statIf(host, root, { resolve: true });
   if (rootStat?.kind !== "dir") {
-    return { home, root, resolvedRoot: null, cases: [], savedPerYear: ledger.savedPerYear };
+    return { home, root, resolvedRoot: null, cases: [], saved: ledger.saved };
   }
   const bt = await IO.findBt(host);
   const cases = [];
@@ -139,7 +139,7 @@ export async function scanCases(host, { burst = false } = {}) {
       await scanCase(host, home, bt, `${root}/${ent.name}`, ent.name, ledger)
     );
   }
-  const snap = { home, root, resolvedRoot: rootStat.realPath ?? root, cases, savedPerYear: ledger.savedPerYear };
+  const snap = { home, root, resolvedRoot: rootStat.realPath ?? root, cases, saved: ledger.saved };
   burstSnap = snap;
   burstAt = Date.now();
   return snap;

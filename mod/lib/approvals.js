@@ -1,25 +1,35 @@
-// Pure approval-flow helpers for the betterterms mod: the
-// held/<hash>.yaml reader, the deny/submit/status wordings and the
-// draft.yaml rewrite for Edit. The $.state references live in
-// register.js: the audit needs each ref's plugin and key spelled as
-// literals in the file that calls $.state. Everything that
-// touches `$` (fs reads, bt.py subprocesses, state writes, presses)
-// lives in register.js: the hooks-module audit follows `$` only into
-// functions declared in that file, never across an import.
+// Pure approval-flow helpers for the betterterms mod: the deny/submit
+// wordings, the status line and the draft.yaml rewrite for Edit. The
+// $.state references live in register.js: the audit needs each ref's
+// plugin and key spelled as literals in the file that calls $.state.
+// Everything that touches `$` (fs reads, bt.py subprocesses, state
+// writes, presses) lives in register.js and lib/wiring.js: the
+// hooks-module audit follows `$` only into functions declared in
+// register.js, never across an import.
 //
 // The approval invariant (spec 6.3): a send held by the gate is denied
-// with the pane's name, never asked inline; a press records the full
-// SHA-256 in $.state.approvals and submits the resend prompt; the
-// resend re-runs `bt.py gate --approved`, which consumes the on-disk
-// approval file once. $.state is the only witness an agent cannot
-// forge, so an approval file alone never lets a send through.
-
-import { parseFlatYaml } from "./cases.js";
+// with the pane's name, never asked inline. Consent is an unused
+// $.state entry: the pane press writes it directly, and the marker a
+// typed `bt approve` leaves is adopted into it on the next send (the
+// file guard keeps agent writes out of held/, so the marker only ever
+// comes from a real command). Both spend once: the entry on read, the
+// marker when `bt.py gate --approved` consumes it.
 
 export const GATE_TIMEOUT_MS = 30000;
-export const EMPTY_SNAP = { home: null, root: null, resolvedRoot: null, cases: [], savedPerYear: 0 };
+export const EMPTY_SNAP = { home: null, root: null, resolvedRoot: null, cases: [], saved: {} };
 
-const HASH64 = /^[0-9a-f]{64}$/;
+// "$486" for USD, "EUR 200" otherwise: only USD gets the sign.
+export function money(currency, v) {
+  const n = Math.round(Number(v) || 0);
+  return currency === "USD" ? `$${n}` : `${currency} ${n}`;
+}
+
+// The per-currency savings figure, "$486/yr · EUR 200/yr" or "$0/yr".
+export function savedText(saved) {
+  const keys = Object.keys(saved ?? {});
+  if (keys.length === 0) return "$0/yr";
+  return keys.map((k) => `${money(k, saved[k])}/yr`).join(" · ");
+}
 
 // The card in edit mode, by held hash. Module scope: it is UI-local
 // state, not approval state; renders read it as view.editing and the
@@ -46,8 +56,8 @@ export function approvePromptText(hash, caseId) {
     "nothing added. The send guard re-runs the gate; do not run it yourself.";
 }
 
-export function statusText(nCases, savedPerYear) {
-  return `bt: ${nCases} case${nCases === 1 ? "" : "s"} · $${Math.round(savedPerYear)}/yr saved`;
+export function statusText(nCases, saved) {
+  return `bt: ${nCases} case${nCases === 1 ? "" : "s"} · ${savedText(saved)} saved`;
 }
 
 // draft.yaml rewritten with the edited message as the template. The

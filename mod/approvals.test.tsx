@@ -29,15 +29,22 @@ const HELD_YAML =
   `rendered: '${RENDERED}'\n` +
   'reasons:\n- action \'cancel\' requires --approved\n' +
   'held_at: 2026-10-04T12:00:00+00:00\n';
+const HELD_REC = {
+  hash: HASH, rendered: RENDERED,
+  reasons: ["action 'cancel' requires --approved"],
+  held_at: '2026-10-04T12:00:00+00:00',
+};
 const LEDGER = '{"case_id":"x-20260101-aaaa","saved_per_year":1440}\n';
 
 type Files = Record<string, string>;
 type Dirs = Record<string, unknown[]>;
+type HeldRec = { hash: string; rendered: string; reasons: string[]; held_at: string };
 type OpHook = (event: string, hook: (...a: never[]) => unknown) => unknown;
 
 interface Wired {
   files: Files;
   dirs: Dirs;
+  held: HeldRec[];
   state: Map<string, { value: unknown; version: number }>;
   prompts: string[];
   statuses: string[];
@@ -105,10 +112,46 @@ function wire(on: OpHook, w: Wired) {
     if (w.throwGate) return { deny: 'spawn blew up' };
     const argv = e.argv.map(String);
     w.runs.push(argv);
-    if (argv.includes('approve') || argv.includes('reject'))
-      return { value: { exitCode: 0, stdout: `{"ok":true,"hash":"${HASH}"}`, stderr: '' } };
-    const stdout = argv.includes('--approved') ? w.approvedText() : w.gateText();
-    return { value: { exitCode: 3, stdout, stderr: '' } };
+    const heldDir = `${DIR}/held`;
+    if (argv[2] === 'held' && argv[3] === 'list') {
+      const held = w.held.map((r) => ({
+        ...r,
+        approved: `${heldDir}/${r.hash}.approved` in w.files,
+      }));
+      return { value: { exitCode: 0, stdout: JSON.stringify({ held }), stderr: '' } };
+    }
+    if (argv[2] === 'held' && (argv[3] === 'approve' || argv[3] === 'reject')) {
+      const h8 = String(argv[5] ?? '');
+      const hits = w.held.filter((r) => r.hash.startsWith(h8));
+      if (hits.length !== 1)
+        return { value: { exitCode: 2, stdout: `{"error":"no held draft matching ${h8}"}`, stderr: '' } };
+      const h = hits[0].hash;
+      if (argv[3] === 'approve') {
+        w.files[`${heldDir}/${h}.approved`] = `hash: ${h}\n`;
+        (w.dirs[heldDir] as unknown[]).push({ name: `${h}.approved`, kind: 'file', isLink: false });
+      } else {
+        w.held = w.held.filter((r) => r.hash !== h);
+        delete w.files[`${heldDir}/${h}.yaml`];
+        delete w.files[`${heldDir}/${h}.approved`];
+      }
+      return { value: { exitCode: 0, stdout: `{"ok":true,"hash":"${h}"}`, stderr: '' } };
+    }
+    if (argv[2] === 'gate' && argv.includes('--approved')) {
+      // Like the real CLI: --approved passes only on a live marker,
+      // and the marker plus its record are spent on use.
+      let hash: string | undefined;
+      try { hash = JSON.parse(w.gateText()).hash; } catch { hash = undefined; }
+      const marker = hash ? `${heldDir}/${hash}.approved` : '';
+      if (hash !== undefined && marker in w.files) {
+        delete w.files[marker];
+        delete w.files[`${heldDir}/${hash}.yaml`];
+        w.held = w.held.filter((r) => r.hash !== hash);
+        return { value: { exitCode: 0, stdout: w.approvedText(), stderr: '' } };
+      }
+    }
+    const stdout = w.gateText();
+    const code = stdout.includes('"needs_approval"') ? 3 : stdout.includes('"block"') ? 1 : 0;
+    return { value: { exitCode: code, stdout, stderr: '' } };
   });
   on('prompt.submit', (_$: never, e: { text: string }) => {
     w.prompts.push(e.text);
@@ -132,6 +175,7 @@ function fresh(over: Partial<Wired> = {}): Wired {
   return {
     files: fixtureFiles(),
     dirs: fixtureDirs(),
+    held: [{ ...HELD_REC }],
     state: new Map(),
     prompts: [],
     statuses: [],
@@ -145,9 +189,11 @@ function fresh(over: Partial<Wired> = {}): Wired {
   };
 }
 
+// The send-shape rule: the gated text verbatim as its own argument,
+// envelope fields only beside it.
 const sendCall = () => ({
-  tool: 'Bash', tool_use_id: 't1',
-  command: `mail v@x <<EOF\n${RENDERED}\nEOF`,
+  tool: 'gmail.send', tool_use_id: 't1',
+  to: 'v@x', subject: 're: plan', body: RENDERED,
 });
 
 const approvals = (w: Wired) =>
@@ -202,10 +248,12 @@ for (const surface of ['terminal', 'desktop'] as const) {
     expect(w.runs.some((r) => r.join(' ').includes(`held approve ${ID} ${HASH8}`))).toBe(true);
     expect(approvals(w)[HASH]).toBe(true);
     expect(w.prompts).toEqual([
-      `betterterms: the user approved draft ${HASH8} for ${ID}. Send it now with the same text.`,
+      `betterterms: the user approved draft ${HASH8} for ${ID}. ` +
+      'Send it now: the approved text verbatim as its own argument, ' +
+      'nothing added. The send guard re-runs the gate; do not run it yourself.',
     ]);
     const sent = await $.tool.call(sendCall() as never);
-    expect((sent as { result?: { ran: string } }).result?.ran).toBe('Bash');
+    expect((sent as { result?: { ran: string } }).result?.ran).toBe('gmail.send');
     expect(w.runs.some((r) => r.includes('--approved'))).toBe(true);
     const third = await $.tool.call(sendCall() as never);
     expect((third as { deny?: string }).deny).toMatch(/held for your approval/);
@@ -247,16 +295,21 @@ for (const surface of ['terminal', 'desktop'] as const) {
     await pane.unmount();
   });
 
-  test(`forged approval file ignored without $.state entry (${surface})`, async ($, on) => {
+  test(`a marker a typed bt approve left is adopted once (${surface})`, async ($, on) => {
+    // `bt approve` typed in the prompt runs `held approve` through the
+    // hook, leaving only this marker; the mod adopts it as the press.
     const w = fresh({
-      files: fixtureFiles({ [`${DIR}/held/${HASH}.approved`]: 'hash: forged\n' }),
+      files: fixtureFiles({ [`${DIR}/held/${HASH}.approved`]: 'hash: typed\n' }),
     });
-    w.dirs[`${DIR}/held`].push({ name: `${HASH}.approved`, kind: 'file', isLink: false });
+    (w.dirs[`${DIR}/held`] as unknown[]).push({ name: `${HASH}.approved`, kind: 'file', isLink: false });
     wire(on as OpHook, w);
     const out = await $.tool.call(sendCall() as never);
-    expect((out as { deny?: string }).deny).toMatch(/held for your approval/);
-    expect(w.runs.some((r) => r.includes('--approved'))).toBe(false);
-    expect(Object.keys(approvals(w))).toHaveLength(0);
+    expect((out as { result?: { ran: string } }).result?.ran).toBe('gmail.send');
+    expect(w.runs.some((r) => r.includes('--approved'))).toBe(true);
+    expect(`${DIR}/held/${HASH}.approved` in w.files).toBe(false);
+    // The marker is spent: the next identical send holds again.
+    const again = await $.tool.call(sendCall() as never);
+    expect((again as { deny?: string }).deny).toMatch(/held for your approval/);
   });
 
   test(`throwing gate denies send (${surface})`, async ($, on) => {

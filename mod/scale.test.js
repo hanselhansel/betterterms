@@ -285,6 +285,30 @@ describe("savings tab", () => {
     assert.deepEqual(w.map((x) => x.cum), [240, 1440]);
   });
 
+  test("mixed currencies never add into one total", () => {
+    const mixed = {
+      total: { cases: 2, by_currency: { USD: 1440, EUR: 200 }, by_pack: {}, warnings: 0 },
+      records: [
+        ...data.records.map((r) => ({ ...r, currency: "USD" })),
+        { case_id: "d-20260305-dddd", saved_per_year: 200, currency: "EUR", recorded_at: "2026-09-21T00:00:00Z" },
+      ],
+    };
+    const flat = JSON.stringify(V.savingsBody(ELSR, mixed, "vscode"));
+    assert.match(flat, /saved \$1440\/yr · EUR 200\/yr/);
+    assert.doesNotMatch(flat, /1640/);
+    // The chart tracks one currency and says so.
+    assert.match(flat, /chart shows USD/);
+  });
+
+  test("empty ledger draws a real empty state, not $0 scaffolding", () => {
+    const empty = { total: { cases: 0, by_currency: {} }, records: [] };
+    const tree = V.savingsBody(ELSR, empty, "terminal");
+    const flat = JSON.stringify(tree);
+    assert.match(flat, /no savings recorded yet/);
+    assert.doesNotMatch(flat, /\$0\/yr/);
+    assert.equal(findNode(tree, byTag("Raster")), null);
+  });
+
   test("savingsData runs bt ledger total and reads ledger.jsonl", async () => {
     const files = termsFiles({ "/bt/ledger.jsonl": LEDGER_LINES });
     const { $, calls } = fakeDollar({

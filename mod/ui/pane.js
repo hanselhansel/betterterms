@@ -14,7 +14,7 @@
 // hotkey press.
 
 import * as C from "../lib/cases.js";
-import { hash8 } from "../lib/approvals.js";
+import { hash8, savedText } from "../lib/approvals.js";
 import { termsTree } from "./terms.js";
 import { savingsBody } from "./savings.js";
 
@@ -124,12 +124,12 @@ function moneyText(el, text, key) {
   );
 }
 
-// hotkeys bind only on a lone card: with several held drafts one `a`
-// could fire every card at once.
-function heldCard(el, c, held, view, single) {
+// a/e/r bind on the top card only: one key fires one card, so several
+// held drafts still leave the oldest keyboard-reachable (finding 17).
+function heldCard(el, c, held, view, top) {
   const { Box, Text, Button, Input } = el;
   const h8 = hash8(held.hash);
-  const hotkey = single ? { approve: "a", edit: "e", reject: "r" } : {};
+  const hotkey = top ? { approve: "a", edit: "e", reject: "r" } : {};
   const rows = [
     h(Text, { key: `held-h-${h8}`, dimColor: true },
       `${c.id} · held ${held.heldAt || "?"} · ${h8}${held.approved ? " · approved" : ""}`),
@@ -171,9 +171,12 @@ function heldCard(el, c, held, view, single) {
 function approvalsTab(el, snap, view) {
   const { Box, Text } = el;
   const pairs = snap.cases.flatMap((c) => (c.held ?? []).map((held) => [c, held]));
-  const cards = pairs.map(([c, held]) => heldCard(el, c, held, view, pairs.length === 1));
+  const cards = pairs.map(([c, held], i) => heldCard(el, c, held, view, i === 0));
   if (cards.length === 0) {
     cards.push(h(Text, { key: "held-none", dimColor: true }, "nothing held for approval"));
+  } else if (pairs.length > 1) {
+    cards.push(h(Text, { key: "held-keys", dimColor: true },
+      "keys a/e/r act on the top card"));
   }
   return h(Box, { key: "approvals", flexDirection: "column" }, ...cards);
 }
@@ -186,7 +189,7 @@ function savingsTab(el, snap, view) {
   return h(
     Box,
     { key: "savings", flexDirection: "column" },
-    h(Text, null, `saved $${Math.round(snap.savedPerYear)}/yr`),
+    h(Text, null, `saved ${savedText(snap.saved)}`),
     h(Text, { dimColor: true }, `${closed} case${closed === 1 ? "" : "s"} closed`),
   );
 }

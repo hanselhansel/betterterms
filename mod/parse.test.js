@@ -66,10 +66,18 @@ describe("parseThread", () => {
 });
 
 describe("parseLedger", () => {
-  test("collects closed case ids and yearly savings", () => {
-    const { closed, savedPerYear } = parseLedger(LEDGER);
+  test("collects closed case ids and yearly savings per currency", () => {
+    const { closed, saved } = parseLedger(LEDGER);
     assert.equal(closed.has("bills-20260901-aaaa"), true);
     assert.equal(closed.has("offer-20260902-bbbb"), true);
-    assert.equal(savedPerYear, 1440);
+    assert.deepEqual(saved, { USD: 1440 });
+  });
+
+  test("sums stay per currency; a missing currency is USD", () => {
+    const { saved } = parseLedger([
+      '{"case_id":"a-20260101-aaaa","saved_per_year":240,"currency":"EUR"}',
+      '{"case_id":"b-20260101-bbbb","saved_per_year":1200}',
+    ].join("\n"));
+    assert.deepEqual(saved, { EUR: 240, USD: 1200 });
   });
 });

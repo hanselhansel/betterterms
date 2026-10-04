@@ -9,8 +9,10 @@
 // its own from the same records.
 
 import * as IO from "../lib/hostio.js";
+import { money, savedText } from "../lib/approvals.js";
 
 // ledger.jsonl lines -> records the chart needs. Junk lines skip.
+// currency defaults to USD, matching `bt ledger add`.
 export function parseRecords(text) {
   const out = [];
   for (const line of String(text ?? "").split(/\r?\n/)) {
@@ -19,10 +21,36 @@ export function parseRecords(text) {
       const r = JSON.parse(line);
       const saved = Number(r?.saved_per_year);
       if (!r || typeof r.case_id !== "string" || !Number.isFinite(saved)) continue;
-      out.push({ case_id: r.case_id, saved_per_year: saved, recorded_at: r.recorded_at ?? null });
+      out.push({
+        case_id: r.case_id,
+        saved_per_year: saved,
+        currency: typeof r.currency === "string" && r.currency !== "" ? r.currency : "USD",
+        recorded_at: r.recorded_at ?? null,
+      });
     } catch { /* not json */ }
   }
   return out;
+}
+
+// currency -> summed saved_per_year. Totals never cross currencies.
+export function byCurrency(records) {
+  const out = {};
+  for (const r of records) {
+    const cur = r.currency || "USD";
+    out[cur] = (out[cur] ?? 0) + r.saved_per_year;
+  }
+  return out;
+}
+
+// The currency the chart draws: the one with the largest absolute
+// total. Mixing currencies on one axis would be a meaningless sum.
+export function chartCurrency(records) {
+  let best = "USD";
+  let bestAbs = -1;
+  for (const [k, v] of Object.entries(byCurrency(records))) {
+    if (Math.abs(v) > bestAbs) { best = k; bestAbs = Math.abs(v); }
+  }
+  return best;
 }
 
 // ISO-8601 week of an ISO timestamp, "2026-W37". Records without
@@ -69,20 +97,22 @@ export async function savingsData(host, snap) {
   if (total === null || typeof total !== "object") {
     total = {
       cases: records.length,
-      by_currency: { USD: records.reduce((s, r) => s + r.saved_per_year, 0) },
+      by_currency: byCurrency(records),
     };
   }
   return { total, records };
 }
 
-const fmt = (v) => String(Math.round(v));
-
+// The chart's records are the dominant currency's only; savingsBody
+// says so when other currencies exist.
 function chartModel(data) {
-  const wks = weeks(data.records);
-  const bars = data.records.map((r) => r.saved_per_year);
+  const currency = chartCurrency(data.records);
+  const recs = data.records.filter((r) => (r.currency || "USD") === currency);
+  const wks = weeks(recs);
+  const bars = recs.map((r) => r.saved_per_year);
   const maxBar = Math.max(1, ...bars.map((v) => Math.abs(v)));
   const maxCum = Math.max(1, ...wks.map((w) => w.cum));
-  return { wks, bars, maxBar, maxCum };
+  return { wks, bars, maxBar, maxCum, currency };
 }
 
 // The desktop chart: one rect per closed case, a polyline for the
@@ -176,18 +206,17 @@ function rasterChart(data, cols, rows) {
 
 export function savingsBody(el, data, surface) {
   const { Box, Text } = el;
+  if (!data?.records?.length) {
+    return h(Box, { key: "savings", flexDirection: "column" },
+      h(Text, { key: "sav-none" }, "no savings recorded yet"),
+      h(Text, { key: "sav-hint", dimColor: true },
+        "the ledger fills in when a case closes"));
+  }
   const rows = [];
-  const byCurrency = data?.total?.by_currency ?? {};
-  const keys = Object.keys(byCurrency);
-  const total = keys.length
-    ? keys.reduce((s, k) => s + (Number(byCurrency[k]) || 0), 0)
-    : data.records.reduce((s, r) => s + r.saved_per_year, 0);
-  const money = keys.length === 1 && keys[0] === "USD"
-    ? `$${fmt(total)}`
-    : keys.length
-      ? keys.map((k) => `${k} ${fmt(byCurrency[k])}`).join(" · ")
-      : `$${fmt(total)}`;
-  rows.push(h(Text, { key: "sav-total" }, `saved ${money}/yr`));
+  const recSums = byCurrency(data.records);
+  const byCur = data?.total?.by_currency ?? {};
+  const sums = Object.keys(byCur).length ? byCur : recSums;
+  rows.push(h(Text, { key: "sav-total" }, `saved ${savedText(sums)}`));
   const m = chartModel(data);
   if (surface === "desktop" && el.Svg) {
     const { source, alt } = svgChart(data);
@@ -199,13 +228,24 @@ export function savingsBody(el, data, surface) {
   } else {
     for (const w of m.wks) {
       rows.push(h(Text, { key: `wk-${w.week}`, dimColor: true },
-        `${w.week}  +$${fmt(w.sum)}  = $${fmt(w.cum)}`));
+        `${w.week}  +${money(m.currency, w.sum)}  = ${money(m.currency, w.cum)}`));
     }
+  }
+  if (Object.keys(sums).length > 1) {
+    rows.push(h(Text, { key: "sav-cur", dimColor: true },
+      `chart shows ${m.currency} only`));
   }
   const closed = data.records.length;
   const walked = data.records.filter((r) => !(r.saved_per_year > 0)).length;
-  const avg = closed ? total / closed : 0;
+  const counts = {};
+  for (const r of data.records) {
+    const cur = r.currency || "USD";
+    counts[cur] = (counts[cur] ?? 0) + 1;
+  }
+  const avg = Object.keys(recSums)
+    .map((k) => `${money(k, recSums[k] / counts[k])}/yr`)
+    .join(" · ");
   rows.push(h(Text, { key: "sav-sum", dimColor: true },
-    `${closed} closed · ${walked} walked away · $${fmt(avg)}/yr average`));
+    `${closed} closed · ${walked} walked away · ${avg} average`));
   return h(Box, { key: "savings", flexDirection: "column" }, ...rows);
 }

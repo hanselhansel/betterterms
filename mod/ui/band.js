@@ -1,7 +1,7 @@
 // The AbovePrompt band (spec 6.1): drawn only while something needs
 // the user — a held draft, a gate-passed draft not yet sent, or a
-// fresh inbound reply. One line plus a Review button (hotkey 1) that
-// opens the Approvals tab.
+// fresh inbound reply. One line plus a Review button (hotkey 2, the
+// pane tab it opens) that jumps to Approvals.
 
 import * as C from "../lib/cases.js";
 
@@ -19,7 +19,7 @@ export function bandTree(el, counts, onReview) {
     h(Button, {
       key: "review",
       label: "Review",
-      hotkey: "1",
+      hotkey: "2",
       plain: true,
       onPress: onReview,
     }),

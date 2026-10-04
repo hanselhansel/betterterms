@@ -71,6 +71,27 @@ describe("register", () => {
     assert.equal(calls.run.length, 0);
   });
 
+  test("a write whose path resolves outside the case dir is a send", async () => {
+    const files = caseFiles({ [`${DIR}/draft.yaml`]: DRAFT, [`${DIR}/gate.json`]: GATE });
+    const { $, calls } = fakeDollar({
+      files, dirs: caseDirs(),
+      // A link inside the case dir pointing out: the lexical path says
+      // bookkeeping, the resolved path says send.
+      stats: { [`${DIR}/draft.yaml`]: { realPath: "/tmp/escape/draft.yaml" } },
+    });
+    const on = fakeOn();
+    register(on.on);
+    const { next, calls: went } = fired();
+    const out = await on.get("tool.call")($, {
+      tool: "Write", tool_use_id: "t2b", file_path: `${DIR}/draft.yaml`, content: RENDERED,
+    }, next);
+    // Not bookkeeping: the gate ran, and file_path is no envelope
+    // field, so the write is denied like any malformed send.
+    assert.equal(calls.run.length, 1);
+    assert.equal(went.length, 0);
+    assert.match(out.deny, /file_path/);
+  });
+
   test("autonomy 2: a passing gate still asks the user first", async () => {
     const files = caseFiles({ [`${DIR}/draft.yaml`]: DRAFT, [`${DIR}/gate.json`]: GATE });
     const { $, calls } = fakeDollar({ files, dirs: caseDirs(), answer: "Send" });

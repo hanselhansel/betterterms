@@ -44,8 +44,7 @@ export function parseGate(text) {
 // thread.md entries plus the `## rejected <time> <hash>` markers
 // `bt.py held reject` appends. A rejected line is a marker, not a turn:
 // it must not enter the entries list or become the previous entry's
-// snippet. lib/parse.js is not in this task's file list, so the strip
-// happens here before its parser runs.
+// snippet, so it is stripped here before the entry parser runs.
 export function parseThreadAll(text) {
   const clean = String(text ?? "")
     .split(/\r?\n/)

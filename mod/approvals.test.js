@@ -15,61 +15,14 @@ import { gateRow } from "./ui/rows.js";
 import { register } from "./register.js";
 import * as R from "./register.js";
 import {
-  BT, BRIEF, CASE_ID, DIR, DRAFT, GATE_NEEDS_APPROVAL, RENDERED, THREAD,
-  caseDirs, caseFiles, fakeDollar, fakeOn, fired, heldHash, btRoute,
+  BT, CASE_ID, DIR, DRAFT, RENDERED, THREAD,
+  caseDirs, caseFiles, fakeDollar, fakeOn, fired,
 } from "./testkit.js";
-
-// The held record's send tuple; the hash the fake CLI reports is the
-// tuple hash, exactly what bt.py computes.
-const REC = {
-  action: "cancel", offer: null, period: "once", currency: "USD",
-  rendered: RENDERED, reasons: ["action 'cancel' requires --approved"],
-  held_at: "2026-10-04T12:00:00+00:00",
-};
-const HASH = heldHash(REC);
-const HASH8 = HASH.slice(0, 8);
-const GATE_HELD_JSON = JSON.stringify({
-  result: "needs_approval",
-  reasons: ["action 'cancel' requires --approved"],
-  rendered: RENDERED,
-  hash: HASH,
-});
-const ELS = { Box: "Box", Text: "Text", Button: "Button", Input: "Input" };
-
-const heldFiles = (extra = {}) => caseFiles({
-  [`${DIR}/draft.yaml`]: DRAFT,
-  [`${DIR}/gate.json`]: GATE_NEEDS_APPROVAL,
-  ...extra,
-});
-const heldDirs = () => caseDirs({
-  [`${DIR}/held`]: [],
-});
-const heldOpt = () => ({ [CASE_ID]: [REC] });
-// The send that matches the held draft's rendered text, verbatim as
-// one argument (the send-shape rule).
-const sendCall = () => ({
-  tool: "gmail.send", tool_use_id: "t1",
-  to: "v@x", subject: "re: plan", body: RENDERED,
-});
-// The Approvals-tab tree for a one-held-draft snapshot.
-const approvalsCard = async ($) => {
-  const snap = await R.scanCases($);
-  return paneTree(ELS, snap, { tab: 2, selected: null, editing: null }, R.paneActions($, snap));
-};
-
-// Depth-first walk of an h() tree for the first node whose props or
-// text match. The node shape is {tag, props, children}.
-function findNode(tree, pred) {
-  if (!tree || typeof tree !== "object") return null;
-  if (pred(tree)) return tree;
-  for (const ch of tree.children ?? []) {
-    const hit = findNode(ch, pred);
-    if (hit) return hit;
-  }
-  return null;
-}
-const isButton = (n) => n.tag === "Button";
-const byKey = (k) => (n) => n.props?.key === k;
+import {
+  ELS, HASH, HASH8,
+  heldFiles, heldDirs, heldOpt, sendCall,
+  findNode, byKey, isButton,
+} from "./heldkit.js";
 
 describe("lib/approvals helpers", () => {
   test("hash8 takes the first 8 hex chars", () => {
@@ -96,10 +49,14 @@ describe("lib/approvals helpers", () => {
     assert.match(text, /do not run it yourself/);
   });
 
-  test("statusText matches the spec line", () => {
-    assert.equal(A.statusText(4, 486), "bt: 4 cases · $486/yr saved");
-    assert.equal(A.statusText(1, 1440), "bt: 1 case · $1440/yr saved");
-    assert.equal(A.statusText(0, 0), "bt: 0 cases · $0/yr saved");
+  test("statusText matches the spec line, per currency", () => {
+    assert.equal(A.statusText(4, { USD: 486 }), "bt: 4 cases · $486/yr saved");
+    assert.equal(A.statusText(1, { USD: 1440 }), "bt: 1 case · $1440/yr saved");
+    assert.equal(A.statusText(0, {}), "bt: 0 cases · $0/yr saved");
+    assert.equal(
+      A.statusText(2, { USD: 1440, EUR: 200 }),
+      "bt: 2 cases · $1440/yr · EUR 200/yr saved",
+    );
   });
 });
 
@@ -299,53 +256,6 @@ describe("tool.call held drafts", () => {
   });
 });
 
-describe("approve press", () => {
-  const approvePress = async ($) =>
-    findNode(await approvalsCard($), byKey(`approve-${HASH8}`)).props.onPress();
-  const held$ = (opts = {}) => fakeDollar({
-    files: heldFiles(), dirs: heldDirs(), held: heldOpt(), ...opts,
-  });
-
-  test("approve runs held approve with hash8", async () => {
-    const { $, calls } = held$();
-    await approvePress($);
-    const approveRun = calls.run.find((r) => r.argv[3] === "approve");
-    assert.deepEqual(approveRun.argv, ["python3", BT, "held", "approve", CASE_ID, HASH8]);
-  });
-
-  test("approval stores full hash and submits prompt", async () => {
-    const { $, calls, state } = held$();
-    await approvePress($);
-    assert.equal(state.get("approvals")?.[HASH], true);
-    assert.equal(calls.submit.length, 1);
-    assert.match(calls.submit[0], new RegExp(`approved draft ${HASH8} for ${CASE_ID}`));
-  });
-
-  test("approval failure does not submit", async () => {
-    const files = heldFiles();
-    // Build the route eagerly: its construction materializes the
-    // held/*.yaml files the scan's fingerprint needs to see.
-    const base = btRoute({ held: heldOpt() }, files);
-    const { $, calls, state } = fakeDollar({
-      files, dirs: heldDirs(), held: heldOpt(),
-      run: (argv) => argv[3] === "approve"
-        ? { exitCode: 2, stdout: `{"error":"no held draft matching ${HASH8}"}`, stderr: "" }
-        : base(argv),
-    });
-    await approvePress($);
-    assert.equal(calls.submit.length, 0);
-    assert.equal(state.size, 0);
-    assert.match(calls.toast.join("\n"), /approve failed/);
-  });
-
-  test("reject runs held reject with hash8", async () => {
-    const { $, calls } = held$();
-    await findNode(await approvalsCard($), byKey(`reject-${HASH8}`)).props.onPress();
-    const rejectRun = calls.run.find((r) => r.argv[3] === "reject");
-    assert.deepEqual(rejectRun.argv, ["python3", BT, "held", "reject", CASE_ID, HASH8]);
-  });
-});
-
 describe("tabs and rows", () => {
   test("tabs switch and the badge counts held drafts", async () => {
     const { $, state } = fakeDollar({
@@ -404,43 +314,7 @@ describe("tabs and rows", () => {
     const el = { Box: "Box", Text: "Text", Button: "Button" };
     const tree = bandTree(el, { held: 1, pending: 0, repliers: ["Comcast"] }, () => {});
     assert.match(JSON.stringify(tree), /Comcast replied, 1 draft waiting/);
-    assert.equal(findNode(tree, byKey("review")).props.hotkey, "1");
+    assert.equal(findNode(tree, byKey("review")).props.hotkey, "2");
     assert.equal(bandTree(el, { held: 0, pending: 0, repliers: [] }, () => {}), null);
-  });
-});
-
-describe("session.start status line", () => {
-  test("status text equals bt: <n> cases · $<saved>/yr saved", async () => {
-    const { $, calls } = fakeDollar({
-      files: heldFiles(), dirs: heldDirs(), held: heldOpt(),
-    });
-    const on = fakeOn();
-    register(on.on);
-    await on.get("session.start")($, { isInteractive: true }, fired().next);
-    assert.equal(calls.status[calls.status.length - 1], "bt: 1 case · $1440/yr saved");
-  });
-});
-
-describe("edit flow", () => {
-  test("saving an edit writes draft.yaml and re-runs the gate", async () => {
-    const { $, calls } = fakeDollar({
-      files: heldFiles(), dirs: heldDirs(), held: heldOpt(),
-      gate: {
-        result: "needs_approval",
-        reasons: ["action 'cancel' requires --approved"],
-        rendered: RENDERED, hash: HASH,
-      },
-    });
-    const snap = await R.scanCases($);
-    const tree = paneTree(ELS, snap, { tab: 2, selected: null, editing: HASH }, R.paneActions($, snap));
-    const input = findNode(tree, (n) => n.tag === "Input");
-    assert.equal(input.props.value, RENDERED);
-    await input.props.onSubmit("I can pay $1,200 a year for this plan.");
-    const wrote = calls.write.find((w) => w.path === `${DIR}/draft.yaml`);
-    assert.ok(wrote);
-    assert.match(wrote.text, /template: \|-/);
-    assert.match(wrote.text, /I can pay \$1,200 a year/);
-    assert.match(wrote.text, /action: send/);
-    assert.equal(calls.run.some((r) => r.argv.includes("gate")), true);
   });
 });

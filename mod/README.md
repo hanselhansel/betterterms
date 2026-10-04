@@ -21,16 +21,16 @@ runs in place from the repository.
   `plan.yaml` (start, their offer, target; the walk-away never shows).
   `2 Approvals` counts held drafts in its label and draws one card per
   held draft: the rendered text with the money spans lit, the gate's
-  reasons, and Approve and send (`a`), Edit (`e`), Reject (`r`).
-  `3 Savings` shows the ledger's `saved_per_year` total. Opens itself
-  at session start when cases exist; `/betterterms` or
-  `/betterterms-cases` reopens it.
+  reasons, and Approve and send (`a`), Edit (`e`), Reject (`r`) on the
+  top card. `3 Savings` shows the ledger's `saved_per_year` totals per
+  currency plus a cumulative chart. Opens itself at session start when
+  cases exist; `/betterterms` or `/betterterms-cases` reopens it.
 - **AbovePrompt band**: `Comcast replied, 1 draft waiting` while a
   reply is unanswered or a draft waits (held, or a `gate.json` verdict
   of `pass`/`needs_approval` not yet logged in `thread.md`). The
-  Review button (hotkey `1`) opens the Approvals tab.
+  Review button (hotkey `2`, the tab it opens) jumps to Approvals.
 - **Status line**: `bt: <n> cases · $<saved>/yr saved`, refreshed by
-  the poll.
+  the poll; mixed currencies list each total separately.
 - **Toasts**: `New reply in <case>.` when `thread.md` gains an inbound
   entry, `draft ... sent` when the guard lets a send through, and
   `draft ... blocked` when the gate refuses. Polled every 3 s.
@@ -60,10 +60,12 @@ records anything for the agent's own call. The flow is:
    text.
 3. The resend re-runs the gate, gets `needs_approval` again, finds the
    hash in `$.state`, consumes it, and re-gates once with
-   `--approved`. The CLI's marker file is spent on use; the `$.state`
-   entry is spent on read. Either alone is not enough: a forged
-   `.approved` file without the press does nothing, and a press
-   without the marker never reaches `--approved`.
+   `--approved`. If an agent-side `gate --approved` already spent the
+   marker, the mod re-arms it first so the send cannot deadlock. The
+   `$.state` entry is spent on read and the marker on use, so a second
+   identical send holds again. A marker a typed `bt approve` left is
+   adopted into `$.state` the same way, so a typed approval works with
+   the mod loaded.
 4. Different rendered text hashes to a different value, so an edited
    draft must re-pass the gate and be re-approved.
 
@@ -77,7 +79,7 @@ so the card re-lists under the new hash only after the gate sees it.
 
 Only `$BETTERTERMS_HOME` (default `~/.betterterms`): `cases/<id>/` names
 matching `[a-z0-9-]+` (linked dirs skipped), `brief.yaml`, `thread.md`,
-`draft.yaml`, `gate.json` (the last verdict the exchange skill saved),
+`draft.yaml`, `gate.json` (the verdict `bt.py gate` last wrote),
 `plan.yaml` (target and the counterparty's amounts for the offer bar),
 `inbound.yaml` existence for the gate's `--inbound` flag, `held/` for
 the approval cards, `sources/` listing for the researched stage, and
@@ -91,19 +93,28 @@ baselines in module memory. The only other filesystem touch is a
 `stat` resolve on a tool call's own `file_path` when one is present,
 to tell a bookkeeping write inside a case dir apart from a send.
 
+The scan caches each case's parsed form on a fingerprint of its files
+(mtime and size), and UI renders may reuse a snapshot for 250 ms so a
+drag or redraw storm stats the tree once. The pre-send guard never
+uses the burst: it stats fresh and re-runs the gate anyway.
+
 ## What "send" means
 
 There is no dedicated send tool; the mod treats a call as a send from
 an open case when a normalized copy of the `rendered` text in the
 case's `gate.json` appears inside one of its string arguments (for
-renders under 24 chars the call must also name the case id). It covers
-`Bash` commands, MCP tool arguments and agent prompts alike. Writes
-whose target resolves inside the case dir (`draft.yaml`,
-`inbound.yaml`, `gate.json`, `thread.md` bookkeeping) are excluded.
-Known holes, by design at v1: a send that reads the rendered text
-indirectly (`cat gate.json | mail ...`) carries no text to match, and
-a paraphrased render is not the render. The guard protects the normal
-flow; it is not a sandbox.
+renders under 24 chars the call must also name the case id). A send
+then passes only when the gate is re-run on the draft on disk and one
+string argument equals the freshly rendered text exactly, with the
+other string arguments limited to envelope fields (recipient, subject,
+channel ids): extra message body is denied, and an edited draft is
+denied until it is re-gated. It covers `Bash` commands, MCP tool
+arguments and agent prompts alike. Writes whose target resolves inside
+the case dir (`draft.yaml`, `inbound.yaml`, `gate.json`, `thread.md`
+bookkeeping) are excluded. Known holes, by design at v1: a send that
+reads the rendered text indirectly (`cat gate.json | mail ...`)
+carries no text to match, and a paraphrased render is not the render.
+The guard protects the normal flow; it is not a sandbox.
 
 ## The mod API this relies on
 

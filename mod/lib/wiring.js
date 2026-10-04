@@ -236,7 +236,7 @@ export async function tick(host) {
     // Once the agent answers, the case drops out of the band's reply bit.
     if (c.lastDir === "out") replied.delete(c.id);
   }
-  const status = A.statusText(snap.cases.length, snap.savedPerYear);
+  const status = A.statusText(snap.cases.length, snap.saved);
   if (snap.home !== null && status !== lastStatus) {
     lastStatus = status;
     host.status(status);
@@ -271,7 +271,7 @@ export async function sessionStart(host, e, next) {
   lastPrint = "";
   lastStatus = "";
   if (snap.home !== null) {
-    lastStatus = A.statusText(snap.cases.length, snap.savedPerYear);
+    lastStatus = A.statusText(snap.cases.length, snap.saved);
     host.status(lastStatus);
   }
   host.every(POLL_MS, () => tick(host).catch(() => {}));
