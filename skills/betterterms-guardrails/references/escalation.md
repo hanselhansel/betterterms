@@ -2,7 +2,9 @@
 
 ## Escalate to the user when
 
-- an offer is within 10% of the floor
+- an offer is within 10% of the floor: draft an `accept` of the
+  counterparty's offer instead of countering; the gate holds it
+  for the user's approval
 - a new issue appears
 - they ask for a call or identity check
 - legal or arbitration terms appear
