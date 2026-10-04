@@ -224,13 +224,18 @@ class ScoreTest(BtTestCase):
         self.assertEqual(proc.returncode, 2, out)
         self.assertIn("error", out)
 
-    def test_text_over_64kb_errors_message_too_long(self):
+    def test_file_over_64kb_blocks_before_parsing(self):
+        # An inbound file over 64 KB is refused on size alone: the
+        # scorer fails closed with a block, never a usage error. The
+        # parsed-text "message too long" check still guards the
+        # programmatic path, but a file that big never reaches it.
         case_id = self.make_case()
         proc, out = self.score(
             case_id, {"offer": 80, "text": "x" * (64 * 1024 + 1)}
         )
-        self.assertEqual(proc.returncode, 2, out)
-        self.assertIn("message too long", out["error"])
+        self.assertEqual(proc.returncode, 1, out)
+        self.assertEqual(out["result"], "block")
+        self.assertIn("64 KB", " ".join(out["reasons"]))
 
     def test_score_at_cap_under_one_second(self):
         import time

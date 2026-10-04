@@ -76,6 +76,32 @@ DRAFT_KEYS = {"action", "offer", "period", "template", "claims"}
 LIMITS = "outside your limits; escalate to the user"
 PRICE_KINDS = ("target", "ladder", "option:price", "quote", "fact")
 
+# A block never reports the converted-limit or same-digits review
+# hits: on a block they would each leak one bit about the floor, so
+# only the generic limit reason (and any structural blocks) reports.
+DROP_ON_BLOCK = {
+    "amount matches a converted limit",
+    "amount matches your limit's digits",
+}
+
+
+def _safe_str(value):
+    """``str()`` that cannot raise: a value whose conversion fails
+    (an int past the int-to-str digit limit) becomes a type tag, so
+    it can only fail a comparison, never turn a block into a crash."""
+    try:
+        return str(value)
+    except Exception:
+        return f"<{type(value).__name__}>"
+
+
+def _shown(value):
+    """A draft value as a block reason reports it, capped short so a
+    hostile scalar cannot blow up either the conversion or the reason
+    itself."""
+    s = _safe_str(value)
+    return s if len(s) <= 40 else s[:40] + "..."
+
 
 def _worse(value, floor, direction):
     return value < floor - FLOOR_TOL if direction == "receive" else value > floor + FLOOR_TOL
@@ -174,7 +200,7 @@ def check(case_dir, draft, approved=False, inbound=None):
 
     findings = []  # (kind, message); kind is "block" or "approval"
 
-    extra = sorted(str(k) for k in draft if k not in DRAFT_KEYS)
+    extra = sorted(_shown(k) for k in draft if k not in DRAFT_KEYS)
     if extra:
         findings.append(("block", "unknown draft keys: " + ", ".join(extra)))
     if "text" in draft:
@@ -182,7 +208,7 @@ def check(case_dir, draft, approved=False, inbound=None):
 
     action = draft.get("action")
     if not isinstance(action, str) or action not in ACTIONS:
-        findings.append(("block", f"draft action {action!r} not one of {sorted(ACTIONS)}"))
+        findings.append(("block", f"draft action {_shown(action)!r} not one of {sorted(ACTIONS)}"))
         action = None
 
     raw_offer = draft.get("offer")
@@ -305,16 +331,16 @@ def check(case_dir, draft, approved=False, inbound=None):
             _check_values(find, action, floor, direction, plan_period, findings)
 
     fact_ids = {
-        str(f["id"])
+        _safe_str(f["id"])
         for f in cases.as_list(plan.get("facts"))
         if isinstance(f, dict) and f.get("id") is not None
     }
-    claims = {str(c) for c in cases.as_list(draft.get("claims"))}
+    claims = {_safe_str(c) for c in cases.as_list(draft.get("claims"))}
     if find is not None:
         claims |= find.fact_ids
     for c in sorted(claims):
         if c not in fact_ids:
-            findings.append(("block", f"claim {c} not in plan facts"))
+            findings.append(("block", f"claim {_shown(c)} not in plan facts"))
 
     if action in IRREVERSIBLE and not approved:
         findings.append(("approval", f"action {action!r} requires --approved"))
@@ -338,13 +364,16 @@ def check(case_dir, draft, approved=False, inbound=None):
                         ("approval", "amount matches your limit's digits")
                     )
 
+    blocked = any(kind == "block" for kind, _ in findings)
     reasons = []
     seen = set()
     for _, msg in findings:
+        if blocked and msg in DROP_ON_BLOCK:
+            continue
         if msg not in seen:
             seen.add(msg)
             reasons.append(msg)
-    if any(kind == "block" for kind, _ in findings):
+    if blocked:
         return "block", reasons, None
     if findings:
         return "needs_approval", reasons, find.text if find else None

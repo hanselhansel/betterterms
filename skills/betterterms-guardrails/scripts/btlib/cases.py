@@ -15,8 +15,8 @@ import secrets
 from datetime import date
 from pathlib import Path
 
-from . import BtError, MAX_AMOUNT, PERIODS, minor, yaml
-from .floorio import parse_number, read_floor, set_floor
+from . import BtError, MAX_AMOUNT, PERIODS, inputs, minor, yaml
+from .floorio import read_floor, set_floor
 
 PACK_RE = re.compile(r"[a-z0-9-]{1,64}")
 CASE_ID_RE = re.compile(r"[a-z0-9-]+")
@@ -56,14 +56,11 @@ def require_case(case_id):
 
 
 def _load(path):
-    """Parse a YAML file; missing file -> {}, missing/empty -> {}.
-    Bad YAML raises BtError."""
+    """Parse a case YAML file through the shared input reader;
+    missing file -> {}, missing/empty -> {}. Bad YAML raises BtError."""
     if not path.is_file():
         return {}
-    try:
-        data = yaml.load(path.read_text(encoding="utf-8"))
-    except yaml.Error as e:
-        raise BtError(f"{path.name}: {e}")
+    data = inputs.read_yaml_file(path, path.name)
     if data is None:
         return {}
     if not isinstance(data, dict):
