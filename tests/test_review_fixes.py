@@ -119,15 +119,17 @@ class JoinedDigitsTest(ReviewFixCase):
                 self.assertIn("numbers", " ".join(out["reasons"]))
 
     def test_grouped_number_never_passes_at_its_floor(self):
-        # floor 1050: "1,050" restates the limit as joined digits. It
-        # routes to the user, never a silent pass.
+        # floor 1050: "1,050" restates the limit as joined digits; the
+        # rendered-text rule now blocks it (test_floor_in_text.py).
         case_id = self.make_case(floor=1050)
-        out = self.review(
+        proc, out = self.gate(
             case_id,
             send_draft(offer=1040,
                        template="My ceiling is 1,050 per month"),
         )
-        self.assertIn("numbers", " ".join(out["reasons"]))
+        self.assertEqual(proc.returncode, 1, out)
+        self.assertEqual(out["result"], "block")
+        self.assertIn("walk-away", " ".join(out["reasons"]))
 
     def test_leading_zero_digit_tokens_need_approval(self):
         case_id = self.make_case()
@@ -175,16 +177,18 @@ class NumberWordRunTest(ReviewFixCase):
                 out = self.review(case_id, send_draft(template=template))
                 self.assertIn("number word", " ".join(out["reasons"]))
 
-    def test_number_word_at_floor_still_routes(self):
-        # The sub-100 floor-integer rule is gone with the rest of the
-        # small-integer machinery: "fifty" routes as a number word.
+    def test_number_word_at_floor_blocks(self):
+        # "fifty" spells out the 50 floor: the rendered-text rule
+        # blocks the draft outright (test_floor_in_text.py).
         case_id = self.make_case(
             floor=50, plan=plan_for("pay", 50, target=40)
         )
-        out = self.review(
+        proc, out = self.gate(
             case_id, send_draft(offer=45, template="about fifty flat")
         )
-        self.assertIn("number word", " ".join(out["reasons"]))
+        self.assertEqual(proc.returncode, 1, out)
+        self.assertEqual(out["result"], "block")
+        self.assertIn("walk-away", " ".join(out["reasons"]))
 
     def test_number_word_below_floor_needs_approval(self):
         # Decision 0010: any spelled number word routes to the user,

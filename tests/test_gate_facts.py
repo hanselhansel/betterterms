@@ -72,8 +72,10 @@ class StructuralFactTest(FactAmountCase):
         self.assertEqual(out["reasons"], [LIMITS])
 
     def test_fact_null_amount_with_digits_needs_approval(self):
-        # Same fact text with no structured amount: never a hard
-        # block, always routed to the user on its digits.
+        # Same fact text with no structured amount routes to the user
+        # on its digits. The glued ",1200" form is not a money parse,
+        # so the rendered-text floor rule does not reach it; a spaced
+        # "1,200" in fact text would hard-block (test_floor_in_text).
         plan = self.plan_with_fact(
             {"id": "f1", "text": "Basic,1200 dollars a year",
              "source": "x"}
@@ -230,7 +232,7 @@ class StricterReviewTest(FactAmountCase):
         case_id = self.make_case()
         for template in (
             "a twelve hundred",
-            "an eleven hundred",
+            "an eleven thousand",
             "how about twelve fifty",
             "I have two options for you",
         ):

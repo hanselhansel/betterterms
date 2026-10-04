@@ -127,7 +127,7 @@ class TokenRuleTest(AllowlistCase):
         case_id = self.make_case()
         for template in (
             "call it 95USD",
-            "order 12hundred now",
+            "order 13hundred now",
             "that is 2ndly",
             "see note f9",
             "the 20x zoom",
@@ -141,18 +141,21 @@ class TokenRuleTest(AllowlistCase):
         # ASCII digit in the free text routes to the user.
         case_id = self.make_case()
         for template in (
+            # Literal values equal to the floor hard-block under the
+            # rendered-text rule (test_floor_in_text.py), so the digit
+            # probes here stay off it.
             "only 3 left in stock",
             "renewal in 12 months",
             "5 years is the term",
             "we met in 96",
             "section 90 covers this",
-            "order 1200 today",
+            "order 1300 today",
             "about 100 units",
             "call 555 now",
             "the count is 0",
             "in 2026 alone",
             "code 1'200",
-            "the cap is 1 200",
+            "the cap is 1 300",
         ):
             with self.subTest(template=template):
                 out = self.review(case_id, send_draft(template=template))
@@ -208,7 +211,7 @@ class TokenRuleTest(AllowlistCase):
             ("1.5 thousand", "scale"),
             ("a bn market", "scale"),
             ("about 1.2 k", "scale"),
-            ("twelve hundred", "scale"),
+            ("eleven hundred", "scale"),
             ("two million", "scale"),
             ("sounds good to me", "commitment"),
             ("that works for us", "commitment"),

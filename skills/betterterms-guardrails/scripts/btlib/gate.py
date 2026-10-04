@@ -45,7 +45,12 @@ guarantees and fail closed:
    (spec 4.4): the counterparty's own words or numbers are never
    the agent's offer, and a string ``amounts`` entry renders
    verbatim. Bonus and fee options are not offers, so only the
-   equal-to-floor rule reaches them
+   equal-to-floor rule reaches them. The final rendered text is
+   scanned too: any amount the money parser reads out of it equal
+   to the floor, as written or in the floor's declared period,
+   blocks with ``the message contains your walk-away amount``; the
+   draft's own ``{offer}`` output is exempt when the offer itself
+   sits at the floor
 8. rendered message over 64 KB, checked after fact expansion and
    before any text scanning, or a claim id (draft or auto-claimed
    by ``{fact:id}``) not in ``plan.facts`` -> block
@@ -281,6 +286,19 @@ def check(case_dir, draft, approved=False, inbound=None):
             quotes.check_values(
                 find, action, floor, direction, plan_period, findings
             )
+            # The structured checks compare placeholder values only;
+            # the final text is scanned too, so a floor figure inside
+            # fact text, a verbatim string quote or literal words
+            # blocks like a leaked limit. A structured value already
+            # equal to the floor reports the generic reason, so the
+            # plain text reason stays quiet beside it.
+            if quotes.floor_in_text(
+                find, offer, period, floor, plan_period, currency
+            ) and not any(
+                kind == "block" and msg == LIMITS
+                for kind, msg in findings
+            ):
+                findings.append(("block", quotes.FLOOR_TEXT))
     never_items = cases.as_list(brief.get("never_disclose"))
     if clean and review.disclosed(find.text, never_items):
         findings.append(

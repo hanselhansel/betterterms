@@ -17,10 +17,15 @@ blocks like anywhere else.
 The floor rules on rendered placeholder values live here too:
 ``check_values`` applies them to the values ``render.render``
 placed, ``converted_match`` and ``floor_digits`` back the review
-tier's converted-limit and same-digits reasons.
+tier's converted-limit and same-digits reasons. ``floor_in_text``
+closes the last gap: structured checks never see text, so the final
+rendered message itself is scanned with ``money.find`` and any
+amount equal to the floor blocks outright.
 """
 
-from . import FLOOR_TOL, LIMITS, minor, render
+import re
+
+from . import FLOOR_TOL, LIMITS, minor, money, render
 
 # Placeholder value kinds whose amount is the agent's own price:
 # target, ladder and price options always; fact amounts on an
@@ -115,3 +120,84 @@ def floor_digits(find, floor, plan_period, action):
 
 
 OFFERED = {"accept", "pay", "sign"}
+
+# The one reason the rendered-text floor check reports: no number,
+# so a block output can never carry the floor's own digits.
+FLOOR_TEXT = "the message contains your walk-away amount"
+
+# Period words the money parser's ``num per month`` grammar accepts,
+# mapped to the periods a floor can convert between. Week, day,
+# hour and quarter have no conversion factor, so they map to None
+# and the amount still compares as written.
+_TEXT_PERIODS = {
+    "mo": "month", "month": "month",
+    "yr": "year", "year": "year", "annum": "year",
+    "week": None, "wk": None, "day": None,
+    "hr": None, "hour": None, "quarter": None,
+}
+_PERIOD_TRAIL = re.compile(
+    r"(?:\s*/\s*|\s+(?:a|an|per|each|every)\s+)"
+    r"(?P<period>mo|month|yr|year|annum|week|wk|day|hr|hour|quarter)"
+    r"s?\b",
+    re.IGNORECASE,
+)
+
+
+def _written_period(text, amount):
+    """The period an amount states in the text, when it states one:
+    inside its own span ("100 a month") or in the connector right
+    after it ("$100/month", "$100 per year"), matching the parser's
+    own ``num per month`` grammar. A period with no floor conversion
+    factor returns None, so the amount still compares as written."""
+    m = _PERIOD_TRAIL.search(text[amount.start:amount.end])
+    if m is None:
+        m = _PERIOD_TRAIL.match(text[amount.end:amount.end + 24])
+    if m is None:
+        return None
+    return _TEXT_PERIODS.get(m.group("period").lower())
+
+
+def floor_in_text(find, offer, offer_period, floor, plan_period,
+                  currency):
+    """True when the final rendered text states the floor value.
+
+    Structured checks compare placeholder values only, but fact
+    bodies, verbatim string quotes and literal template words all
+    reach the wire, so ``find.text`` is scanned with ``money.find``
+    and every amount is compared to the floor as written and again
+    in the floor's declared period when the text names a convertible
+    one ("$100 a month" against a yearly floor).
+
+    The one exemption is the draft's own ``{offer}`` output when the
+    offer itself sits at the floor: sending at the walk-away is the
+    user's own call to approve, so text matching the exact
+    ``money_text`` the renderer produced for the offer never counts.
+    A duplicate of that same string elsewhere is indistinguishable
+    from the offer's own output and exempts with it; the message
+    carries the number once through the offer either way."""
+    if find.text is None:
+        return False
+    exempt = []
+    if offer is not None and (
+        same(in_floor_period(offer, offer_period, plan_period), (floor,))
+        or same(minor(offer), (floor,))
+    ):
+        lit = render.money_text(offer, offer_period, currency)
+        start = 0
+        while True:
+            i = find.text.find(lit, start)
+            if i < 0:
+                break
+            exempt.append((i, i + len(lit)))
+            start = i + 1
+    for amount in money.find(find.text):
+        if any(s <= amount.start and amount.end <= e for s, e in exempt):
+            continue
+        if same(minor(amount.value), (floor,)):
+            return True
+        written = _written_period(find.text, amount)
+        if written in ("month", "year") and same(
+            in_floor_period(amount.value, written, plan_period), (floor,)
+        ):
+            return True
+    return False

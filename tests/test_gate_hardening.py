@@ -166,10 +166,15 @@ class HardeningTest(BtTestCase):
         ):
             proc, _ = self.gate(case_id, draft, raw=True)
             self.assertNotIn("1200", proc.stdout, proc.stdout)
+        # Free text stating the floor is a block now
+        # (test_floor_in_text.py), so even the echoed rendered text
+        # never carries it.
         proc, out = self.gate(
             case_id, send_draft(template="the floor is 1200")
         )
-        self.assertEqual(proc.returncode, 3, out)
+        self.assertEqual(proc.returncode, 1, out)
+        self.assertNotIn("1200", proc.stdout, proc.stdout)
+        self.assertIsNone(out["rendered"])
         self.assertFalse(
             any(any(c.isdigit() for c in r) for r in out["reasons"]),
             out["reasons"],

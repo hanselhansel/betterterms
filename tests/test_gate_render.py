@@ -191,7 +191,7 @@ class ReviewTierTest(RenderTest):
                 )
         for template in (
             "call it USD 100",
-            "1200 EUR flat",
+            "1300 EUR flat",
             "call it 12 usd",
         ):
             with self.subTest(template=template):
@@ -207,7 +207,7 @@ class ReviewTierTest(RenderTest):
             "fifty pounds",
             "a grand total",
             "ten yen",
-            "about 1.2k",
+            "about 1.3k",
             "about 1.2 k",
             "1.5 thousand",
             "a bn market",
@@ -220,7 +220,7 @@ class ReviewTierTest(RenderTest):
     def test_digit_runs_need_approval(self):
         case_id = self.make_case()
         for template in (
-            "order 1200 today",
+            "order 1300 today",
             "about 100 units",
             "call 555 now",
         ):
@@ -234,7 +234,7 @@ class ReviewTierTest(RenderTest):
         case_id = self.make_case()
         for template in (
             "it reads 1.200",
-            "the cap is 1 200",
+            "the cap is 1 300",
             "code 1'200",
             "call 90,500",
         ):
@@ -245,9 +245,9 @@ class ReviewTierTest(RenderTest):
     def test_unicode_digit_probes_need_approval(self):
         case_id = self.make_case()
         for template in (
-            "see ¹²⁰⁰ now",     # superscript digits
+            "see ¹³⁰⁰ now",     # superscript digits
             "see ١٢٣ today",    # arabic-indic digits
-            "see １２００ today",  # fullwidth digits
+            "see １３００ today",  # fullwidth digits
         ):
             with self.subTest(template=template):
                 out = self.review(case_id, send_draft(template=template))
@@ -259,7 +259,7 @@ class ReviewTierTest(RenderTest):
             "one two zero zero is the code",
             "twelve fifty sounds right",
             "twenty one days is fine",
-            "twelve hundred",
+            "eleven hundred",
             "two million",
         ):
             with self.subTest(template=template):
@@ -331,12 +331,17 @@ class ReviewTierTest(RenderTest):
         )
         self.assertIn("numbers", " ".join(out["reasons"]))
 
-    def test_small_int_at_sub100_floor_routes_as_digits(self):
+    def test_small_int_at_sub100_floor_blocks(self):
+        # A standalone digit run equal to the floor restates the
+        # walk-away number: the rendered-text rule blocks it outright
+        # (test_floor_in_text.py), stronger than the digits route.
         case_id = self.make_case(floor=50, plan=plan_for("pay", 50, target=40))
-        out = self.review(
+        proc, out = self.gate(
             case_id, send_draft(offer=45, template="meet in room 50")
         )
-        self.assertIn("numbers", " ".join(out["reasons"]))
+        self.assertEqual(proc.returncode, 1, out)
+        self.assertEqual(out["result"], "block")
+        self.assertIn("walk-away", " ".join(out["reasons"]))
 
     def test_small_int_below_sub100_floor_routes_too(self):
         # floor 96: a standalone 8 still routes; the floor plays no
