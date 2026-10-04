@@ -27,6 +27,21 @@ class LedgerTest(BtTestCase):
         self.assertEqual(proc.returncode, 0, proc.stdout)
         self.assertEqual(out["saved_per_year"], 240)
 
+    def test_ledger_add_once_period(self):
+        # Review finding 11: a one-time deal is a delta taken once,
+        # not a monthly or yearly rate.
+        case_id, _ = new_case(self.home, pack="bills")
+        proc, out = run_bt_json(
+            self.home,
+            "ledger", "add", case_id,
+            "--before", "1000", "--after", "900", "--period", "once",
+        )
+        self.assertEqual(proc.returncode, 0, proc.stdout)
+        self.assertEqual(out["saved_per_year"], 100)
+        proc, out = run_bt_json(self.home, "ledger", "total")
+        self.assertEqual(out["by_currency"], {"USD": 100})
+        self.assertEqual(out["by_pack"], {"bills": {"USD": 100}})
+
     def test_ledger_add_receive_direction(self):
         case_id, _ = new_case(self.home, pack="job-offer", direction="receive")
         proc, out = run_bt_json(

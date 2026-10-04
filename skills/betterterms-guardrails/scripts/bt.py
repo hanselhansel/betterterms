@@ -181,7 +181,7 @@ def build_parser():
     p_add.add_argument("case_id")
     p_add.add_argument("--before", required=True, type=float)
     p_add.add_argument("--after", required=True, type=float)
-    p_add.add_argument("--period", required=True, choices=["month", "year"])
+    p_add.add_argument("--period", required=True, choices=["once", "month", "year"])
     p_add.set_defaults(fn=cmd_ledger_add)
 
     p_total = ledger_sub.add_parser("total", help="total savings")

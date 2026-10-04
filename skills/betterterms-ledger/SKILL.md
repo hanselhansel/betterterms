@@ -24,9 +24,10 @@ has saved.
 
 1. When a case closes with a better outcome, record it:
 
-   `python3 ../betterterms-guardrails/scripts/bt.py ledger add <case_id> --before <N> --after <N> --period month|year`
+   `python3 ../betterterms-guardrails/scripts/bt.py ledger add <case_id> --before <N> --after <N> --period once|month|year`
 
-   `before` and `after` are amounts per period in the case currency. The
+   `before` and `after` are amounts per period in the case currency
+   (`once` is a one-time amount, taken as the saving itself). The
    JSON reply reports `saved_per_year`.
 2. When the user asks how much they have saved, run:
 

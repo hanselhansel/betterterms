@@ -88,6 +88,9 @@ def create_case(pack, mode="act", direction="pay"):
     if direction not in ("pay", "receive"):
         raise BtError(f"bad direction {direction!r}; expected pay or receive")
     root = ensure_home() / "cases"
+    # The config loads before the case folder exists, so a broken
+    # config.yaml fails the command without leaving one behind.
+    cfg = config.load() if config.path().is_file() else None
     root.mkdir(parents=True, exist_ok=True)
     os.chmod(root, 0o700)
     for _ in range(5):
@@ -124,8 +127,7 @@ def create_case(pack, mode="act", direction="pay"):
         }
         # An existing config.yaml supplies the new case's autonomy and
         # currency; without one the mode defaults stand (spec 5).
-        if config.path().is_file():
-            cfg = config.load()
+        if cfg is not None:
             brief_data["autonomy"] = cfg["autonomy"]
             plan_data["currency"] = cfg["currency"].upper()
         (d / "brief.yaml").write_text(

@@ -2,7 +2,8 @@
 ``$BETTERTERMS_HOME/ledger.jsonl``. ``saved_per_year`` is positive when
 the outcome is better than before: ``before - after`` for ``pay`` cases,
 ``after - before`` for ``receive`` cases, times the periods per year,
-rounded to the currency minor unit.
+rounded to the currency minor unit. A ``once`` deal records the delta
+as it stands, one saving rather than a rate.
 """
 
 import fcntl
@@ -15,7 +16,7 @@ from pathlib import Path
 
 from . import BtError, MAX_AMOUNT, cases, minor
 
-PERIODS_PER_YEAR = {"month": 12, "year": 1}
+PERIODS_PER_YEAR = {"once": 1, "month": 12, "year": 1}
 
 
 def ledger_path():
