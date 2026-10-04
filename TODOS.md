@@ -8,6 +8,10 @@ Deferred from the step 1 ship (owner approved 2026-10-03), to fix first in step 
 
 - **Priority:** P3. Free-text period words after a placeholder ({offer}/month, {offer} per month) with a once-period offer pass; the period should come from the structured period field (best-effort word lists, 0010 amendment).
 
+## Walk-away and approval guard (deferred, decision 0019)
+
+- **Priority:** P1. Design a walk-away and approval guard that does not parse shell (for example an OS-level separate user or keychain for the floor). The `PreToolUse` file guard shipped in step 4 was removed for 0.10.0: it blocked first-case writes, research source adds and unrelated projects, and it was bypassable because the hook and the agent run as the same OS user.
+
 ## Gate probing (accepted limit, pre-landing review decision D)
 
 - **Priority:** P1. The gate has no probe counter: an agent could binary-search the floor through repeated `gate` calls until a block flips to pass. Standing mitigations are the skills' per-turn gate-call cap and the redraft-once rule; add a per-case probe counter in bt.py that escalates after N floor-related verdicts in a window. (btlib/gate.py)
