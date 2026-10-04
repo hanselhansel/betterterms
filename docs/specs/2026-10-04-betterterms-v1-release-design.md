@@ -1,6 +1,6 @@
 # betterterms v1 release design (2026-10-04)
 
-Status: draft for owner review. Branch: `feat/release-v1` (steps 2 to 10, one PR).
+Status: approved by the owner 2026-10-04 (cloud widget path added the same day). Branch: `feat/release-v1` (steps 2 to 10, one PR).
 Inputs: the design spec and negotiation procedure (2026-10-03), the v1 plan, decisions 0001 to
 0011, `TODOS.md`, the release gap check (`docs/plans/2026-10-04-release-gap-check.md`), and the
 owner's answers in the project thread on 2026-10-04.
@@ -19,7 +19,8 @@ Success means all of these hold on the final commit:
 3. Install tests pass on the final branch for Claude Code (marketplace add, install, 10 skills
    listed, mod loaded), Codex (marketplace add, plugin add), and repo vendoring.
 4. One real case runs end to end with the shipped files: intake, terms set in the pane, one
-   held draft approved in the pane, gate pass, ledger entry.
+   held draft approved in the pane, gate pass, ledger entry. A second run does the same in a
+   Projects cloud thread through widgets (section 6.8).
 5. `/ship` and `/land-and-deploy` complete, the repo is public, and local and GitHub `main`
    point at the same commit.
 
@@ -83,8 +84,8 @@ agent that reads a vendored `skills/` folder.
    dispute draft may need to quote the price the counterparty charged, which can sit above the
    walk-away. Proposed rule: `{quote:n}` placeholders render inbound text verbatim and are
    checked against `never_disclose`, but amounts inside a quote are not offers and never meet
-   the floor check. Amounts outside quotes keep every current rule. Owner decides at spec
-   review.
+   the floor check. Amounts outside quotes keep every current rule. Approved by the owner
+   2026-10-04.
 5. **Mod tests in verify.** `scripts/verify` runs `node --test` for `mod/`, plus
    `claude plugin validate --strict mod` and `claude plugin test mod` when the `claude` binary
    is present. When the binary is absent, those two report `SKIPPED (claude not installed)`.
@@ -174,7 +175,7 @@ the mod never holds a send open while it waits for the user:
 4. The hook has a `.catch` handler that denies the send. A failed or timed-out hook never
    lets a send through.
 
-Approvals live in `$.state` only. The agent can write files but cannot write `$.state`, so no
+In mod mode, approvals live in `$.state` only. The agent can write files but cannot write `$.state`, so no
 file it creates, and no text in a counterparty's email, can approve a draft. Typing "yes" in
 chat does not approve a held draft while the mod is loaded.
 
@@ -249,6 +250,64 @@ Every pane, band and approval behavior has a `claude plugin test` case, run once
 
 The existing `node --test` suites stay.
 
+### 6.8 Cloud sessions and Projects: the widget fallback
+
+Mod hooks run in cloud sessions, but panes, bands and toasts do not draw there. The owner
+uses Projects (beta) cloud threads and needs the same flow there. Spike result, 2026-10-04: a
+widget posted into a project thread called `sendPrompt("bt approve spike-0001 9f2c")` on a
+button press, and the text arrived in the thread as the owner's own message.
+
+**Three display modes, picked at run time by the skills:**
+
+| Mode | When | What the user gets |
+| --- | --- | --- |
+| Mod | The mod's pane can draw (terminal, Desktop) | Section 6.1 to 6.5 |
+| Widget | The session has a tool that posts interactive widgets (Projects threads) | The same cases view, approval card and terms editor as posted widgets |
+| Chat | Neither (Codex, plain cloud sessions, `claude -p`) | Text summaries and typed commands |
+
+**Widget content.** `bt.py widget cases|approval <hash>|terms <case>|savings` prints a
+self-contained HTML fragment built from shipped templates under
+`skills/betterterms-guardrails/assets/widgets/`. The agent posts that output as is. The terms
+widget never prefills the walk-away, because the agent would have to read it to do so. It
+shows "set" or "not set" and an empty field.
+
+**Widget buttons send typed commands as the user.** The grammar, one command per message:
+
+```
+bt approve <case_id> <hash8>
+bt reject <case_id> <hash8>
+bt floor <case_id> <amount>
+bt terms <case_id> target=<amount> alternative=<amount>
+```
+
+The same commands typed by hand work in every mode, including Codex.
+
+**A `UserPromptSubmit` settings hook in the plugin** (`hooks/prompt_commands.py`) reads each
+prompt before the model does. It looks only at the user's own text: in a Projects thread, the
+body of the triggering `from="human"` message, never text the agent or a counterparty wrote.
+
+- `bt floor`: writes the walk-away through `bt.py case set-floor` on stdin, then blocks the
+  prompt, so the model never receives it. The message stays visible in the thread to project
+  members, and Claude Code still writes blocked prompts to the session log
+  (anthropics/claude-code#96891). A `PreToolUse` hook denies agent reads of the session log
+  and of `.floor` files. That guard is best effort.
+- `bt approve`: records an approval for that exact rendered-text hash in
+  `<case>/held/<hash>.approved`, then lets the prompt through with a note that the draft is
+  approved, so the agent resends. The gate accepts `--approved` only when that file exists and
+  the hash matches the newly rendered text, and it deletes the file after one use.
+- `bt reject` and `bt terms`: write the change and let the prompt through with a note.
+
+**Strength, stated plainly in the docs.** Widget approval is weaker than a mod keypress. The
+agent can write files, so the `PreToolUse` hook denying writes under `held/` is the only guard
+against a forged approval. It does stop the main threat: text inside an inbound email can never
+become a user message, so it can never approve a draft. This matches chat approval in Codex.
+
+**Tests.** Unit tests feed the hook real prompt shapes: a plain prompt, a Projects wake
+envelope with one human message, an envelope where an agent message contains `bt approve`
+(ignored), a malformed amount (exit 2 with a plain error), and a hash that does not match
+(no approval written). The dogfood case (section 1, item 4) runs once locally with the mod
+and once in a Projects cloud thread with widgets.
+
 ## 7. Decision records to write
 
 - 0012 Cockpit mod and approvals by key or click (amends 0007: walk-away may also be set and
@@ -256,13 +315,14 @@ The existing `node --test` suites stay.
 - 0013 Removed hosts and features (jurisdiction rules, claude.ai zips, Gemini, Cursor, Muse).
 - 0014 config.yaml.
 - 0015 Deferred metrics and pack evals.
-- 0016 Quoting a counterparty's price, after the owner's answer on 4.4.
+- 0016 Quoting a counterparty's price (section 4.4).
+- 0017 Display modes and the widget fallback for cloud sessions (section 6.8).
 
 ## 8. Build and release order
 
 1. Removals (section 2), so later lanes do not touch dead files.
 2. Core fixes and config.yaml (sections 3, 4, 5).
-3. Mod (section 6).
+3. Mod (sections 6.1 to 6.7), then the widget fallback and prompt hooks (section 6.8).
 4. Docs, version 0.10.0, CHANGELOG.
 5. Full verify, dev eval, holdout through a separate agent, install tests, dogfood case.
 6. `/ship`, then `/land-and-deploy`, then make the repo public. Kill the keep-awake process.
