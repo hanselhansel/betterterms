@@ -11,6 +11,7 @@ send, and approving it is the user's call.
 import unittest
 
 from bt_helpers import (
+    approve_held,
     BRIEF_PAY,
     BtTestCase,
     inbound_msg,
@@ -43,12 +44,12 @@ class FloorInTextCase(BtTestCase):
     def gate(self, case_id, draft, approved=False, inbound=None):
         path = write_draft(self.tmp, draft)
         args = ["gate", case_id, "--draft", str(path)]
-        if approved:
-            args.append("--approved")
         if inbound is not None:
             ipath = self.tmp / "inbound.yaml"
             ipath.write_text(yaml.dump(inbound))
             args += ["--inbound", str(ipath)]
+        if approved:
+            args = approve_held(self.home, case_id, args)
         return run_bt_json(self.home, *args)
 
     def assert_walk_away_block(self, proc, out):

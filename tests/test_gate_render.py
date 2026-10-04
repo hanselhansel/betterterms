@@ -149,10 +149,7 @@ class PlaceholderRenderTest(RenderTest):
         inbound = inbound_msg(text="we charge $140", amounts=[140])
         proc, out = self.gate(case_id, draft, inbound=inbound)
         self.assertEqual(proc.returncode, 3, out)
-        self.assertEqual(
-            out["rendered"],
-            "we are at $85/month; your $140 is steep",
-        )
+        self.assertEqual(out["rendered"], "we are at $85/month; your $140 is steep")
         proc, out = self.gate(
             case_id, draft, approved=True, inbound=inbound
         )
