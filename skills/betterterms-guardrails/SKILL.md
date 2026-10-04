@@ -88,10 +88,16 @@ action or amount, a second send, or no matching approval holds the
 draft again with the reason `no approval recorded for this exact
 text`. Typing "yes" in chat approves nothing. With the mod loaded,
 its send check re-gates and re-arms itself: the user approves in the
-pane and sends the held text verbatim; the agent does not re-run the
-gate. `held reject` is the matching drop:
+pane or types `bt approve`, and the agent sends the held text
+verbatim as its own argument without re-running the gate. In mod
+mode the `$.state` entry, never the `.approved` file alone, is what
+authorizes the send. `held reject` is the matching drop:
 `bt reject <case_id> <hash8>` or `python3 <bt> held reject` removes
 the held draft and stamps `rejected` in `thread.md`.
+`python3 <bt> held disarm <case_id> <hash8>` drops only the
+`.approved` marker and keeps the draft; the mod runs it when a
+marker it re-armed was not spent, and the file guard denies it to
+the agent like `held approve`.
 
 `hash8` is the first 8 or more hex characters of the draft hash and
 must name exactly one held draft: zero or several matches is exit 2,

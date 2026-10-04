@@ -160,9 +160,11 @@ export function paneActions(host, snap) {
 
 // The pre-send guard. The gate re-runs on the draft as it sits on
 // disk, the call is checked against the freshly rendered text, and a
-// held draft passes only on an unused approval: the $.state press, or
-// a marker a typed `bt approve` left, re-armed when an agent-side
-// `gate --approved` already spent it.
+// held draft passes only on an unused approval in $.state: a pane
+// press, or the mod's own prompt.submit hook on a typed `bt approve`.
+// A .approved marker on disk never counts by itself; the marker is
+// only what `gate --approved` spends, re-armed when the press has no
+// marker left to spend and disarmed when the re-gate does not.
 export async function gateSend(host, snap, c, e, next) {
   const gate = await runGate(host, snap, c, false);
   const verdict = C.decideSend(gate, c);
@@ -183,14 +185,7 @@ export async function gateSend(host, snap, c, e, next) {
     }
     const dir = `${snap.root}/${c.id}`;
     const marker = `${dir}/held/${hash}.approved`;
-    let pressed = await takeApproval(host, hash);
-    if (!pressed && await host.fsExists(marker).catch(() => false)) {
-      // A typed `bt approve` (the prompt hook, or a manual
-      // `bt.py held approve`) left the marker; adopt it as the press.
-      await markApproved(host, hash);
-      pressed = await takeApproval(host, hash);
-    }
-    if (!pressed) {
+    if (!(await takeApproval(host, hash))) {
       host.invalidate("ui.render");
       return { deny: A.heldDenyText(hash) };
     }
@@ -205,6 +200,11 @@ export async function gateSend(host, snap, c, e, next) {
     }
     const again = await runGate(host, snap, c, true);
     if (again.result !== "pass") {
+      // A marker the re-gate did not spend (a verdict for other text,
+      // a block) goes away again rather than waiting on disk.
+      if (await host.fsExists(marker).catch(() => false)) {
+        await runHeld(host, snap, "disarm", c.id, hash).catch(() => {});
+      }
       return { deny: `betterterms gate: ${(again.reasons ?? []).join("; ") || "not pass after approval"}` };
     }
     host.notice(e.tool_use_id, "betterterms: approved, gate pass");
@@ -220,6 +220,41 @@ export async function gateSend(host, snap, c, e, next) {
     .catch(() => null);
   if (answer !== "Send") return { deny: "betterterms: send held; not approved" };
   host.notice(e.tool_use_id, "betterterms: approved, gate pass");
+  return next(e);
+}
+
+// prompt.submit fires only on user prompts (the composer, or the
+// bridge when a session resumes on it). A typed `bt approve <case>
+// <hash8>` resolves its prefix through `held list` and records the
+// full hash in $.state: the one place the send check trusts. The
+// settings hook writes the marker on its own; the send check re-arms
+// it when the press arrives without one. A failed observer never
+// blocks the prompt.
+const TYPED_APPROVE =
+  /^\s*bt\s+approve\s+([a-z0-9-]+)\s+([0-9a-f]{8,64})\s*$/i;
+
+export async function promptSubmit(host, e, next) {
+  try {
+    const kind = e?.origin?.kind;
+    const m = kind === "composer" || kind === "bridge"
+      ? TYPED_APPROVE.exec(String(e?.text ?? ""))
+      : null;
+    if (m !== null) {
+      const bt = await IO.findBt(host);
+      if (bt !== null) {
+        const home = await IO.homeDir(host);
+        const proc = await IO.runProc(
+          host, home, ["python3", bt, "held", "list", m[1]]);
+        const held = proc.error ? null : JSON.parse(proc.stdout).held;
+        const hits = Array.isArray(held)
+          ? held.map((r) => r?.hash)
+              .filter((h) => typeof h === "string"
+                && h.startsWith(m[2].toLowerCase()))
+          : [];
+        if (hits.length === 1) await markApproved(host, hits[0]);
+      }
+    }
+  } catch { /* an observer never blocks the prompt */ }
   return next(e);
 }
 

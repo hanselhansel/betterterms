@@ -38,7 +38,10 @@ exact rendered text to send.
 - `accept`, `cancel`, `pay`, `sign`, and `dispute` need your explicit yes at
   every autonomy level. A `held/<hash>.approved` file binds the yes to the
   SHA-256 of the send tuple (action, offer, period, currency, rendered text)
-  and is consumed after one use; only a user action writes it.
+  and is consumed after one use; only a user action writes it. With
+  `betterterms-mod` loaded, the approval that authorizes the send lives in
+  mod `$.state` (a pane press or your typed `bt approve`), never in a file
+  the agent can write; a `.approved` marker alone approves nothing there.
 
 ## What the gate does not guarantee
 

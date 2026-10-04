@@ -140,6 +140,28 @@ export function btRoute(opts, files) {
       });
       return wrap({ held });
     }
+    if (argv[2] === "held" && argv[3] === "disarm") {
+      // The real `held disarm` resolves over records and markers and
+      // unlinks only the .approved file.
+      const id = argv[4];
+      const h8 = String(argv[5] ?? "");
+      const heldDir = `${HOME}/cases/${id}/held`;
+      const hits = new Set(
+        (opts.held?.[id] ?? [])
+          .map((r) => heldHash(r))
+          .filter((h) => h.startsWith(h8)),
+      );
+      for (const f of Object.keys(files)) {
+        const m = new RegExp(`${heldDir}/([0-9a-f]{64})\\.approved$`).exec(f);
+        if (m && m[1].startsWith(h8)) hits.add(m[1]);
+      }
+      if (hits.size !== 1) {
+        return { exitCode: 2, stdout: `{"error":"no held draft matching ${h8}"}`, stderr: "" };
+      }
+      const h = [...hits][0];
+      delete files[`${heldDir}/${h}.approved`];
+      return wrap({ ok: true, hash: h });
+    }
     if (argv[2] === "held" && (argv[3] === "approve" || argv[3] === "reject")) {
       const id = argv[4];
       const h8 = String(argv[5] ?? "");

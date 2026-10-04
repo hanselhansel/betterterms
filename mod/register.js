@@ -104,6 +104,12 @@ export function register(on) {
     return { deny: "betterterms: the send check failed; the draft was not sent" };
   });
 
+  // A typed `bt approve` is a user action: the settings hook writes
+  // the marker while this hook records the hash in $.state, the one
+  // place the send check trusts.
+  on("prompt.submit", async ($, e, next) =>
+    W.promptSubmit(hostOf($), e, next));
+
   on("ui.render", { component: "AbovePrompt" }, async ($, e, next) => {
     if (e.props?.hasSurvey) return next(e);
     const host = hostOf($);

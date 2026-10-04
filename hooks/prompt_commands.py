@@ -212,7 +212,11 @@ def _held(verb, case_id, hash8):
     if verb == "approve":
         _pass(
             f"betterterms: the user approved draft {short} for "
-            f"{case_id}. Send it now with the same text."
+            f"{case_id}. Send it now with the same text verbatim as "
+            "its own argument, nothing added; do not run the gate "
+            "yourself. With betterterms-mod loaded the mod re-runs it "
+            "with --approved; without the mod, run `bt.py gate "
+            f"{case_id} --approved` once, then send."
         )
     else:
         _pass(

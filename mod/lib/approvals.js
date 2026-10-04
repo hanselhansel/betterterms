@@ -9,11 +9,12 @@
 //
 // The approval invariant (spec 6.3): a send held by the gate is denied
 // with the pane's name, never asked inline. Consent is an unused
-// $.state entry: the pane press writes it directly, and the marker a
-// typed `bt approve` leaves is adopted into it on the next send (the
-// file guard keeps agent writes out of held/, so the marker only ever
-// comes from a real command). Both spend once: the entry on read, the
-// marker when `bt.py gate --approved` consumes it.
+// $.state entry, written only by the pane press or by the mod's own
+// prompt.submit hook on a typed `bt approve`; a .approved marker on
+// disk never counts by itself. The marker is only what
+// `bt.py gate --approved` spends: the send check re-arms it for the
+// re-gate when needed, and disarms it when the re-gate does not spend
+// it. The entry is spent on read; the marker is spent by the gate.
 
 export const GATE_TIMEOUT_MS = 30000;
 export const EMPTY_SNAP = { home: null, root: null, resolvedRoot: null, cases: [], saved: {} };

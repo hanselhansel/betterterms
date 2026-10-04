@@ -120,6 +120,23 @@ function wire(on: OpHook, w: Wired) {
       }));
       return { value: { exitCode: 0, stdout: JSON.stringify({ held }), stderr: '' } };
     }
+    if (argv[2] === 'held' && argv[3] === 'disarm') {
+      // The real `held disarm` resolves over records and markers and
+      // unlinks only the .approved file.
+      const h8 = String(argv[5] ?? '');
+      const hits = new Set(w.held.filter((r) => r.hash.startsWith(h8)).map((r) => r.hash));
+      for (const f of Object.keys(w.files)) {
+        const m = new RegExp(`${heldDir}/([0-9a-f]{64})\\.approved$`).exec(f);
+        if (m && m[1].startsWith(h8)) hits.add(m[1]);
+      }
+      if (hits.size !== 1)
+        return { value: { exitCode: 2, stdout: `{"error":"no held draft matching ${h8}"}`, stderr: '' } };
+      const h = [...hits][0];
+      delete w.files[`${heldDir}/${h}.approved`];
+      w.dirs[heldDir] = (w.dirs[heldDir] as { name: string }[])
+        .filter((e) => e.name !== `${h}.approved`);
+      return { value: { exitCode: 0, stdout: `{"ok":true,"hash":"${h}"}`, stderr: '' } };
+    }
     if (argv[2] === 'held' && (argv[3] === 'approve' || argv[3] === 'reject')) {
       const h8 = String(argv[5] ?? '');
       const hits = w.held.filter((r) => r.hash.startsWith(h8));
@@ -295,21 +312,54 @@ for (const surface of ['terminal', 'desktop'] as const) {
     await pane.unmount();
   });
 
-  test(`a marker a typed bt approve left is adopted once (${surface})`, async ($, on) => {
-    // `bt approve` typed in the prompt runs `held approve` through the
-    // hook, leaving only this marker; the mod adopts it as the press.
+  test(`a forged marker with no $.state press stays denied (${surface})`, async ($, on) => {
+    // Only $.state counts: a .approved file left on disk is never
+    // adopted, never spent, never a send.
     const w = fresh({
-      files: fixtureFiles({ [`${DIR}/held/${HASH}.approved`]: 'hash: typed\n' }),
+      files: fixtureFiles({ [`${DIR}/held/${HASH}.approved`]: 'hash: forged\n' }),
     });
     (w.dirs[`${DIR}/held`] as unknown[]).push({ name: `${HASH}.approved`, kind: 'file', isLink: false });
     wire(on as OpHook, w);
     const out = await $.tool.call(sendCall() as never);
-    expect((out as { result?: { ran: string } }).result?.ran).toBe('gmail.send');
+    expect((out as { deny?: string }).deny).toMatch(/held for your approval/);
+    expect(`${DIR}/held/${HASH}.approved` in w.files).toBe(true);
+    expect(w.runs.some((r) => r.includes('--approved'))).toBe(false);
+    expect(Object.keys(approvals(w))).toHaveLength(0);
+  });
+
+  test(`a typed bt approve records $.state and sends once (${surface})`, async ($, on) => {
+    // `bt approve` typed in the prompt reaches the mod's own
+    // prompt.submit hook: the hash8 resolves through `held list` and
+    // the full hash lands in $.state. The resend spends it once.
+    const w = fresh();
+    wire(on as OpHook, w);
+    await $.prompt.submit({
+      text: `bt approve ${ID} ${HASH8}`, wait: false,
+      origin: { kind: 'composer' },
+    } as never);
+    expect(approvals(w)[HASH]).toBe(true);
+    expect(w.runs.some((r) => r.join(' ').includes(`held list ${ID}`))).toBe(true);
+    const sent = await $.tool.call(sendCall() as never);
+    expect((sent as { result?: { ran: string } }).result?.ran).toBe('gmail.send');
     expect(w.runs.some((r) => r.includes('--approved'))).toBe(true);
-    expect(`${DIR}/held/${HASH}.approved` in w.files).toBe(false);
-    // The marker is spent: the next identical send holds again.
     const again = await $.tool.call(sendCall() as never);
     expect((again as { deny?: string }).deny).toMatch(/held for your approval/);
+  });
+
+  test(`a re-gate miss disarms the re-armed marker (${surface})`, async ($, on) => {
+    // The press stands in $.state but the marker is gone, so the mod
+    // re-arms it; the re-gate then answers for a different draft and
+    // cannot spend it, so the mod removes it again.
+    const w = fresh();
+    wire(on as OpHook, w);
+    w.state.set('betterterms-mod/approvals', { value: { [HASH]: true }, version: 1 });
+    let call = 0;
+    const other = GATE_HELD.replace(HASH, HASH2);
+    w.gateText = () => (call++ === 0 ? GATE_HELD : other);
+    const out = await $.tool.call(sendCall() as never);
+    expect((out as { deny?: string }).deny).toMatch(/betterterms/);
+    expect(w.runs.some((r) => r.join(' ').includes(`held disarm ${ID} ${HASH8}`))).toBe(true);
+    expect(`${DIR}/held/${HASH}.approved` in w.files).toBe(false);
   });
 
   test(`throwing gate denies send (${surface})`, async ($, on) => {

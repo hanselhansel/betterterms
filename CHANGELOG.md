@@ -13,6 +13,13 @@
   `held/<hash>.approved`, are written only by a user action, and are
   consumed atomically after one send. Held records whose stored fields
   do not hash back to their filename never list.
+- `bt.py held disarm <case_id> <hash8>` removes only the `.approved`
+  marker and keeps the held draft; `betterterms-mod` runs it when a
+  marker it re-armed was not spent by the re-gate. In mod mode an
+  approval lives in `$.state` only, recorded by the pane press or the
+  mod's `prompt.submit` hook on a typed `bt approve`; a `.approved`
+  file on disk never authorizes a send by itself, and the file guard
+  denies `held disarm` to the agent like `held approve`.
 - Typed commands through a `UserPromptSubmit` hook
   (`hooks/prompt_commands.py`): `bt approve`, `bt reject`, `bt floor`,
   `bt terms` with `target=` and `alternative=` keys in either order.

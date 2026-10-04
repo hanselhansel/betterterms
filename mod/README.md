@@ -61,11 +61,14 @@ records anything for the agent's own call. The flow is:
 3. The resend re-runs the gate, gets `needs_approval` again, finds the
    hash in `$.state`, consumes it, and re-gates once with
    `--approved`. If an agent-side `gate --approved` already spent the
-   marker, the mod re-arms it first so the send cannot deadlock. The
-   `$.state` entry is spent on read and the marker on use, so a second
-   identical send holds again. A marker a typed `bt approve` left is
-   adopted into `$.state` the same way, so a typed approval works with
-   the mod loaded.
+   marker, the mod re-arms it first so the send cannot deadlock. If
+   the re-gate does not spend the marker, the mod removes it again
+   with `bt.py held disarm`. The `$.state` entry is spent on read and
+   the marker on use, so a second identical send holds again. A typed
+   `bt approve` works too: the mod's own `prompt.submit` hook resolves
+   the hash through `held list` and records it in `$.state`. A
+   `.approved` marker on disk never counts by itself; only `$.state`
+   authorizes the send.
 4. Different rendered text hashes to a different value, so an edited
    draft must re-pass the gate and be re-approved.
 

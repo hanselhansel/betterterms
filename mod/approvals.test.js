@@ -16,13 +16,17 @@ import { register } from "./register.js";
 import * as R from "./register.js";
 import {
   BT, CASE_ID, DIR, DRAFT, RENDERED, THREAD,
-  caseDirs, caseFiles, fakeDollar, fakeOn, fired,
+  caseDirs, caseFiles, fakeDollar, fakeOn, fired, heldHash,
 } from "./testkit.js";
 import {
-  ELS, HASH, HASH8,
+  ELS, HASH, HASH8, REC,
   heldFiles, heldDirs, heldOpt, sendCall,
   findNode, byKey, isButton,
 } from "./heldkit.js";
+
+// A second send tuple, for a re-gate that answers for a different
+// draft than the one the press approved.
+const OTHER = heldHash({ ...REC, rendered: "a different held text" });
 
 describe("lib/approvals helpers", () => {
   test("hash8 takes the first 8 hex chars", () => {
@@ -133,25 +137,88 @@ describe("tool.call held drafts", () => {
     assert.equal(calls.submit.length, 0);
   });
 
-  test("a typed bt approve marker lets the send through once", async () => {
-    // The prompt hook (or a manual `held approve`) wrote the marker;
-    // the mod adopts it as the session's press and spends it once.
+  test("a lone .approved marker is never adopted as a press", async () => {
+    // Only $.state counts: a marker file left on disk (a stray typed
+    // approve outside the mod's hook, or a forged one) does not send.
     const files = heldFiles({
       [`${DIR}/held/${HASH}.approved`]: `hash: ${HASH}\n`,
     });
-    const { $, calls } = fakeDollar({
+    const { $, calls, state } = fakeDollar({
       files, dirs: caseDirs(), gate: heldGate(), held: heldOpt(),
     });
     const on = fakeOn();
     register(on.on);
-    const { next, calls: went, marker } = fired();
+    const { next, calls: went } = fired();
     const out = await on.get("tool.call")($, sendCall(), next);
+    assert.match(out.deny, /held for your approval/);
+    assert.equal(went.length, 0);
+    // The marker was never adopted into state and never spent.
+    assert.equal(state.size, 0);
+    assert.equal(`${DIR}/held/${HASH}.approved` in files, true);
+    assert.equal(
+      calls.run.every((r) => !r.argv.includes("--approved")), true);
+  });
+
+  test("a typed bt approve lands in $.state through prompt.submit", async () => {
+    // The user's own typed `bt approve` reaches the mod's prompt.submit
+    // hook: it resolves the hash8 through `held list` and records the
+    // full hash in $.state. The resend then spends it once.
+    const { $, calls, state } = fakeDollar({
+      files: heldFiles(), dirs: caseDirs(), gate: heldGate(), held: heldOpt(),
+    });
+    const on = fakeOn();
+    register(on.on);
+    const { next, marker } = fired();
+    const out = await on.get("prompt.submit")($, {
+      text: `bt approve ${CASE_ID} ${HASH8}`,
+      origin: { kind: "composer" },
+    }, next);
     assert.equal(out, marker);
-    assert.equal(went.length, 1);
+    assert.equal(state.get("approvals")?.[HASH], true);
+    assert.equal(calls.run.some((r) => r.argv[3] === "list"), true);
+    const sent = await on.get("tool.call")($, sendCall(), fired().next);
+    assert.equal(sent.result, "ran");
     assert.equal(calls.run.some((r) => r.argv.includes("--approved")), true);
-    // The marker is spent: a second identical send holds again.
     const again = await on.get("tool.call")($, sendCall(), fired().next);
     assert.match(again.deny, /held for your approval/);
+  });
+
+  test("a prompt.submit from a plugin origin is not an approval", async () => {
+    const { $, state } = fakeDollar({
+      files: heldFiles(), dirs: caseDirs(), gate: heldGate(), held: heldOpt(),
+    });
+    const on = fakeOn();
+    register(on.on);
+    const { next, marker } = fired();
+    const out = await on.get("prompt.submit")($, {
+      text: `bt approve ${CASE_ID} ${HASH8}`,
+      origin: { kind: "plugin" },
+    }, next);
+    assert.equal(out, marker);
+    assert.equal(state.get("approvals"), undefined);
+    const denied = await on.get("tool.call")($, sendCall(), fired().next);
+    assert.match(denied.deny, /held for your approval/);
+  });
+
+  test("a re-gate that does not spend the marker disarms it", async () => {
+    // The press stands in $.state but the marker is missing, so the
+    // mod re-arms it; the re-gate then answers for a different draft
+    // and cannot spend it, so the mod removes the marker again.
+    const files = heldFiles();
+    const { $, calls, state } = fakeDollar({
+      files, dirs: caseDirs(), held: heldOpt(),
+      gate: (argv) => argv.includes("--approved")
+        ? { ...heldGate(), hash: OTHER }
+        : heldGate(),
+    });
+    const on = fakeOn();
+    register(on.on);
+    state.set("approvals", { [HASH]: true });
+    const out = await on.get("tool.call")($, sendCall(), fired().next);
+    assert.match(out.deny, /betterterms/);
+    assert.equal(
+      calls.run.some((r) => r.argv[3] === "disarm"), true);
+    assert.equal(`${DIR}/held/${HASH}.approved` in files, false);
   });
 
   test("an approved resend re-gates with --approved, once", async () => {

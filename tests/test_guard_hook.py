@@ -187,6 +187,7 @@ class DenyTest(GuardCase):
         for cmd in (
             f"python3 {BT} held approve case-1 abcd1234",
             f"python3 {BT} held reject case-1 abcd1234",
+            f"python3 {BT} held disarm case-1 abcd1234",
             f"python3 {BT} case set-floor case-1 60",
             f"python3 {BT} case set-floor case-1 --usd 60",
         ):

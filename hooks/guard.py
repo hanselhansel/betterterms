@@ -27,8 +27,9 @@ basename) or any of ``held``, ``.floor``, ``set-floor``, ``bt.py`` is
 allowed only as one whole raw
 ``python3 <.../betterterms-guardrails/scripts/bt.py> <args>`` call
 whose characters stay inside [A-Za-z0-9._/=:@+,-] and single spaces.
-``held approve``, ``held reject`` and ``case set-floor`` are user
-actions and deny even inside the strict shape; variables, globs,
+``held approve``, ``held reject``, ``held disarm`` and
+``case set-floor`` are user actions and deny even inside the strict
+shape; variables, globs,
 quotes, separators, newlines, ``$(``, backticks, ``cd``, pipes and
 redirects are all outside the shape, so they deny.
 
@@ -83,7 +84,8 @@ _SAFE = r"[A-Za-z0-9._/=:@+,-]"
 _BT_CALL = re.compile(rf"python3 {_SAFE}+( {_SAFE}+)*")
 _BT_SUFFIX = "/betterterms-guardrails/scripts/bt.py"
 _USER_ONLY = {
-    ("held", "approve"), ("held", "reject"), ("case", "set-floor"),
+    ("held", "approve"), ("held", "reject"), ("held", "disarm"),
+    ("case", "set-floor"),
 }
 
 
@@ -166,7 +168,7 @@ def _check_command(raw, homes, tdir):
         "set-floor" in a for a in args
     ):
         return (
-            "betterterms: held approve, held reject and "
+            "betterterms: held approve, held reject, held disarm and "
             "case set-floor run only from a user action"
         )
     return None

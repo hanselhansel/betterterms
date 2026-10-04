@@ -80,7 +80,14 @@ The gate accepts `--approved` only when an approval file matches the
 hash of the newly rendered text, and it consumes the file after one
 use. Edit the text and the old approval no longer matches: the send is
 denied and the draft is held again. Typing "yes" in chat approves
-nothing.
+nothing. `bt.py held disarm <case_id> <hash8>` removes only the
+marker: the mod runs it when a marker it re-armed was not spent by the
+re-gate, so a leftover marker never waits on disk for a later call.
+
+In mod mode the file alone never authorizes a send. Consent lives in
+the mod's `$.state`, written by the pane press or by the mod's own
+`prompt.submit` hook on your typed `bt approve`; the marker is only
+what `gate --approved` spends on the resend.
 
 `bt reject <case_id> <hash8>` drops the held draft. `bt terms
 <case_id> target=<a> alternative=<b>` writes target and best
