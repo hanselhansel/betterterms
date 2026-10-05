@@ -69,17 +69,19 @@ drafted: misreading them is the biggest source of lost value.
    - On a terminal it asks `Walk-away number (hidden): ` and does not
      echo what they type.
    - Whether a typed `bt floor` or a terms widget is safe hangs on
-     the session-start line: "betterterms is installed." present in
-     this context means the prompt hook is active (the plugin, or a
-     vendored repo's hooks in a session with one repository).
-     Without the line the hook is not active in this session: never
-     suggest a typed `bt floor` and post no terms widget; give the
-     terminal command above, or in a Projects thread tell the user
-     to add betterterms under Project settings > Plugins
+     the session-start marker line: "betterterms: typed bt commands
+     are active in this session." present in this context means the
+     prompt hook is active (the plugin, or a vendored repo's hooks
+     in a session with one repository). The marker prints in every
+     session where the hook loaded, even with no cases yet.
+     Without the marker the hook is not active in this session:
+     never suggest a typed `bt floor` and post no terms widget;
+     give the terminal command above, or in a Projects thread tell
+     the user to add betterterms under Project settings > Plugins
      (marketplace hanselhansel/betterterms) and start a new thread.
      A plugin installed mid-session activates the hook at the next
      session start, or after `/reload-plugins` locally.
-   - With the line present in a session that posts interactive
+   - With the marker present in a session that posts interactive
      widgets, post the `html` from
      `python3 <bt> widget terms <case_id>`
      as is. Its walk-away field types `bt floor <case_id> <amount>`
@@ -91,7 +93,7 @@ drafted: misreading them is the biggest source of lost value.
      editor in the BetterTerms pane (`t` on the case) sets the same
      value by drag, nudge, or a typed field, and writes it through
      `case set-floor` itself.
-   - With the line present, the user may instead type
+   - With the marker present, the user may instead type
      `bt floor <case_id> <amount>` as a chat
      message: the hook writes it and blocks the message, so the model
      never receives it. The text still sits in the thread where the
@@ -103,7 +105,7 @@ drafted: misreading them is the biggest source of lost value.
    - Never run `case set-floor` yourself, with or without a heredoc:
      the value would pass through you, and the skills instruct you
      never to read, print, or write the walk-away. If the user
-     has no terminal and the session-start line is absent, there is
+     has no terminal and the marker is absent, there is
      no safe way to set the number in this chat: in a Projects
      thread the fix is Project settings > Plugins plus a new thread;
      anywhere else they need a terminal.

@@ -112,8 +112,9 @@ or ask for their offer when it is not. Then gate, send, and log as below.
      in front of the user per the display mode (below). Approval is
      a user action that writes `held/<hash>.approved` for this exact
      tuple: a mod keypress or click, a `bt approve <case_id> <hash8>`
-     reply the prompt hook catches (the session-start line
-     "betterterms is installed." is then in context), or `bt.py held
+     reply the prompt hook catches (the session-start marker
+     "betterterms: typed bt commands are active in this session."
+     is then in context), or `bt.py held
      approve <case_id> <hash8>` which you run in a host with no
      prompt hook after the user replies `bt approve`. The hash must be the one the last
      gate call printed: `held approve` refuses any other, so a stale
@@ -150,14 +151,15 @@ Pick one at run time (spec 6.8):
   Desktop). Held drafts show in its Approvals tab and the user's
   keypress or click approves; you post nothing.
 - Widget: the session has a tool that posts interactive widgets
-  (Projects cloud threads) and the session-start line "betterterms
-  is installed." is in context, meaning the prompt hook catches the
+  (Projects cloud threads) and the session-start marker "betterterms:
+  typed bt commands are active in this session." is in context,
+  meaning the prompt hook catches the
   typed commands the buttons fill. Post the `html` field from
   `python3 <bt> widget approval <case_id> <hash8>`
   as is. Its buttons fill the user's message box with the typed
   command, and the user presses Enter. `python3 <bt> widget cases`,
   `python3 <bt> widget terms <case_id>` and `python3 <bt> widget
-  savings` cover the other views. Without the session-start line
+  savings` cover the other views. Without the marker
   the hook is not active: post no widget, since a button's typed
   `bt floor` would reach the model.
 - Chat: neither (Codex, plain cloud sessions, `claude -p`). Print

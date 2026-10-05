@@ -62,10 +62,13 @@ button fills your message box with a typed `bt` command; you press
 Enter to send it. See the display modes table in
 [quickstart](quickstart.md).
 
-Cloud case folders are temporary. A case in a cloud session's home
-folder vanishes when the VM ends; the session-start hook prints a
+The session-start hook always prints the marker line `betterterms:
+typed bt commands are active in this session.` when the plugin or
+the vendored hooks loaded; the skills offer typed `bt` commands
+only when they see it. It also prints a
 one-line warning when the betterterms home sits somewhere ephemeral
-and already holds a case.
+and already holds a case, because a case in a cloud session's home
+folder vanishes when the VM ends.
 Treat a cloud case as short-lived: export anything you want to keep
 before the session ends.
 

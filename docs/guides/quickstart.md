@@ -36,14 +36,16 @@ walk-away number you set yourself.
    - Any chat surface where the prompt hook is active: type
      `bt floor <case_id> <amount>` yourself. The hook writes it and
      blocks the message, so the model never receives it that turn,
-     though the text stays in the thread. The session-start line
-     "betterterms is installed." in the session context is the sign
+     though the text stays in the thread. The session-start marker
+     "betterterms: typed bt commands are active in this session."
+     in the session context is the sign
      the hook is active: the plugin or the vendored repo hooks
-     loaded at session start. A plugin installed mid-session
+     loaded at session start, and it prints even with no cases yet.
+     A plugin installed mid-session
      activates the hook at the next session start (`/reload-plugins`
      locally).
    - Codex, hook-less hosts, and any session without the
-     session-start line have no live prompt hook, so a typed
+     session-start marker have no live prompt hook, so a typed
      `bt floor` would reach the model. Use the terminal command
      there; there is no safe in-chat path without the hook.
 
@@ -112,7 +114,8 @@ One command per message, wherever you type to the agent. A
 `UserPromptSubmit` hook reads it before the model does. Only `bt
 floor` is kept from the model where the hook runs; the other commands
 are handled first, then passed through with a note. The hook is
-active when the session-start line "betterterms is installed." sits
+active when the session-start marker "betterterms: typed bt commands
+are active in this session." sits
 in the session context, which happens when the plugin or a vendored
 repo's hooks loaded at session start; a mid-session plugin install
 activates it at the next session start (`/reload-plugins` locally).

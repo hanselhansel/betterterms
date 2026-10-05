@@ -295,6 +295,9 @@ class DoctorTest(ScriptTestCase):
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
 
 
+MARKER = "betterterms: typed bt commands are active in this session."
+
+
 class SessionStartHookTest(ScriptTestCase):
     def hook(self, extra_env):
         env = dict(os.environ, HOME=str(self.home))
@@ -305,23 +308,35 @@ class SessionStartHookTest(ScriptTestCase):
             capture_output=True, text=True, env=env, timeout=30,
         )
 
-    def test_prints_one_line_pointing_at_start(self):
+    def test_no_cases_prints_only_the_marker(self):
+        # The skills offer typed `bt` commands only when the marker is
+        # in context, so it prints even before any case exists, in a
+        # plain session or a remote one.
+        for extra_env in ({}, {"CLAUDE_CODE_REMOTE": "true"}):
+            proc = self.hook(extra_env)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertEqual(proc.stdout.strip(), MARKER)
+
+    def test_cases_add_the_start_line(self):
+        (self.home / ".betterterms" / "cases" / "case-1").mkdir(
+            parents=True
+        )
         proc = self.hook({})
         self.assertEqual(proc.returncode, 0, proc.stderr)
-        lines = proc.stdout.strip().splitlines()
-        self.assertEqual(len(lines), 1)
-        self.assertIn("betterterms-start", lines[0])
+        self.assertIn(MARKER, proc.stdout)
+        self.assertIn("betterterms-start", proc.stdout)
+        self.assertNotIn("vanish", proc.stdout)
 
-    def test_remote_session_silent_without_cases(self):
+    def test_remote_session_prints_marker_without_cases(self):
         bt_home = self.tmp / "bthome"
         proc = self.hook({
             "CLAUDE_CODE_REMOTE": "true",
             "BETTERTERMS_HOME": str(bt_home),
         })
         self.assertEqual(proc.returncode, 0, proc.stderr)
-        self.assertEqual(proc.stdout.strip(), "")
+        self.assertEqual(proc.stdout.strip(), MARKER)
 
-    def test_remote_session_prints_when_case_exists(self):
+    def test_remote_session_prints_all_lines_when_case_exists(self):
         bt_home = self.tmp / "bthome"
         (bt_home / "cases" / "case-1").mkdir(parents=True)
         proc = self.hook({
@@ -329,7 +344,9 @@ class SessionStartHookTest(ScriptTestCase):
             "BETTERTERMS_HOME": str(bt_home),
         })
         self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertIn(MARKER, proc.stdout)
         self.assertIn("betterterms-start", proc.stdout)
+        self.assertNotIn("vanish", proc.stdout)
 
     def test_remote_session_warns_when_home_is_ephemeral(self):
         # Decision F: a cloud home vanishes with the VM, so the
@@ -341,6 +358,7 @@ class SessionStartHookTest(ScriptTestCase):
         proc = self.hook({"CLAUDE_CODE_REMOTE": "true"})
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertIn("vanish", proc.stdout)
+        self.assertIn(MARKER, proc.stdout)
         self.assertIn("betterterms-start", proc.stdout)
 
     def test_remote_session_warns_with_home_relative_bt_home(self):
@@ -354,12 +372,12 @@ class SessionStartHookTest(ScriptTestCase):
         self.assertIn("vanish", proc.stdout)
 
     def test_remote_session_no_warning_without_cases(self):
-        # Nothing exists to lose yet, so the vanish warning stays
-        # quiet until a first case lands.
+        # Nothing exists to lose yet, so the vanish warning and the
+        # start pointer stay quiet; the marker still prints.
         proc = self.hook({"CLAUDE_CODE_REMOTE": "true"})
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertNotIn("vanish", proc.stdout)
-        self.assertEqual(proc.stdout.strip(), "")
+        self.assertEqual(proc.stdout.strip(), MARKER)
 
     def test_remote_session_no_warning_for_persistent_home(self):
         # A BETTERTERMS_HOME outside the ephemeral home (a mounted
@@ -370,6 +388,7 @@ class SessionStartHookTest(ScriptTestCase):
         })
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertNotIn("vanish", proc.stdout)
+        self.assertIn(MARKER, proc.stdout)
 
 
 if __name__ == "__main__":

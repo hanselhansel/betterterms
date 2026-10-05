@@ -24,12 +24,12 @@ Deferred from the step 1 ship (owner approved 2026-10-03), to fix first in step 
 ## Accepted limits (pre-landing review)
 
 - **Priority:** P1. Shared Projects threads are single-trust: any member's `bt approve` or `bt floor` counts as the user. Scope approvals and floor writes to the case owner (for example a member allowlist) before sensitive cases run in shared threads. (hooks/prompt_commands.py)
-- **Priority:** P2. `scripts/vendor-into-repo` enables the plugin unpinned, so a vendored repo tracks whatever the marketplace serves; pin or hash the installed build.
 - **Priority:** P2. The approval hash binds the send tuple only, not the recipient; an approved text sent to a different counterparty still spends the marker. Fold the channel or recipient into the tuple when sends carry one. (btlib/held.py)
 - **Priority:** P2. `case set-floor` and the typed `bt floor` parse a comma as a thousands separator, so a decimal comma (`62,50`) reads as 6250; document the dot or accept locale forms. (btlib/cli_extra.py)
 
 ## Completed
 
+- **Priority:** P2. `scripts/vendor-into-repo` enables the plugin unpinned, so a vendored repo tracks whatever the marketplace serves; pin or hash the installed build. **Completed:** feat/lane-cloud, vendoring no longer enables a plugin at all; the copied skills and hooks are pinned to the checkout they came from.
 - **Priority:** P2. Tokens with apostrophe suffixes ("deal's", "dollar's", "USD's", "k's") bypass whole-token word lists; strip possessive and contraction suffixes before matching. (skills/betterterms-guardrails/scripts/btlib/review.py) **Completed:** release v1
 - **Priority:** P2. Scale words missing: lakh, crore, quadrillion, mn, mln, bln, tn, bil. (btlib/wordlists.py) **Completed:** release v1
 - **Priority:** P2. Currency words missing: franc, pence, penny, rupiah, ruble, dinar, sterling, plurals of listed singulars, RMB, BTC. (btlib/wordlists.py) **Completed:** release v1

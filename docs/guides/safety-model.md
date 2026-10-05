@@ -21,8 +21,10 @@ it. In a Projects thread that message stays visible to project
 members, so the terminal stays the better path there.
 
 The typed path works only where the prompt hook runs, which the
-session-start line "betterterms is installed." in context confirms:
-the plugin or a vendored repo's hooks loaded at session start. A
+session-start marker "betterterms: typed bt commands are active in
+this session." in context confirms:
+the plugin or a vendored repo's hooks loaded at session start, and
+the marker prints even with no cases yet. A
 plugin installed mid-session turns it on at the next session start
 (`/reload-plugins` locally). Where no hook runs, a typed `bt floor`
 reaches the model, so the skills point at the terminal
@@ -86,7 +88,7 @@ as `held/<hash>.approved`, and written only by a user action:
   tab,
 - your own `bt approve <case_id> <hash8>` message caught by the
   prompt hook (a widget button types it for you; the session-start
-  line confirms the hook is active), or
+  marker confirms the hook is active), or
 - `bt.py held approve`, run by the agent only in a host with no
   prompt hook and only after you typed `bt approve`.
 

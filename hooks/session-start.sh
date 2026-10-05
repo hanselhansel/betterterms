@@ -1,25 +1,26 @@
 #!/bin/sh
 # SessionStart hook for the betterterms plugin.
 #
-# In remote (cloud) sessions a $BETTERTERMS_HOME under the ephemeral
-# $HOME loses its cases when the VM ends, so a warning line prints
-# first. Both lines wait on there being something to say: in a cloud
-# session with no cases yet there is nothing to lose and nothing to
-# resume, so the hook stays silent.
+# The marker line prints whenever this hook runs, plugin or vendored:
+# the skills offer typed `bt` commands and widgets only when they see
+# it in context, so it must print even before any case exists. With
+# cases on disk the start pointer follows, and a remote session whose
+# betterterms home sits under the ephemeral $HOME also gets the vanish
+# warning, since those cases go away with the VM.
 set -eu
+
+echo "betterterms: typed bt commands are active in this session."
 
 home="${BETTERTERMS_HOME:-$HOME/.betterterms}"
 
-if [ "${CLAUDE_CODE_REMOTE:-}" = "true" ]; then
-    if [ ! -d "$home/cases" ] \
-        || [ -z "$(find "$home/cases" -mindepth 1 -maxdepth 1 -type d -print -quit 2>/dev/null)" ]; then
-        exit 0
+if [ -d "$home/cases" ] \
+    && [ -n "$(find "$home/cases" -mindepth 1 -maxdepth 1 -type d -print -quit 2>/dev/null)" ]; then
+    if [ "${CLAUDE_CODE_REMOTE:-}" = "true" ]; then
+        case "$home" in
+            "$HOME"|"$HOME"/*)
+                echo "betterterms: cloud session; cases under $home vanish when the VM ends."
+                ;;
+        esac
     fi
-    case "$home" in
-        "$HOME"|"$HOME"/*)
-            echo "betterterms: cloud session; cases under $home vanish when the VM ends."
-            ;;
-    esac
+    echo "betterterms is installed. Use the betterterms-start skill to begin or continue a negotiation."
 fi
-
-echo "betterterms is installed. Use the betterterms-start skill to begin or continue a negotiation."

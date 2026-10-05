@@ -35,8 +35,12 @@
   counts as a wake envelope only when it starts with `<wake` and
   carries a `<message>` element; a trailing or mid-text `<wake` tag
   is plain user text.
-  In a cloud session the session-start hook warns when the betterterms
-  home sits in the ephemeral VM home.
+  The session-start hook always prints the marker "betterterms: typed
+  bt commands are active in this session." when the plugin or the
+  vendored hooks load, even with no cases; the skills offer typed
+  `bt` commands and widgets only when they see it. The start pointer
+  and, in a cloud session, the warning that the betterterms home sits
+  in the ephemeral VM home print only when a case exists.
 - `betterterms-mod`, an optional Claude Code cockpit plugin: pane with
   Cases, Approvals and Savings tabs, band above the prompt, gate rows,
   toasts, and a terms editor that sets the walk-away by drag, nudge or

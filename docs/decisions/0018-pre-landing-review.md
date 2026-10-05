@@ -1,6 +1,7 @@
 # 0018. Pre-landing review: same-user limits and vendor semantics
 
-Status: accepted. Amended by 0019 and 0020. Date: 2026-10-05.
+Status: accepted. Amended by 0019 and 0020. Amended: cloud plugin
+loading and vendoring, 2026-10-06. Date: 2026-10-05.
 
 ## Context
 

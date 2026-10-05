@@ -71,7 +71,8 @@ Amendment 2026-10-06, cloud plugin loading: a cloud session never
 installs plugins declared in a repo's `.claude/settings.json`, so
 `vendor-into-repo` no longer writes `enabledPlugins`. Widget and
 chat typed commands count on a live prompt hook, confirmed by the
-session-start line "betterterms is installed." in context. Projects
+session-start marker "betterterms: typed bt commands are active in
+this session." in context, which prints even with no cases. Projects
 threads load the plugin from Project settings > Plugins into each
 new thread; other cloud sessions vendor skills and hooks into the
 repo, and those hooks apply only when the session has exactly one
