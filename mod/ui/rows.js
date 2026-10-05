@@ -6,11 +6,12 @@
 // Pure: register.js hands the ToolUse props in and wraps the verdict.
 
 // A gate call is one plain `bt.py gate` invocation (usually as a
-// full path: python3 .../scripts/bt.py gate ...). A command that
+// full path: python3 .../scripts/bt.py gate ...; a shlex-quoted
+// path puts a closing quote between bt.py and gate). A command that
 // composes anything else -- `;`, `&&`, `||`, `|`, redirection,
 // command substitution, a subshell, a second line -- keeps the
 // stock row: collapsing it would hide the rest of what ran.
-const GATE_CALL = /\bbt\.py\s+gate\b/;
+const GATE_CALL = /\bbt\.py['"]?\s+gate\b/;
 const COMPOSED = /[;|&<>`$()\r\n\\]/;
 
 // props: the ToolUse row's {tool, input, output, isRunning, ...}.

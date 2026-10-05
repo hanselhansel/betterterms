@@ -97,11 +97,11 @@ class EnvelopeBackstopTest(BtTestCase):
     A prompt counts as a Projects wake envelope only when its trimmed
     text starts with ``<wake`` and carries a ``<message`` element; a
     ``<wake`` substring anywhere else is plain text. The floor rule
-    runs before any command is handled and scans the text of every
-    ``from="human"`` message in an envelope -- the whole prompt when
-    it is not one. Agent-authored text never counts, and digits that
-    are part of a case-id token (``name-YYYYMMDD-xxxx``) are not the
-    walk-away.
+    runs before any command is handled and scans the raw prompt, with
+    only the bodies of well-formed ``from="agent"`` message elements
+    out of scope: a match inside a human body, a malformed element or
+    stray markup still counts. Digits that are part of a case-id
+    token (``name-YYYYMMDD-xxxx``) are not the walk-away.
     """
 
     def make_case(self, cid="case-1"):
@@ -211,6 +211,71 @@ class EnvelopeBackstopTest(BtTestCase):
         out = hook_json(proc)
         self.assertEqual(out["decision"], "block")
         self.assertIn("bt floor", out["reason"])
+
+    def test_unclosed_human_floor_message_blocks(self):
+        # Fail closed on a truncated envelope: the human trigger
+        # element never closes, so no well-formed body exists at all
+        # and the `bt floor` line plus the amount still lands in the
+        # raw scan. The amount is never written and never echoed.
+        d = self.make_case()
+        proc = run_hook(
+            self.home,
+            '<wake reason="x"><message from="human" trigger="true">'
+            "bt floor acme-20261005-ab12 62",
+        )
+        out = hook_json(proc)
+        self.assertEqual(out["decision"], "block")
+        self.assertIn("bt floor", out["reason"])
+        self.assertNotIn("62", proc.stdout)
+        self.assertFalse((d / ".floor").exists())
+
+    def test_single_quoted_human_attrs_block(self):
+        # Single-quoted attributes do not parse, so the element is
+        # not a well-formed human or agent message: its body stays in
+        # scope and the floor line inside still blocks.
+        d = self.make_case()
+        proc = run_hook(
+            self.home,
+            "<wake><message from='human' trigger='true'>"
+            "bt floor acme-20261005-ab12 62</message></wake>",
+        )
+        out = hook_json(proc)
+        self.assertEqual(out["decision"], "block")
+        self.assertIn("bt floor", out["reason"])
+        self.assertNotIn("62", proc.stdout)
+        self.assertFalse((d / ".floor").exists())
+
+    def test_agent_message_then_human_reply_passes(self):
+        # The command syntax quoted inside a well-formed agent
+        # message is agent-authored text: out of scope for the raw
+        # rule, so the human reply beside it passes untouched.
+        proc = run_hook(
+            self.home,
+            '<message from="agent">'
+            "type bt floor acme-20261005-ab12 62</message>"
+            '<message from="human" trigger="true">'
+            "ok, done. what next?</message>",
+        )
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(proc.stdout.strip(), "")
+        self.assertFalse(
+            (self.home / "cases" / "acme-20261005-ab12").exists()
+        )
+
+    def test_wellformed_agent_floor_text_passes(self):
+        # The bare command line inside a well-formed agent element is
+        # likewise exempt; only a live (non-agent) match blocks.
+        proc = run_hook(
+            self.home,
+            '<message from="agent">'
+            "bt floor acme-20261005-ab12 62</message>"
+            '<message from="human" trigger="true">thanks</message>',
+        )
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(proc.stdout.strip(), "")
+        self.assertFalse(
+            (self.home / "cases" / "acme-20261005-ab12").exists()
+        )
 
 
 class ProsePassTest(BtTestCase):

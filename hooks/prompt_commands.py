@@ -17,18 +17,17 @@ grammar is handled here:
 the model; its reason never carries the amount. A message that only
 resembles a command still blocks, under two different rules. Floor
 is default deny and runs first, at the shared layer: before any
-command is handled, the text of every ``from="human"`` message in a
-wake envelope -- the whole prompt when it is not one -- is scanned
-for ``bt`` and ``floor`` adjacent (any whitespace, any case) plus a
-digit in that same message; digits inside a case-id token like
-``name-YYYYMMDD-xxxx`` are the id, not a number the user typed.
-Agent-authored text never counts. A hit always blocks: the floor
-write runs only when the triggering message parses as a valid floor
-command, and nothing passes through with a note. Approve, reject,
-and terms keep the start-anchored rule: the trimmed user text starts
-with ``bt <verb>`` -- one leading backtick or a leading slash
-allowed -- and carries the piece the verb needs, a hex token of six
-or more characters for approve and reject, ``=`` for terms.
+command is handled, the raw prompt is scanned for ``bt`` and
+``floor`` adjacent (any whitespace, any case) plus a digit that is
+not part of a case-id token like ``name-YYYYMMDD-xxxx``. Only the
+bodies of well-formed ``from="agent"`` elements are out of scope.
+A hit always blocks: the floor write runs only when the triggering
+message parses as a valid floor command, and nothing passes through
+with a note. Approve, reject, and terms keep the start-anchored
+rule: the trimmed user text starts with ``bt <verb>`` -- one
+leading backtick or a leading slash allowed -- and carries the
+piece the verb needs, a hex token of six or more characters for
+approve and reject, ``=`` for terms.
 Everything else is prose and passes to the model. The hook fails
 closed: input it cannot read, or a command that raises, blocks
 instead of passing through, because the text may carry a walk-away.
@@ -122,18 +121,19 @@ def user_text(prompt):
     return ""
 
 
-def _human_texts(prompt):
-    """Every ``from="human"`` body inside a wake envelope, or the
-    whole prompt when it is not one (the same strict test as
-    ``user_text``). Agent text never enters the list."""
-    t = prompt.lstrip()
-    if not (t.startswith("<wake") and "<message" in t):
-        return [prompt]
-    return [
-        _unescape(m.group(2))
-        for m in _MESSAGE.finditer(prompt)
-        if dict(_ATTR.findall(m.group(1))).get("from") == "human"
-    ]
+def _live_text(prompt):
+    """The prompt minus the bodies of well-formed ``from="agent"``
+    elements: the floor rule's scope; the rest stays in scope."""
+    parts, pos = [], 0
+    for m in _MESSAGE.finditer(prompt):
+        head = m.group(1).rstrip()
+        if head.endswith("/"):
+            continue
+        if dict(_ATTR.findall(head)).get("from") == "agent":
+            parts.append(prompt[pos : m.start(2)])
+            pos = m.end(2)
+    parts.append(prompt[pos:])
+    return "".join(parts)
 
 
 def _floor_hit(text):
@@ -193,7 +193,7 @@ def _lookalike_verb(text):
     one leading backtick or a leading slash allowed -- and still need
     their marker piece: a hash-like token for approve and reject,
     ``=`` for terms. Floor is not repeated here: ``_floor_hit`` runs
-    on every human text before this point. Anything else is prose."""
+    on the live text before this point. Anything else is prose."""
     t = text.strip()
     m = _LOOKALIKE.match(t)
     if m is None:
@@ -370,11 +370,11 @@ def main():
         text = user_text(raw)
         cmd = parse(text)
         # Fail-closed backstop at the shared layer, before any
-        # command is handled: the floor rule scans every human
-        # message in a wake envelope (the whole prompt when it is not
-        # one). A hit always blocks -- the floor write runs only when
-        # the triggering message is itself a floor command.
-        if any(_floor_hit(t) for t in _human_texts(raw)):
+        # command is handled: the floor rule scans the raw prompt
+        # minus well-formed agent bodies. A hit always blocks -- the
+        # floor write runs only when the triggering message is
+        # itself a floor command.
+        if _floor_hit(_live_text(raw)):
             if cmd is not None and cmd["verb"] == "floor":
                 _handle(cmd)
             else:

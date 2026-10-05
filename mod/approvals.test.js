@@ -131,6 +131,23 @@ describe("tabs and rows", () => {
     }
   });
 
+  test("a quoted approve command still collapses", () => {
+    // The approve note shlex-quotes every argv element: a home with
+    // a space puts a closing quote between bt.py and gate, and the
+    // row is still one plain gate call.
+    const props = (command, output) => ({
+      tool: "Bash", tool_use_id: "tu1",
+      input: { command },
+      isRunning: false, output,
+    });
+    const out = { stdout: '{"result":"pass","reasons":[]}', stderr: "" };
+    const home = "/tmp/bt home";
+    const command =
+      `python3 '${home}/scripts/bt.py' gate ${CASE_ID} ` +
+      `--draft '${home}/cases/${CASE_ID}/draft.yaml' --approved`;
+    assert.equal(gateRow(props(command, out))?.text, "✓ Gate pass");
+  });
+
   test("gate rows read only the Bash command string", () => {
     // Only input.command names what ran: a `bt.py gate` mention in
     // the description or any other input field keeps the stock row.
