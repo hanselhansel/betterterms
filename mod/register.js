@@ -5,14 +5,16 @@
 // calls register(on) once at load. session.start registers
 // /betterterms (alias /betterterms-cases), opens the pane when cases
 // exist, baselines inbound entries, sets the status line and starts
-// the 3s poll. tool.call is the pre-send guard: a call carrying an
-// open case's last gate.json `rendered` text re-gates through
-// `python3 bt.py gate`; needs_approval is denied to the pane, and the
-// hook's .catch denies any plausible send it failed over. ui.render
-// draws the AbovePrompt band, the three-tab Pane (Cases, Approvals,
-// Savings; the cases tab hosts the terms editor of spec 6.4) and the
-// gate rows; ui.message relays the price-scale Client's posts;
-// command.run opens the pane.
+// the 3s poll. ui.render draws the AbovePrompt band, the three-tab
+// Pane (Cases, Approvals, Savings; the cases tab hosts the terms
+// editor of spec 6.4) and the gate rows; ui.message relays the
+// price-scale Client's posts; command.run opens the pane.
+//
+// The mod is a cockpit only (decision 0020): it never inspects
+// outgoing tool calls or prompts. The Approvals tab's Approve press
+// runs `bt.py held approve` and submits a prompt telling the agent
+// to run `bt.py gate --approved` once; the gate's hash-bound one-use
+// marker is the only send enforcement.
 //
 // The loader follows `$` only into this file's top-level functions,
 // never across an import. So every $ member the mod needs is bound
@@ -35,7 +37,6 @@ const PANE_ID = "betterterms";
 // $.state refs must be literals of this file for the audit to list them.
 const REF_TAB = { plugin: "betterterms-mod", key: "tab" };
 const REF_SELECTED = { plugin: "betterterms-mod", key: "selected" };
-const REF_APPROVALS = { plugin: "betterterms-mod", key: "approvals" };
 
 // The facade lib/hostio.js and lib/wiring.js work through. Every $ the
 // mod touches appears exactly once here, literal where the audit asks
@@ -55,14 +56,10 @@ export function hostOf($) {
     setTab: (v) => $.state.set(REF_TAB, v),
     stateSelected: () => $.state.get(REF_SELECTED),
     setSelected: (v) => $.state.set(REF_SELECTED, v),
-    stateApprovals: () => $.state.get(REF_APPROVALS),
-    setApprovals: (v, init) => $.state.set(REF_APPROVALS, v, init),
     toast: (t) => $.ui.toast(t),
     status: (t) => $.ui.status(t),
-    notice: (id, t) => $.ui.notice(id, t),
     invalidate: () => $.ui.invalidate("ui.render"),
     openPane: (r) => $.ui.open(r),
-    ask: (q, i) => $.ui.ask(q, i),
     submit: (e) => $.prompt.submit(e),
     registerCommand: (s) => $.command.register(s),
     every: (ms, fn) => $.clock.every(ms, fn),
@@ -74,14 +71,6 @@ export function hostOf($) {
 export const scanCases = ($) => S.scanCases(hostOf($));
 export const paneActions = ($, snap) => W.paneActions(hostOf($), snap);
 
-// Strings worth scanning: long enough to carry a draft, or naming a case id.
-const plausible = (ss) => ss.some((s) => s.length >= C.SEND_MIN_CHARS || /-\d{8}-/.test(s));
-
-// File-path tools write to disk, not to a counterparty: the send
-// guard never treats them as a send and never toasts "sent" for one,
-// even when the content equals the gated text.
-const FILE_TOOLS = new Set(["Write", "Edit", "NotebookEdit", "MultiEdit"]);
-
 export function register(on) {
   IO.resetBt();
   S.resetScan();
@@ -89,32 +78,6 @@ export function register(on) {
 
   on("command.run", { command: "betterterms" }, ($) => W.runCommand(hostOf($)));
   on("command.run", { command: "betterterms-cases" }, ($) => W.runCommand(hostOf($)));
-
-  on("tool.call", async ($, e, next) => {
-    // The agent's own approval question is not a send; gating it would
-    // put our ask in front of its ask. File-path tools are never a
-    // send either: they pass through untouched.
-    if (e.tool === "AskUserQuestion" || FILE_TOOLS.has(e.tool)) return next(e);
-    const strings = C.collectStrings(C.callArgs(e));
-    if (!plausible(strings)) return next(e);
-    const host = hostOf($);
-    const snap = await S.scanCases(host);
-    if (snap.cases.length === 0) return next(e);
-    if (await W.isCaseWrite(host, snap, e)) return next(e);
-    const hit = C.findSend(strings, snap.cases);
-    if (hit === null) return next(e);
-    return W.gateSend(host, snap, hit, e, next);
-  }).catch(($, e, next) => {
-    if (next.called || !plausible(C.collectStrings(C.callArgs(e)))) return next(e);
-    // A failed hook must never let a send through (spec 6.3).
-    return { deny: "betterterms: the send check failed; the draft was not sent" };
-  });
-
-  // A typed `bt approve` is a user action: the settings hook writes
-  // the marker while this hook records the hash in $.state, the one
-  // place the send check trusts.
-  on("prompt.submit", async ($, e, next) =>
-    W.promptSubmit(hostOf($), e, next));
 
   on("ui.render", { component: "AbovePrompt" }, async ($, e, next) => {
     if (e.props?.hasSurvey) return next(e);

@@ -27,8 +27,8 @@ export const ELS = { Box: "Box", Text: "Text", Button: "Button", Input: "Input" 
 
 export const heldFiles = (extra = {}) => caseFiles({
   [`${DIR}/draft.yaml`]: DRAFT,
-  // gate.json carries the held hash: approve (press or typed) refuses
-  // any held hash that is not the case's current gate.json hash.
+  // gate.json carries the held hash: the pane's approve refuses any
+  // held hash that is not the case's current gate.json hash.
   [`${DIR}/gate.json`]: GATE_HELD_JSON,
   ...extra,
 });
@@ -36,12 +36,6 @@ export const heldDirs = () => caseDirs({
   [`${DIR}/held`]: [],
 });
 export const heldOpt = () => ({ [CASE_ID]: [REC] });
-// The send that matches the held draft's rendered text, verbatim as
-// one argument (the send-shape rule).
-export const sendCall = () => ({
-  tool: "gmail.send", tool_use_id: "t1",
-  to: "v@x", subject: "Re: plan", body: RENDERED,
-});
 // The Approvals-tab tree for a one-held-draft snapshot.
 export const approvalsCard = async ($) => {
   const snap = await R.scanCases($);

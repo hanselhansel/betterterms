@@ -1,6 +1,6 @@
 """The smaller subcommands, kept out of bt.py: ``where``, ``config
 show|set``, ``case set-terms``, ``held
-list|approve|reject|drop|disarm``, and ``widget
+list|approve|reject|drop``, and ``widget
 cases|approval|terms|savings``. Each command function returns
 ``(exit_code, dict)`` like the ones in bt.py.
 """
@@ -130,12 +130,6 @@ def cmd_held_drop(args):
     return 0, {"ok": True, "hash": h}
 
 
-def cmd_held_disarm(args):
-    d = cases.require_case(args.case_id)
-    h = held.disarm(d, args.hash8)
-    return 0, {"ok": True, "hash": h}
-
-
 def cmd_widget_cases(_args):
     return 0, {"html": widgets.cases_widget()}
 
@@ -215,12 +209,6 @@ def register(sub, case_sub):
     p_drop.add_argument("case_id")
     p_drop.add_argument("hash8")
     p_drop.set_defaults(fn=cmd_held_drop)
-    p_dis = held_sub.add_parser(
-        "disarm", help="drop only the .approved marker, keep the draft"
-    )
-    p_dis.add_argument("case_id")
-    p_dis.add_argument("hash8")
-    p_dis.set_defaults(fn=cmd_held_disarm)
 
     p_widget = sub.add_parser(
         "widget",

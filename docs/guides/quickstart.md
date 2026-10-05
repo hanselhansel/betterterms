@@ -106,7 +106,7 @@ are handled first, then passed through with a note.
 
 | Command | What it does |
 |---|---|
-| `bt approve <case_id> <hash8>` | Approves the held draft with that hash. The hook writes the approval and lets the prompt through with a note, so the agent resends the same text. |
+| `bt approve <case_id> <hash8>` | Approves the held draft with that hash. The hook writes the approval and lets the prompt through with a note, so the agent runs `bt.py gate <case> --approved` once and sends the returned text verbatim. |
 | `bt reject <case_id> <hash8>` | Drops the held draft and stamps `rejected` in `thread.md`, then lets the prompt through with a note. |
 | `bt floor <case_id> <amount>` | Writes the walk-away on stdin to `case set-floor`, then blocks the message so the model never receives it. Only on surfaces with the prompt hook; on Codex and other hook-less hosts use the terminal `case set-floor` command instead. |
 | `bt terms <case_id> target=<amount> alternative=<amount>` | Writes target and best alternative to `plan.yaml`, then lets the prompt through with a note. Either key alone works, in any order. |
@@ -122,18 +122,18 @@ plainly:
 
 | Mode | When | What it guarantees |
 |---|---|---|
-| Mod | Claude Code terminal or Desktop with `betterterms-mod` installed | The cockpit: a pane with Cases, Approvals, and Savings tabs, a band over the prompt when a draft waits, toasts on replies, and one-line gate rows. Approval is your keypress or click, recorded in mod state the agent cannot write. Typing "yes" in chat approves nothing here. |
+| Mod | Claude Code terminal or Desktop with `betterterms-mod` installed | The cockpit: a pane with Cases, Approvals, and Savings tabs, a band over the prompt when a draft waits, toasts on replies, and one-line gate rows. Approval is your keypress or click: it runs `bt.py held approve` for the displayed hash and submits the prompt that sends the agent through `bt.py gate --approved` once. The mod never inspects outgoing tool calls (decision 0020). Typing "yes" in chat approves nothing. |
 | Widget | A session with a tool that posts interactive widgets (Projects cloud threads) | The same views as posted widgets. A button fills your message box with the typed command; you still press Enter, so every action is yours. Approval lands as a `held/<hash>.approved` file the prompt hook writes. |
 | Chat | Codex, plain cloud sessions, `claude -p` | Text summaries and the same typed commands. Where the session has no prompt hook, the agent runs `bt.py held approve` itself after you reply `bt approve`. |
 
-The honest line on strength: mod approval is the strongest, because a
-keypress lands in state the agent can never write. Widget and chat
-approval land as a file the agent could also write: it runs as your
-user, so nothing technical stops a forged marker; the skills' rule
-never to write one is the boundary there. All three
-modes share the guarantee that counts: text inside a counterparty's
-message can never become a user message, so nothing the other side
-writes can approve a draft.
+The honest line on strength: every mode enforces approval the same way,
+through the gate's hash-bound one-use `--approved` marker. And every
+mode shares the same limit: the agent runs as your user, so nothing
+technical stops a forged marker or an ungated send if it sets out to;
+the skills' rule never to is the boundary there (decision 0019). All
+three modes share the guarantee that counts: text inside a
+counterparty's message can never become a user message, so nothing the
+other side writes can approve a draft.
 
 ## What a turn looks like in Act mode
 

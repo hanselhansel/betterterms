@@ -5,6 +5,8 @@
 //
 // The kit loads this plugin itself. `on` answers the op events the mod
 // calls: env, fs, process.run (the gate), tool.call (the real call).
+// The mod registers no tool.call or prompt.submit hook (decision
+// 0020), so every event reaches the underlying op untouched.
 
 import { test, expect } from 'claude-code/testing';
 
@@ -31,7 +33,7 @@ const DIRS: Record<string, unknown[]> = {
 
 type OpHook = (event: string, hook: (...a: never[]) => unknown) => unknown;
 
-function wire(on: OpHook, gateStdout: string) {
+function wire(on: OpHook) {
   on('env.get', (_$: never, e: { name: string }) => ({
     value: e.name === 'BETTERTERMS_HOME' ? '/bt' : '/u',
   }));
@@ -45,32 +47,34 @@ function wire(on: OpHook, gateStdout: string) {
     e.path in FILES || e.path in DIRS
       ? { value: { kind: e.path in DIRS ? 'dir' : 'file', size: 1, mtimeMs: 2, isLink: false, realPath: e.path } }
       : { deny: 'ENOENT' });
-  on('process.run', () => ({
-    value: { exitCode: 0, stdout: gateStdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false },
-  }));
   on('tool.call', (_$: never, e: { tool: string }) => ({ result: { ran: e.tool } }));
+  on('prompt.submit', (_$: never, e: { text: string }) => ({ text: e.text }));
 }
 
 test('an unrelated call passes through to the tool', async ($, on) => {
-  wire(on as OpHook, '{"result":"pass","reasons":[]}');
+  wire(on as OpHook);
   const out = await $.tool.call({ tool: 'Bash', command: 'ls -la' } as never);
   expect((out as { result: { ran: string } }).result.ran).toBe('Bash');
 });
 
-test('a send carrying the rendered text is denied on a gate block', async ($, on) => {
-  wire(on as OpHook, '{"result":"block","reasons":["floor disclosed in draft text"]}');
-  const out = await $.tool.call({
-    tool: 'Bash',
-    command: `mail vendor@x <<EOF\n${RENDERED}\nEOF`,
-  } as never);
-  expect((out as { deny?: string }).deny).toMatch(/betterterms/);
-});
-
-test('a send at autonomy 4 goes through on a gate pass', async ($, on) => {
-  wire(on as OpHook, `{"result":"pass","reasons":[],"rendered":${JSON.stringify(RENDERED)}}`);
+test('a call carrying the gated text is not intercepted', async ($, on) => {
+  // The send check is gone (decision 0020): even a send-shaped call
+  // with the gated text verbatim reaches the tool untouched. The
+  // gate's --approved marker is the only enforcement, inside bt.py.
+  wire(on as OpHook);
   const out = await $.tool.call({
     tool: 'gmail.send',
     to: 'v@x', subject: 'Re: plan', body: RENDERED,
   } as never);
   expect((out as { result: { ran: string } }).result.ran).toBe('gmail.send');
+});
+
+test('a typed bt approve passes through to the prompt', async ($, on) => {
+  // No prompt.submit hook either: the settings hook (not the mod)
+  // handles `bt approve` when the core plugin's hooks are loaded.
+  wire(on as OpHook);
+  const out = await $.prompt.submit({
+    text: `bt approve ${ID} abcdef12`, origin: { kind: 'composer' },
+  } as never);
+  expect((out as { text: string }).text).toBe(`bt approve ${ID} abcdef12`);
 });

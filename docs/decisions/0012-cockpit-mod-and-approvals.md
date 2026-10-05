@@ -2,7 +2,10 @@
 
 Status: accepted (release lanes R5 and R6, spec 6.1 to 6.7). Amends
 0007: the walk-away may also be set and shown in the pane; entry still
-never passes through the agent. Date: 2026-10-08.
+never passes through the agent. Amended by 0020: the `tool.call` send
+check and the `$.state` approvals described below are removed; the
+press runs `held approve` and the prompt sends the agent through
+`gate --approved` once. Date: 2026-10-08.
 
 ## Context
 

@@ -1,7 +1,7 @@
 // Engine-side ui-surface tests for `claude plugin test ./mod`: the
 // AbovePrompt band, the Approvals pane badge, ToolUse gate rows and
 // the status line. Named .tsx on purpose, like register.test.tsx;
-// the fake world lives in approvals.fixture.tsx and the send-guard
+// the fake world lives in approvals.fixture.tsx and the approval-flow
 // tests live in approvals.test.tsx.
 
 import { test, expect } from 'claude-code/testing';

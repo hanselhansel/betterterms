@@ -10,8 +10,8 @@ import { fileURLToPath } from "node:url";
 
 import { register } from "./register.js";
 import {
-  BT, BRIEF, CASE_ID, DIR, DRAFT, GATE, GATE_NEEDS_APPROVAL, RENDERED,
-  THREAD, caseDirs, caseFiles, fakeDollar, fakeOn, fired,
+  DIR, DRAFT, GATE, THREAD,
+  caseDirs, caseFiles, fakeDollar, fakeOn, fired,
 } from "./testkit.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -24,164 +24,14 @@ describe("register", () => {
     readFileSync(join(HERE, "hooks", hooks.modules[0]), "utf8");
   });
 
-  test("a send carrying the rendered text is denied when the gate blocks", async () => {
-    const files = caseFiles({ [`${DIR}/draft.yaml`]: DRAFT, [`${DIR}/gate.json`]: GATE });
-    const { $, calls } = fakeDollar({
-      files, dirs: caseDirs(),
-      gate: { exitCode: 1, stdout: '{"result":"block","reasons":["floor disclosed in draft text"]}', stderr: "" },
-    });
+  test("the mod registers no tool.call or prompt.submit hook", () => {
+    // The mod is a cockpit only (decision 0020): outgoing calls and
+    // user prompts pass straight through.
+    fakeDollar();
     const on = fakeOn();
     register(on.on);
-    const { next, calls: went } = fired();
-    const out = await on.get("tool.call")($, {
-      tool: "Bash", tool_use_id: "t1", command: `mail x <<EOF\n${RENDERED}\nEOF`,
-    }, next);
-    assert.equal(went.length, 0);
-    assert.match(out.deny, /betterterms/);
-    assert.match(out.deny, /floor/);
-    assert.equal(calls.run.length, 1);
-    assert.deepEqual(calls.run[0].argv, [
-      "python3", BT, "gate", CASE_ID, "--draft", `${DIR}/draft.yaml`,
-    ]);
-  });
-
-  test("unrelated tool calls pass through untouched", async () => {
-    const files = caseFiles({ [`${DIR}/draft.yaml`]: DRAFT, [`${DIR}/gate.json`]: GATE });
-    const { $, calls } = fakeDollar({ files, dirs: caseDirs() });
-    const on = fakeOn();
-    register(on.on);
-    const { next, marker } = fired();
-    const out = await on.get("tool.call")($, { tool: "Bash", tool_use_id: "t1", command: "ls -la" }, next);
-    assert.equal(out, marker);
-    assert.equal(calls.run.length, 0);
-  });
-
-  test("writes into the case dir are bookkeeping, not sends", async () => {
-    const files = caseFiles({ [`${DIR}/draft.yaml`]: DRAFT, [`${DIR}/gate.json`]: GATE });
-    const { $, calls } = fakeDollar({ files, dirs: caseDirs() });
-    const on = fakeOn();
-    register(on.on);
-    const { next, marker } = fired();
-    // gate.json holds the rendered text, so a bookkeeping write of the
-    // verdict itself would trip the matcher without the case-dir check.
-    const out = await on.get("tool.call")($, {
-      tool: "Write", tool_use_id: "t2", file_path: `${DIR}/gate.json`, content: GATE,
-    }, next);
-    assert.equal(out, marker);
-    assert.equal(calls.run.length, 0);
-  });
-
-  test("file-path tools are never sends, even outside the case dir", async () => {
-    // Write, Edit, NotebookEdit and MultiEdit may carry the gated text
-    // to any path: the send guard lets them through untouched and
-    // never toasts "sent". A link inside the case dir pointing out
-    // makes no difference.
-    const files = caseFiles({ [`${DIR}/draft.yaml`]: DRAFT, [`${DIR}/gate.json`]: GATE });
-    const { $, calls } = fakeDollar({
-      files, dirs: caseDirs(), answer: "Send",
-      stats: { [`${DIR}/draft.yaml`]: { realPath: "/tmp/escape/draft.yaml" } },
-    });
-    const on = fakeOn();
-    register(on.on);
-    for (const [tool, extra] of [
-      ["Write", { file_path: "/tmp/outside/reply.txt", content: RENDERED }],
-      ["Edit", { file_path: "/tmp/outside/reply.txt", old_string: "x", new_string: RENDERED }],
-      ["MultiEdit", { file_path: "/tmp/outside/r.txt", edits: [{ new_string: RENDERED }] }],
-      ["NotebookEdit", { notebook_path: "/tmp/outside/r.ipynb", new_source: RENDERED }],
-    ]) {
-      const { next, marker } = fired();
-      const out = await on.get("tool.call")($, { tool, tool_use_id: `t-${tool}`, ...extra }, next);
-      assert.equal(out, marker, tool);
-    }
-    assert.equal(calls.run.length, 0);
-    assert.equal(calls.toast.every((t) => !/sent/.test(t)), true);
-  });
-
-  test("autonomy 2: a passing gate still asks the user first", async () => {
-    const files = caseFiles({ [`${DIR}/draft.yaml`]: DRAFT, [`${DIR}/gate.json`]: GATE });
-    const { $, calls } = fakeDollar({ files, dirs: caseDirs(), answer: "Send" });
-    const on = fakeOn();
-    register(on.on);
-    const { next, calls: went, marker } = fired();
-    const out = await on.get("tool.call")($, {
-      tool: "gmail.send", tool_use_id: "t3",
-      to: "v@x", subject: "Re: plan", body: RENDERED,
-    }, next);
-    assert.equal(calls.ask.length, 1);
-    assert.equal(out, marker);
-    assert.equal(went.length, 1);
-  });
-
-  test("a refused approval denies the send", async () => {
-    const files = caseFiles({ [`${DIR}/draft.yaml`]: DRAFT, [`${DIR}/gate.json`]: GATE });
-    const { $, calls } = fakeDollar({ files, dirs: caseDirs(), answer: "Hold" });
-    const on = fakeOn();
-    register(on.on);
-    const { next, calls: went } = fired();
-    const out = await on.get("tool.call")($, {
-      tool: "gmail.send", tool_use_id: "t4",
-      to: "v@x", subject: "Re: plan", body: RENDERED,
-    }, next);
-    assert.equal(went.length, 0);
-    assert.match(out.deny, /betterterms/);
-    assert.equal(calls.ask.length, 1);
-  });
-
-  test("a send whose arg wraps the gated text is denied", async () => {
-    // The draft may only travel verbatim as its own argument: a shell
-    // command is never a send, and a body with the text embedded goes
-    // nowhere either.
-    const files = caseFiles({ [`${DIR}/draft.yaml`]: DRAFT, [`${DIR}/gate.json`]: GATE });
-    const { $, calls } = fakeDollar({ files, dirs: caseDirs(), answer: "Send" });
-    const on = fakeOn();
-    register(on.on);
-    const { next, calls: went } = fired();
-    const out = await on.get("tool.call")($, {
-      tool: "Bash", tool_use_id: "t4b", command: `mail v@x <<EOF\n${RENDERED}\nEOF`,
-    }, next);
-    assert.equal(went.length, 0);
-    assert.match(out.deny, /send tool/);
-    assert.equal(calls.ask.length, 0);
-    const wrapped = await on.get("tool.call")($, {
-      tool: "gmail.send", tool_use_id: "t4c", body: `${RENDERED} -- and a word more`,
-    }, fired().next);
-    assert.match(wrapped.deny, /whole argument/);
-  });
-
-  test("needs_approval is held for the pane, never asked inline", async () => {
-    const cancelDraft = DRAFT.replace("action: send", "action: cancel");
-    const aut4 = BRIEF.replace("autonomy: 2", "autonomy: 4");
-    const files = caseFiles({
-      [`${DIR}/draft.yaml`]: cancelDraft,
-      [`${DIR}/brief.yaml`]: aut4,
-      [`${DIR}/gate.json`]: GATE_NEEDS_APPROVAL,
-    });
-    const hash = "ab12cd34".padEnd(64, "0");
-    const { $, calls, state } = fakeDollar({
-      files, dirs: caseDirs(), answer: "Send",
-      gate: {
-        result: "needs_approval",
-        reasons: ["action 'cancel' requires --approved"],
-        rendered: RENDERED, hash,
-      },
-    });
-    const on = fakeOn();
-    register(on.on);
-    const { next, calls: went } = fired();
-    const out = await on.get("tool.call")($, {
-      tool: "gmail.send", tool_use_id: "t5",
-      to: "v@x", subject: "Re: plan", body: RENDERED,
-    }, next);
-    assert.equal(went.length, 0);
-    assert.equal(
-      out.deny,
-      `betterterms: held for your approval in the BetterTerms pane (draft ab12cd34).`,
-    );
-    // The old inline ask is gone, and nothing entered session state.
-    assert.equal(calls.ask.length, 0);
-    assert.equal(state.size, 0);
-    assert.equal(calls.run.length, 1);
-    assert.equal(calls.run[0].argv.includes("--approved"), false);
+    assert.equal(on.hooks.some((h) => h.event === "tool.call"), false);
+    assert.equal(on.hooks.some((h) => h.event === "prompt.submit"), false);
   });
 
   test("session.start registers the command, opens the pane, starts the poll", async () => {

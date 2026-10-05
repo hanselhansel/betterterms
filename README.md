@@ -56,8 +56,8 @@ targets; each pick is its own case. The agent researches each vendor's
 policies and current promotions, builds a plan, and drafts messages in your
 voice. Drafts the gate holds wait as files; you approve the exact rendered
 text by keypress in the mod's Approvals tab or a typed `bt approve`, and
-the hash of that text binds the approval to one send. The ledger records
-what you saved.
+the hash of that text binds the approval to one `gate --approved` run. The
+ledger records what you saved.
 
 **Negotiate a job offer (Coach).** Run `/betterterms:salary`. Share the offer,
 the deadline, and your priorities, and set your walk-away number the same
@@ -93,15 +93,15 @@ explicit yes.
   placeholders the gate renders itself.
 
 The gate is a safety net, not a sandbox. The default autonomy asks before
-every send. One honest limit: outside the mod the agent runs as your
-user, so nothing technical stops it from reading the walk-away file or
-writing an approval marker if it tries. The skills instruct it never to,
+every send. One honest limit: the agent runs as your user, so nothing
+technical stops it from reading the walk-away file or writing an approval
+marker if it tries (decision 0019). The skills instruct it never to,
 the gate blocks any draft that states the walk-away, and of the typed
 `bt` commands only `bt floor` is kept from the model where the prompt
 hook runs; `bt approve`, `bt reject` and `bt terms` are handled first,
-then passed through with a note. In
-the mod, approval comes only from a pane press or a `bt approve` you
-type yourself. Full detail:
+then passed through with a note. Approvals in every mode are enforced by
+the gate's hash-bound one-use `--approved` marker: a pane press in the
+mod or a `bt approve` you type writes it. Full detail:
 [docs/guides/safety-model.md](docs/guides/safety-model.md).
 
 ## Privacy
@@ -117,8 +117,10 @@ details.
 (`/plugin install betterterms-mod@betterterms`). It adds a cockpit pane
 (Cases, Approvals, Savings tabs), a terms editor, a band over the prompt
 counting held drafts, one-line gate rows, and toasts on new counterparty
-replies. It reads only your case files and ledger. The core kit never
-depends on it.
+replies. It reads only your case files and ledger, and never inspects
+outgoing tool calls or prompts: approving a held draft writes the
+hash-bound marker and tells the agent to run `bt.py gate --approved`
+once. The core kit never depends on it.
 
 Where the mod cannot draw, the same surfaces come through two fallbacks:
 in sessions that can post interactive widgets (Projects cloud threads)

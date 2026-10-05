@@ -7,10 +7,15 @@ but nothing installs it until you ask for it:
 claude plugin install betterterms-mod@betterterms
 ```
 
-It assumes the core `betterterms` plugin is installed too: the pre-send
-guard shells out to `betterterms-guardrails/scripts/bt.py`, resolved as
-a sibling plugin dir first and as the repo `skills/` dir when the mod
+It assumes the core `betterterms` plugin is installed too: the cockpit
+shells out to `betterterms-guardrails/scripts/bt.py`, resolved as a
+sibling plugin dir first and as the repo `skills/` dir when the mod
 runs in place from the repository.
+
+The mod is a cockpit only (decision 0020): it registers no `tool.call`
+or `prompt.submit` hook and never inspects outgoing tool calls or
+prompts. Approval enforcement lives in `bt.py` itself: the gate's
+hash-bound one-use `--approved` marker, in every mode.
 
 ## What it does
 
@@ -34,51 +39,29 @@ runs in place from the repository.
   the poll; mixed currencies list each total separately, and one-time
   savings trail as `· $<n> once`.
 - **Toasts**: `New reply in <case>.` when `thread.md` gains an inbound
-  entry, `draft ... sent` when the guard lets a send through, and
-  `draft ... blocked` when the gate refuses. Polled every 3 s.
+  entry. Polled every 3 s.
 - **Gate rows**: a `bt.py gate` tool row in the transcript is redrawn
   as `✓ Gate pass`, `✗ Gate block: <reason>` or `● Held for you`.
-- **Pre-send guard**: a `tool.call` hook. When a call's arguments carry
-  an open case's last `gate.json` `rendered` text, the mod runs
-  `python3 <core plugin>/skills/betterterms-guardrails/scripts/bt.py gate`
-  and enforces the verdict: `block` or a gate error denies the call,
-  `pass` follows autonomy (1 denies, 2 asks, 3 and 4 allow), and
-  `needs_approval` denies to the pane with
-  `held for your approval in the BetterTerms pane (draft <hash8>)`.
-  A thrown hook denies too; nothing fails open.
 
 ## The approval flow
 
 `needs_approval` means the draft sits in `cases/<id>/held/<hash>.yaml`
-and only a press can move it. The guard never asks inline and never
-records anything for the agent's own call. The flow is:
+waiting for you. The Approve press (`a` or click) does two things:
 
-1. The Approve press runs `bt.py held approve <case> <hash8>` through
-   `$.process.run`, which writes `held/<hash>.approved` on disk and
-   returns the full hash.
-2. The press records that full hash under `$.state` key
-   `betterterms-mod/approvals` (session only, never a file the agent
-   can write) and submits a prompt asking the agent to send the same
-   text.
-3. The resend re-runs the gate, gets `needs_approval` again, finds the
-   hash in `$.state`, consumes it, and re-gates once with
-   `--approved`. If an agent-side `gate --approved` already spent the
-   marker, the mod re-arms it first so the send cannot deadlock. If
-   the re-gate does not spend the marker, the mod removes it again
-   with `bt.py held disarm`. The `$.state` entry is spent on read and
-   the marker on use, so a second identical send holds again. A typed
-   `bt approve` works too: the mod's own `prompt.submit` hook records
-   it in `$.state` only when the typed hash8 prefixes the case's
-   current `gate.json` hash; a stale hash is refused with a toast and
-   records nothing. A
-   `.approved` marker on disk never counts by itself; only `$.state`
-   authorizes the send.
-4. Different rendered text hashes to a different value, so an edited
-   draft must re-pass the gate and be re-approved. `bt.py held
-   approve` itself refuses a hash that is not the case's current
-   `gate.json` hash, so the Approve press, the typed `bt approve`,
-   and a bare CLI call all share one answer: an old card or a stale
-   widget can never approve the new text.
+1. It runs `bt.py held approve <case> <hash8>` through
+   `$.process.run`, which writes `held/<hash>.approved`, the marker
+   bound to the SHA-256 of the send tuple. `held approve` refuses a
+   hash that is not the case's current `gate.json` hash, so a stale
+   card can never approve the new text.
+2. It submits a prompt telling the agent to run `bt.py gate <case>
+   --approved` exactly once and send the returned rendered text
+   verbatim as its own argument, nothing added.
+
+The gate spends the marker atomically on that run: a second
+`--approved` call holds the draft again, and different rendered text
+hashes differently, so an edited draft must re-pass the gate and be
+re-approved. Consent is the marker alone; the mod records nothing in
+`$.state` for approvals.
 
 Reject runs `bt.py held reject <case> <hash8>`, which drops the held
 draft and appends `## rejected <time> <hash>` to `thread.md`. The mod
@@ -99,58 +82,15 @@ the approval cards, `sources/` listing for the researched stage, and
 gate.
 
 The writes: an Edit save rewrites `draft.yaml`, and the `held`
-approve/reject/drop/disarm subprocesses maintain `held/` and
-`thread.md` through `bt.py`. Approval state lives in `$.state` for the
-session and inbound
-baselines in module memory. The only other filesystem touch is a
-`stat` resolve on a tool call's own `file_path` when one is present,
-to tell a bookkeeping write inside a case dir apart from a send.
+approve/reject/drop subprocesses maintain `held/` and `thread.md`
+through `bt.py`. Inbound baselines live in module memory; `$.state`
+holds only the pane's tab and selected case.
 
 The scan caches each case's parsed form on a fingerprint of its files
 (inode, mtime and size; held/ and sources/ on entry names), and UI
 renders may reuse a snapshot for 250 ms so a
 drag or redraw storm stats the tree once. A case whose held list
-could not run is never cached. The pre-send guard never
-uses the burst: it stats fresh and re-runs the gate anyway.
-
-## What "send" means
-
-There is no dedicated send tool; the mod treats a call as a send from
-an open case when a normalized copy of the `rendered` text in the
-case's `gate.json` appears inside one of its string arguments (for
-renders under 24 chars the call must also name the case id). A send
-then passes only when the gate is re-run on the draft on disk and the
-call's arguments satisfy a default-deny exact key allowlist (each key
-normalizes by lowering case and stripping `_` and `-`):
-
-- exactly one string leaf, under any key, equals the freshly rendered
-  text (normalized); it is the only content the call may carry;
-- an address key (`to`, `cc`, `bcc`, `recipient`, `recipients`,
-  `email`) takes whitespace-free strings or an array of them;
-- an id key (`channel`, `channelid`, `threadts`, `threadid`,
-  `messageid`, `replythreadid`, `replytomessageid`, `inreplyto`,
-  `references`, `conversationid`, `chatid`, `draftid`) takes one
-  whitespace-free string or a number;
-- a `subject` or `title` is empty, or `Re: ` plus text with no
-  digits, no spelled-out number words (one through twenty, the tens
-  thirty through ninety, hundred, thousand, million, `k`), and no
-  word starting with accept, agree, deal, sign, cancel, pay, offer,
-  confirm or yes; at most 80 characters;
-- every other key denies, nested object keys included, and so does
-  any boolean or null under a non-allowlisted key. Denials name the
-  offending key.
-
-Extra message body is denied, and an edited draft is denied until it
-is re-gated. `Bash` is never a send however it carries the text. The
-file-path tools (`Write`, `Edit`, `NotebookEdit`, `MultiEdit`) are
-never sends either: they pass through untouched, even when the content
-equals the gated text, and never toast "sent". It covers MCP tool
-arguments and agent prompts alike. Writes whose target resolves inside
-the case dir (`draft.yaml`, `inbound.yaml`, `gate.json`, `thread.md`
-bookkeeping) are excluded for the other tools. Known holes, by design at v1: a send that
-reads the rendered text indirectly (`cat gate.json | mail ...`)
-carries no text to match, and a paraphrased render is not the render.
-The guard protects the normal flow; it is not a sandbox.
+could not run is never cached.
 
 ## The mod API this relies on
 
@@ -162,24 +102,18 @@ marked early access and is version-specific):
   `"../register.js"`.
 - A hooks module exports `register(on)`; `on(event, matcher?, hook)`
   with hooks `($, e, next)`. `next(e)` defers to other plugins and the
-  engine's own behavior. `on(...).catch(fn)` runs when the hook threw;
-  the send guard's catch denies any call that still looks like a send.
-- `tool.call` hooks may return `{ deny: reason }` to refuse the call,
-  which is how the pre-send guard blocks. This is the mods-side answer
-  to the classic `PreToolUse` shape.
+  engine's own behavior.
 - `ui.render` hooks match `{ component: "AbovePrompt" }`,
   `{ component: "Pane", requestId }` and `{ component: "ToolUse" }`.
   Elements come from `$.ui.resolve(e)` (`Box`, `Text`, `Button`,
   `Input`, ...) and are built with the ambient `h(tag, props,
   ...children)` factory (JSX compiles to it).
 - `$.ui.open({ id, title })` mounts a pane; `$.ui.toast(text)` shows a
-  toast; `$.ui.ask(question, { options, header })` resolves to the
-  chosen label; `$.ui.notice(tool_use_id, text)` annotates an open
-  dialog; `$.ui.status(text)` sets the status line;
+  toast; `$.ui.status(text)` sets the status line;
   `$.ui.invalidate("ui.render")` redraws.
 - `$.state.get|set(ref)` holds session values named in
-  `types/index.d.ts`; `$.prompt.submit({ text })` queues the resend
-  after a press.
+  `types/index.d.ts`; `$.prompt.submit({ text })` queues the
+  gate instruction after an Approve press.
 - `$.fs.read|list|stat|exists|write`, `$.process.run(argv, { env,
   timeoutMs })` (argv vector, no shell), `$.env.get(name)` (the names
   are recorded by validation), `$.clock.every(ms, fn)` (returns a

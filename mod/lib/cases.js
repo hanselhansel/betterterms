@@ -14,16 +14,9 @@ export {
 };
 
 export const STAGES = ["found", "researched", "exchange", "waiting", "closed"];
-export const SEND_MIN_CHARS = 24;
-// Gate results that leave a draft sendable (pending autonomy and the
-// user's yes). The band counts these; block and error do not.
+// Gate results that leave a draft sendable pending the user's yes.
+// The band counts these; block and error do not.
 export const GATE_SENDABLE = new Set(["pass", "needs_approval"]);
-const AUTONOMY_DEFAULT = { act: 2, coach: 1 };
-
-function numOr(v, dflt) {
-  const n = Number(v);
-  return Number.isFinite(n) ? n : dflt;
-}
 
 // The last gate verdict bt.py wrote into the case folder as gate.json:
 // {result, reasons, rendered, hash?}, or null when absent or malformed.
@@ -53,7 +46,7 @@ export function parseThreadAll(text) {
   return parseThread(clean);
 }
 
-// One case's display row and send-detection inputs.
+// One case's display row.
 // raw: { id, briefText, threadText, draftText, gateText, planText,
 //        held, draftMtimeMs, gateMtimeMs, threadMtimeMs, sourceCount,
 //        closed }
@@ -63,7 +56,6 @@ export function deriveCase(raw) {
   const gate = parseGate(raw.gateText);
   const entries = parseThreadAll(raw.threadText);
   const mode = brief.mode === "coach" ? "coach" : "act";
-  const autonomy = numOr(brief.autonomy, AUTONOMY_DEFAULT[mode] ?? 2);
   const action = draft?.action != null ? String(draft.action) : null;
   const last = entries[entries.length - 1];
   const draftUnsent = draft != null && (raw.draftMtimeMs ?? 0) > (raw.threadMtimeMs ?? 0);
@@ -83,7 +75,6 @@ export function deriveCase(raw) {
     id: raw.id,
     pack: String(brief.pack ?? raw.id.replace(/-\d{8}-[0-9a-f]{4}$/, "")),
     mode,
-    autonomy,
     stage,
     action,
     draft,
@@ -122,48 +113,10 @@ export function pendingCount(cases) {
   return cases.filter((c) => c.pending).length;
 }
 
-// The open case whose last rendered gate text the call carries, else
-// null. A closed case's leftover gate.json can never match a send.
-export function findSend(strings, cases) {
-  for (const c of cases) {
-    if (c.stage === "closed") continue;
-    const d = normalize(c.rendered ?? "");
-    if (d === "") continue;
-    for (const s of strings) {
-      const p = normalize(s);
-      if (!p.includes(d)) continue;
-      if (d.length >= SEND_MIN_CHARS || p.includes(c.id)) return c;
-    }
-  }
-  return null;
-}
-
 export function gateArgv(btPath, dir, id, opts = {}) {
   const argv = ["python3", btPath, "gate", id, "--draft", `${dir}/draft.yaml`];
   if (opts.inbound) argv.push("--inbound", `${dir}/inbound.yaml`);
-  if (opts.approved) argv.push("--approved");
   return argv;
-}
-
-// gate: {result, reasons, hash?}. Returns {kind: deny|ask|allow|held}.
-// needs_approval never asks inline: the draft is already held on disk
-// (held/<hash>.yaml) and the only way through is the pane's Approve,
-// which the send guard recognizes by the hash in $.state.
-export function decideSend(gate, c) {
-  if (!gate || (gate.result !== "pass" && gate.result !== "needs_approval")) {
-    const why = gate?.reasons?.length ? gate.reasons.join("; ") : "the gate could not run";
-    return { kind: "deny", reason: why };
-  }
-  if (gate.result === "needs_approval") {
-    return { kind: "held", hash: typeof gate.hash === "string" ? gate.hash : null };
-  }
-  if (c.autonomy <= 1) {
-    return { kind: "deny", reason: `autonomy ${c.autonomy}: the user sends, the agent drafts` };
-  }
-  if (c.autonomy === 2) {
-    return { kind: "ask", reapprove: false, question: `Send the drafted message for ${c.id}?` };
-  }
-  return { kind: "allow" };
 }
 
 // The AbovePrompt band's one line: fresh replies first, then how many
@@ -230,123 +183,6 @@ export function offerMarks(planText) {
   const offer = theirs.length > 1 ? theirs[theirs.length - 1] : null;
   if (start === null && offer === null && target === null) return null;
   return { start, offer, target, currency: String(plan.currency ?? "USD") };
-}
-
-// The tool.call event minus its envelope fields: what is left is the
-// tool's own arguments, which is what collectStrings should search.
-export function callArgs(e) {
-  const { tool, tool_use_id, consent, agentId, ...args } = e ?? {};
-  return args;
-}
-
-// The send-shape allowlist, default deny. A key normalizes by
-// lowering case and stripping "_" and "-"; the three sets below name
-// every key a send call may carry besides the one leaf holding the
-// gated text itself, which is allowed under any key.
-//
-// Address keys take whitespace-free strings or arrays of them. Id
-// keys take a single whitespace-free string or number. subject/title
-// are empty or "Re: " plus a clean header line: at most TITLE_MAX
-// characters, no digits, no spelled-out number words, and no word
-// starting with a commitment stem (accept, agree, deal, sign,
-// cancel, pay, offer, confirm, yes). Every other key denies, nested
-// or not, as does any boolean or null under a non-allowlisted key,
-// so a hidden amount or assent flag can never ride a send.
-const ADDR_KEYS = new Set([
-  "to", "cc", "bcc", "recipient", "recipients", "email",
-]);
-const ID_KEYS = new Set([
-  "channel", "channelid", "threadts", "threadid", "messageid",
-  "replythreadid", "replytomessageid", "inreplyto", "references",
-  "conversationid", "chatid", "draftid",
-]);
-const TITLE_KEYS = new Set(["subject", "title"]);
-const TITLE_MAX = 80;
-const NUM_WORDS =
-  /\b(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand|million|k)\b/i;
-const YES_WORDS =
-  /\b(?:accept|agree|deal|sign|cancel|pay|offer|confirm|yes)/i;
-
-const normKey = (k) => String(k).toLowerCase().replace(/[_-]/g, "");
-const wsFree = (v) => typeof v === "string" && !/\s/.test(v);
-
-// {key, value, inArray} for every scalar leaf in the call arguments:
-// strings, numbers, booleans and nulls all count; objects and arrays
-// are walked, so a nested key outside the allowlist still denies.
-export function collectLeaves(value, key = "", inArray = false, out = []) {
-  if (value !== null && typeof value === "object") {
-    if (Array.isArray(value)) {
-      for (const v of value) collectLeaves(v, key, true, out);
-    } else {
-      for (const [k, v] of Object.entries(value)) {
-        collectLeaves(v, k, false, out);
-      }
-    }
-  } else {
-    out.push({ key, value, inArray });
-  }
-  return out;
-}
-
-function titleFieldError(key, leaf) {
-  const v = leaf.value;
-  if (v === null || v === "") return null;
-  const ok = !leaf.inArray && typeof v === "string"
-    && v.length <= TITLE_MAX && v.startsWith("Re: ")
-    && !/\d/.test(v) && !NUM_WORDS.test(v) && !YES_WORDS.test(v);
-  return ok ? null : `field '${key}' takes an empty value or ` +
-    `"Re: " plus a clean header line`;
-}
-
-function addrFieldError(key, leaf) {
-  return wsFree(leaf.value) ? null
-    : `argument '${key}' takes whitespace-free addresses`;
-}
-
-function idFieldError(key, leaf) {
-  const ok = !leaf.inArray
-    && (wsFree(leaf.value) || typeof leaf.value === "number");
-  return ok ? null
-    : `argument '${key}' takes a whitespace-free id`;
-}
-
-// null when the call is a clean send of the gated text: exactly one
-// string leaf, under any key, equals the freshly rendered message
-// (normalized), and every other leaf sits under an allowlisted key
-// with a value of the kind that key takes. A Bash call is never a
-// send; anything else is a send the gate never saw and the user
-// never approved.
-export function sendShapeError(e, rendered) {
-  const r = normalize(rendered);
-  if (r === "") return "the gate produced no text to send";
-  if (e?.tool === "Bash") {
-    return "a shell command is not a send; use a send tool with the " +
-      "text as its own argument or hand the text to the user";
-  }
-  let exact = 0;
-  for (const leaf of collectLeaves(callArgs(e))) {
-    if (typeof leaf.value === "string") {
-      const v = normalize(leaf.value);
-      if (v === r) {
-        exact += 1;
-        continue;
-      }
-      if (v.includes(r)) {
-        return "the gated text must be the whole argument, not part of a longer one";
-      }
-    }
-    const key = normKey(leaf.key);
-    const rule = TITLE_KEYS.has(key) ? titleFieldError
-      : ADDR_KEYS.has(key) ? addrFieldError
-      : ID_KEYS.has(key) ? idFieldError : null;
-    const err = rule === null
-      ? `argument '${leaf.key}' is not an allowed send field`
-      : rule(leaf.key, leaf);
-    if (err !== null) return err;
-  }
-  if (exact === 0) return "no argument carries the gated text verbatim";
-  if (exact > 1) return "the gated text fills more than one argument";
-  return null;
 }
 
 export function toastText(id, n) {

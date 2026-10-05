@@ -13,7 +13,7 @@ import {
   fakeDollar, fakeOn, fired, heldHash, btRoute,
 } from "./testkit.js";
 import {
-  ELS, REC, HASH, HASH8,
+  ELS, REC, HASH, HASH8, GATE_HELD_JSON,
   heldFiles, heldDirs, heldOpt, approvalsCard,
   findNode, byKey,
 } from "./heldkit.js";
@@ -32,12 +32,34 @@ describe("approve press", () => {
     assert.deepEqual(approveRun.argv, ["python3", BT, "held", "approve", CASE_ID, HASH8]);
   });
 
-  test("approval stores full hash and submits prompt", async () => {
+  test("approve writes the marker and submits the gate prompt", async () => {
     const { $, calls, state } = held$();
     await approvePress($);
-    assert.equal(state.get("approvals")?.[HASH], true);
+    // No $.state approvals: the marker file held approve writes is
+    // the only consent record, and the gate spends it.
+    assert.equal(state.get("approvals"), undefined);
     assert.equal(calls.submit.length, 1);
     assert.match(calls.submit[0], new RegExp(`approved draft ${HASH8} for ${CASE_ID}`));
+    assert.match(calls.submit[0], /bt\.py gate \S+ --approved/);
+    assert.match(calls.submit[0], /verbatim as its own argument/);
+  });
+
+  test("the marker the press armed spends exactly once", async () => {
+    // The press runs `held approve`, which writes the marker; the
+    // agent's own `gate --approved` run then spends it, and a second
+    // run holds the draft again. That hash-bound one use is the send
+    // enforcement in every mode, mod included.
+    const files = heldFiles();
+    const route = btRoute(
+      { held: heldOpt(), gate: JSON.parse(GATE_HELD_JSON) }, files);
+    const { $ } = fakeDollar({ files, dirs: heldDirs(), held: heldOpt(), run: route });
+    await approvePress($);
+    const gate = ["python3", BT, "gate", CASE_ID, "--draft", `${DIR}/draft.yaml`, "--approved"];
+    const first = route(gate);
+    assert.equal(first.exitCode, 0, first.stdout);
+    assert.match(first.stdout, /"result":\s*"pass"/);
+    const second = route(gate);
+    assert.notEqual(second.exitCode, 0, "the marker is one use");
   });
 
   test("approval failure does not submit", async () => {
@@ -55,6 +77,16 @@ describe("approve press", () => {
     assert.equal(calls.submit.length, 0);
     assert.equal(state.size, 0);
     assert.match(calls.toast.join("\n"), /approve failed/);
+  });
+
+  test("the mod registers no tool.call or prompt.submit hook", () => {
+    // The send check left the release (decision 0020): outgoing tool
+    // calls and prompts pass through uninspected. The gate's
+    // --approved marker is the only send enforcement.
+    const on = fakeOn();
+    register(on.on);
+    assert.equal(on.hooks.some((h) => h.event === "tool.call"), false);
+    assert.equal(on.hooks.some((h) => h.event === "prompt.submit"), false);
   });
 
   test("reject runs held reject with hash8", async () => {
@@ -171,8 +203,11 @@ describe("edit flow", () => {
         (r) => r.argv.join(" ") === `python3 ${BT} held approve ${CASE_ID} ${NEW8}`),
       true,
     );
-    assert.equal(state.get("approvals")?.[NEW_HASH], true);
-    assert.equal(state.get("approvals")?.[HASH], undefined);
+    // The marker file is the consent record; no $.state approvals.
+    assert.equal(`${DIR}/held/${NEW_HASH}.approved` in files, true);
+    assert.equal(`${DIR}/held/${HASH}.approved` in files, false);
+    assert.equal(state.get("approvals"), undefined);
+    assert.equal(calls.submit.length, 1);
   });
 });
 

@@ -5,8 +5,8 @@
 // node cannot resolve `claude-code/testing`.
 //
 // The kit loads this plugin itself. `on` answers the op events the mod
-// calls: env, fs, state, process.run (bt.py), prompt.submit, the ui
-// surface calls and the real tool.call beneath the guard.
+// calls: env, fs, state, process.run (bt.py), prompt.submit and the ui
+// surface calls; tool.call answers as the real call underneath.
 
 export const ID = 'bills-20261003-a1b2';
 export const DIR = `/bt/cases/${ID}`;
@@ -54,7 +54,6 @@ export interface Wired {
   gateText: () => string;
   approvedText: () => string;
   openPlaced: boolean;
-  throwGate?: boolean;
 }
 
 export function fixtureFiles(extra: Files = {}): Files {
@@ -110,79 +109,7 @@ export function wire(on: OpHook, w: Wired) {
     w.state.set(k, { value: e.value, version });
     return { value: { isSet: true, version } };
   });
-  on('process.run', (_$: never, e: { argv: string[] }) => {
-    if (w.throwGate) return { deny: 'spawn blew up' };
-    const argv = e.argv.map(String);
-    w.runs.push(argv);
-    const heldDir = `${DIR}/held`;
-    if (argv[2] === 'held' && argv[3] === 'list') {
-      const held = w.held.map((r) => ({
-        ...r,
-        approved: `${heldDir}/${r.hash}.approved` in w.files,
-      }));
-      return { value: { exitCode: 0, stdout: JSON.stringify({ held }), stderr: '' } };
-    }
-    if (argv[2] === 'held' && argv[3] === 'disarm') {
-      // The real `held disarm` resolves over records and markers and
-      // unlinks only the .approved file.
-      const h8 = String(argv[5] ?? '');
-      const hits = new Set(w.held.filter((r) => r.hash.startsWith(h8)).map((r) => r.hash));
-      for (const f of Object.keys(w.files)) {
-        const m = new RegExp(`${heldDir}/([0-9a-f]{64})\\.approved$`).exec(f);
-        if (m && m[1].startsWith(h8)) hits.add(m[1]);
-      }
-      if (hits.size !== 1)
-        return { value: { exitCode: 2, stdout: `{"error":"no held draft matching ${h8}"}`, stderr: '' } };
-      const h = [...hits][0];
-      delete w.files[`${heldDir}/${h}.approved`];
-      w.dirs[heldDir] = (w.dirs[heldDir] as { name: string }[])
-        .filter((e) => e.name !== `${h}.approved`);
-      return { value: { exitCode: 0, stdout: `{"ok":true,"hash":"${h}"}`, stderr: '' } };
-    }
-    if (argv[2] === 'held' && (argv[3] === 'approve' || argv[3] === 'reject' || argv[3] === 'drop')) {
-      const h8 = String(argv[5] ?? '');
-      const hits = w.held.filter((r) => r.hash.startsWith(h8));
-      if (hits.length !== 1)
-        return { value: { exitCode: 2, stdout: `{"error":"no held draft matching ${h8}"}`, stderr: '' } };
-      const h = hits[0].hash;
-      if (argv[3] === 'approve') {
-        w.files[`${heldDir}/${h}.approved`] = `hash: ${h}\n`;
-        (w.dirs[heldDir] as unknown[]).push({ name: `${h}.approved`, kind: 'file', isLink: false });
-      } else {
-        // reject and drop both remove the record and marker; drop
-        // writes no thread.md marker (this fake does not model one).
-        w.held = w.held.filter((r) => r.hash !== h);
-        delete w.files[`${heldDir}/${h}.yaml`];
-        delete w.files[`${heldDir}/${h}.approved`];
-        w.dirs[heldDir] = (w.dirs[heldDir] as { name: string }[])
-          .filter((e) => e.name !== `${h}.yaml` && e.name !== `${h}.approved`);
-      }
-      return { value: { exitCode: 0, stdout: `{"ok":true,"hash":"${h}"}`, stderr: '' } };
-    }
-    if (argv[2] === 'gate' && argv.includes('--approved')) {
-      // Like the real CLI: --approved passes only on a live marker,
-      // and the marker plus its record are spent on use; the held
-      // dir entry goes with them so a rescan sees the spend.
-      let hash: string | undefined;
-      try { hash = JSON.parse(w.gateText()).hash; } catch { hash = undefined; }
-      const marker = hash ? `${heldDir}/${hash}.approved` : '';
-      if (hash !== undefined && marker in w.files) {
-        delete w.files[marker];
-        delete w.files[`${heldDir}/${hash}.yaml`];
-        w.held = w.held.filter((r) => r.hash !== hash);
-        w.dirs[heldDir] = (w.dirs[heldDir] as { name: string }[])
-          .filter((e) => e.name !== `${hash}.yaml` && e.name !== `${hash}.approved`);
-        const pass = w.approvedText();
-        w.files[`${DIR}/gate.json`] = pass;
-        return { value: { exitCode: 0, stdout: pass, stderr: '' } };
-      }
-    }
-    const stdout = w.gateText();
-    const code = stdout.includes('"needs_approval"') ? 3 : stdout.includes('"block"') ? 1 : 0;
-    // The real gate writes its verdict to gate.json on every call.
-    if (argv[2] === 'gate') w.files[`${DIR}/gate.json`] = stdout;
-    return { value: { exitCode: code, stdout, stderr: '' } };
-  });
+  on('process.run', (_$: never, e: { argv: string[] }) => processRun(w, e.argv));
   on('prompt.submit', (_$: never, e: { text: string }) => {
     w.prompts.push(e.text);
     return { text: e.text };
@@ -199,6 +126,64 @@ export function wire(on: OpHook, w: Wired) {
   on('clock.every', () => ({ value: undefined }));
   on('session.start', (_$: never, e: { cwd: string }) => ({ cwd: e.cwd }));
   on('tool.call', (_$: never, e: { tool: string }) => ({ result: { ran: e.tool } }));
+}
+
+// The fake bt.py, exported so a test can play the agent's own
+// process calls (a `gate --approved` the submitted prompt asks for).
+export function processRun(w: Wired, argvIn: string[]) {
+  const argv = argvIn.map(String);
+  w.runs.push(argv);
+  const heldDir = `${DIR}/held`;
+  if (argv[2] === 'held' && argv[3] === 'list') {
+    const held = w.held.map((r) => ({
+      ...r,
+      approved: `${heldDir}/${r.hash}.approved` in w.files,
+    }));
+    return { value: { exitCode: 0, stdout: JSON.stringify({ held }), stderr: '' } };
+  }
+  if (argv[2] === 'held' && (argv[3] === 'approve' || argv[3] === 'reject' || argv[3] === 'drop')) {
+    const h8 = String(argv[5] ?? '');
+    const hits = w.held.filter((r) => r.hash.startsWith(h8));
+    if (hits.length !== 1)
+      return { value: { exitCode: 2, stdout: `{"error":"no held draft matching ${h8}"}`, stderr: '' } };
+    const h = hits[0].hash;
+    if (argv[3] === 'approve') {
+      w.files[`${heldDir}/${h}.approved`] = `hash: ${h}\n`;
+      (w.dirs[heldDir] as unknown[]).push({ name: `${h}.approved`, kind: 'file', isLink: false });
+    } else {
+      // reject and drop both remove the record and marker; drop
+      // writes no thread.md marker (this fake does not model one).
+      w.held = w.held.filter((r) => r.hash !== h);
+      delete w.files[`${heldDir}/${h}.yaml`];
+      delete w.files[`${heldDir}/${h}.approved`];
+      w.dirs[heldDir] = (w.dirs[heldDir] as { name: string }[])
+        .filter((e) => e.name !== `${h}.yaml` && e.name !== `${h}.approved`);
+    }
+    return { value: { exitCode: 0, stdout: `{"ok":true,"hash":"${h}"}`, stderr: '' } };
+  }
+  if (argv[2] === 'gate' && argv.includes('--approved')) {
+    // Like the real CLI: --approved passes only on a live marker,
+    // and the marker plus its record are spent on use; the held
+    // dir entry goes with them so a rescan sees the spend.
+    let hash: string | undefined;
+    try { hash = JSON.parse(w.gateText()).hash; } catch { hash = undefined; }
+    const marker = hash ? `${heldDir}/${hash}.approved` : '';
+    if (hash !== undefined && marker in w.files) {
+      delete w.files[marker];
+      delete w.files[`${heldDir}/${hash}.yaml`];
+      w.held = w.held.filter((r) => r.hash !== hash);
+      w.dirs[heldDir] = (w.dirs[heldDir] as { name: string }[])
+        .filter((e) => e.name !== `${hash}.yaml` && e.name !== `${hash}.approved`);
+      const pass = w.approvedText();
+      w.files[`${DIR}/gate.json`] = pass;
+      return { value: { exitCode: 0, stdout: pass, stderr: '' } };
+    }
+  }
+  const stdout = w.gateText();
+  const code = stdout.includes('"needs_approval"') ? 3 : stdout.includes('"block"') ? 1 : 0;
+  // The real gate writes its verdict to gate.json on every call.
+  if (argv[2] === 'gate') w.files[`${DIR}/gate.json`] = stdout;
+  return { value: { exitCode: code, stdout, stderr: '' } };
 }
 
 export function fresh(over: Partial<Wired> = {}): Wired {
@@ -221,13 +206,6 @@ export function fresh(over: Partial<Wired> = {}): Wired {
     ...over,
   };
 }
-
-// The send-shape rule: the gated text verbatim as its own argument,
-// envelope fields only beside it.
-export const sendCall = () => ({
-  tool: 'gmail.send', tool_use_id: 't1',
-  to: 'v@x', subject: 'Re: plan', body: RENDERED,
-});
 
 export const approvals = (w: Wired) =>
   (w.state.get('betterterms-mod/approvals')?.value ?? {}) as Record<string, true>;

@@ -25,7 +25,7 @@ _MOD_ENTRY = {
     "source": "./mod",
     "description": (
         "Optional Claude Code mod for betterterms: case pipeline pane, "
-        "draft-approval band, reply toasts, and the pre-send gate hook."
+        "draft-approval band, and reply toasts."
     ),
 }
 

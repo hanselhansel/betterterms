@@ -19,22 +19,16 @@ describe("lib/approvals helpers", () => {
     assert.equal(A.hash8(null), null);
   });
 
-  test("heldDenyText names the pane and the hash8", () => {
-    assert.equal(
-      A.heldDenyText(HASH),
-      `betterterms: held for your approval in the BetterTerms pane (draft ${HASH8}).`,
-    );
-    assert.equal(
-      A.heldDenyText(null),
-      "betterterms: held for your approval in the BetterTerms pane.",
-    );
-  });
-
-  test("approvePromptText tells the agent to resend, not re-gate", () => {
+  test("approvePromptText sends the agent through gate --approved", () => {
+    // The press arms the marker; the prompt tells the agent to run
+    // `bt.py gate <case> --approved` once and send the rendered text
+    // it returns verbatim as its own argument (decision 0020).
     const text = A.approvePromptText(HASH, CASE_ID);
     assert.match(text, new RegExp(`approved draft ${HASH8} for ${CASE_ID}`));
+    assert.match(text, new RegExp(`bt\\.py gate ${CASE_ID} --approved`));
     assert.match(text, /verbatim as its own argument/);
-    assert.match(text, /do not run it yourself/);
+    assert.match(text, /once/);
+    assert.doesNotMatch(text, /send guard|send check/i);
   });
 
   test("statusText matches the spec line, per currency", () => {

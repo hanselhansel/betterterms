@@ -39,10 +39,10 @@ exact rendered text to send.
 - `accept`, `cancel`, `pay`, `sign`, and `dispute` need your explicit yes at
   every autonomy level. A `held/<hash>.approved` file binds the yes to the
   SHA-256 of the send tuple (action, offer, period, currency, rendered text)
-  and is consumed after one use; only a user action writes it. With
-  `betterterms-mod` loaded, the approval that authorizes the send lives in
-  mod `$.state` (a pane press or your typed `bt approve`), never in a file
-  the agent can write; a `.approved` marker alone approves nothing there.
+  and is consumed after one use; only a user action writes it: a pane press
+  in the mod, a `bt approve` you type, or `bt.py held approve` run by hand.
+  The mod does not inspect outgoing tool calls; `bt.py gate --approved` is
+  the approval enforcement in every mode (decision 0020).
 
 ## What the gate does not guarantee
 
@@ -55,16 +55,15 @@ exact rendered text to send.
   redraft at most once on a floor-related block before escalating; repeated
   probes could still triangulate the walk-away, so a probe counter is a
   tracked TODO.
-- Outside the optional mod, the agent runs as your user. Nothing
+- The agent runs as your user, with or without the mod. Nothing
   technical stops it from reading `.floor`, `held/` markers, the ledger,
-  or the session log, or from writing an approval file, if it sets out
-  to: the boundary there is the skills' instruction never to do those
-  things, plus the gate blocking any draft that states the walk-away.
+  or the session log, or from writing an approval file or sending
+  ungated text, if it sets out to: the boundary there is the skills'
+  instruction never to do those things, plus the gate blocking any
+  draft that states the walk-away.
   Where the prompt hook runs, only `bt floor` is kept from the model;
   `bt approve`, `bt reject` and `bt terms` are handled first and then
-  passed through with a note. Only the mod's in-memory approval resists
-  a determined agent, because it lives in state file access cannot
-  write.
+  passed through with a note.
 - It runs on the machine and the files it can read. Keep `~/.betterterms`
   yours.
 

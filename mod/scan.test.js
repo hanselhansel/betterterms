@@ -1,8 +1,6 @@
 // The stat-fingerprint scan cache (review finding 15): unchanged
 // cases are not re-read, a write invalidates exactly its case, and a
 // burst-window scan returns the snapshot without touching fs again.
-// The pre-send guard never takes the burst path: it scans fresh and
-// re-gates regardless, so a stale print can only ever deny.
 
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
@@ -61,7 +59,7 @@ describe("scan cache", () => {
     assert.equal(calls.list.length, lists);
   });
 
-  test("a non-burst scan still stats (tool.call never rides the burst)", async () => {
+  test("a non-burst scan still stats", async () => {
     const { $, calls } = fakeDollar({ files: caseFiles(), dirs: caseDirs() });
     const host = R.hostOf($);
     await S.scanCases(host, { burst: true });

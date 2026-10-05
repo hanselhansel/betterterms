@@ -6,6 +6,8 @@
 the cockpit mod, the cloud widget fallback, then verify, evals, install tests, dogfood, ship, land
 and make the repo public.
 
+CURRENT_WORKING_FILE: docs/plans/2026-10-04-betterterms-v1-release.md
+
 **Architecture:** All business rules stay in `bt.py` and `btlib/` (Python 3, stdlib plus vendored
 PyYAML). The mod (`mod/`, the opt-in `betterterms-mod` plugin) and the new settings hooks
 (`hooks/`, core plugin) call `bt.py` through a subprocess and parse its JSON. Approval is bound to
@@ -44,9 +46,9 @@ skills, so the orchestrator records `scripts/eval --dev` before and after them.
   `bt approve <case_id> <hash8>` · `bt reject <case_id> <hash8>` · `bt floor <case_id> <amount>` ·
   `bt terms <case_id> target=<amount> alternative=<amount>`
 - Amounts accept `62`, `62.50`, `$62`, `1,200`. Anything else is exit 2 with a plain message.
-- Mod limits: hook work under 10 s, no waiting on own promises inside `tool.call`, a `.catch`
-  that denies on every send guard, no arrow-key bindings, SVG only on `desktop`, `Raster` only
-  on `terminal`.
+- Mod limits: hook work under 10 s, no waiting on own promises inside hooks, no arrow-key
+  bindings, SVG only on `desktop`, `Raster` only on `terminal`. Amended by decision 0020: the
+  mod registers no `tool.call` or `prompt.submit` hook; it is a cockpit only.
 - Supported hosts after R1: Claude Code (plugin, mod), Codex (plugin), vendored `skills/`.
 
 ## Review Focus
@@ -237,26 +239,27 @@ skills, so the orchestrator records `scripts/eval --dev` before and after them.
 
 **Interfaces:**
 - Consumes: R3 `bt.py gate` (`hash`), `held list|approve|reject`.
-- Produces: `$.state` keys under `betterterms-mod`: `tab: 1|2|3`, `selected: string | null`,
-  `approvals: Record<string, true>` (full hash → approved this session). Pane id `betterterms`,
-  command `betterterms` (keeps `betterterms-cases` as an alias).
+- Produces: `$.state` keys under `betterterms-mod`: `tab: 1|2|3`, `selected: string | null`.
+  Pane id `betterterms`, command `betterterms` (keeps `betterterms-cases` as an alias).
+  (Amended by decision 0020: no `approvals` state key and no `tool.call` send check; the
+  Approve press runs `held approve` and submits the `gate --approved` instruction.)
 
 - [ ] **Step 1: Write the failing tests** (each run on `terminal` and `desktop`):
-  - `held draft shows band and badge`; `approve sends exactly once` (press `a`: `held approve`
-    runs, a prompt is submitted, the resend with the same text passes, a third send is denied);
+  - `held draft shows band and badge`; `approve writes the marker and submits the gate prompt`
+    (press `a`: `held approve` runs and the gate instruction is submitted; `gate --approved`
+    spends the marker once and a second run holds again);
   - `click and key both approve` (press by key and by element);
-  - `resend with different text denied`; `forged approval file ignored without $.state entry`;
-  - `throwing gate denies send` (`.catch`);
+  - `the mod registers no tool.call or prompt.submit hook`; `stale hash refused`;
   - `narrow terminal shows band without pane` (Review Focus 5: `columns: 120`);
   - `gate rows redrawn` (`ToolUse` for a `bt.py gate` call draws `✓ Gate pass`, `✗ Gate block:
     <reason>` or `● Held for you`);
   - `status line text` equals `bt: <n> cases · $<saved>/yr saved`.
 - [ ] **Step 2:** `claude plugin test mod` and `node --test mod` fail.
-- [ ] **Step 3:** implement per spec 6.1 to 6.3. The `tool.call` send guard on `needs_approval`
-  records nothing in `$.state`, returns `{ deny: "betterterms: held for your approval in the
-  BetterTerms pane (draft <hash8>)." }`. Approve runs `held approve`, updates `approvals`, and
-  calls `$.prompt.submit({ text: "betterterms: the user approved draft <hash8> for <case>. Send
-  it now with the same text." })`. Edit uses an `Input`; saving runs the gate again.
+- [ ] **Step 3:** implement per spec 6.1 to 6.3 (as amended by decision 0020). No `tool.call`
+  or `prompt.submit` hook registers. Approve runs `held approve` for the card's hash8 and
+  calls `$.prompt.submit` with the instruction to run `bt.py gate <case> --approved` exactly
+  once and send the returned rendered text verbatim as its own argument. Edit uses an
+  `Input`; saving runs `held drop`, rewrites `draft.yaml`, and runs the gate again.
 - [ ] **Step 4:** `claude plugin validate --strict mod`, `claude plugin test mod`,
   `node --test mod` pass; every file under 400 lines.
 - [ ] **Step 5:** commit `feat(mod): cockpit tabs and hash-bound approvals`.

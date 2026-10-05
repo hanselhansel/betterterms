@@ -313,43 +313,6 @@ def drop(case_dir, hash8):
     return h
 
 
-def disarm(case_dir, hash8):
-    """Delete only the ``.approved`` marker for ``hash8`` and return
-    the full hash. The mod runs this when a re-armed marker was not
-    spent by the re-gate, so a leftover marker never outlives its
-    press. The prefix resolves over records and markers alike, so a
-    stale marker whose record is already gone still clears; a held
-    draft with no marker is a quiet no-op."""
-    prefix = str(hash8 or "").strip().lower()
-    if not _PREFIX.fullmatch(prefix):
-        raise BtError(
-            f"expected a draft hash prefix (8+ hex), got {hash8!r}"
-        )
-    d = _dir(case_dir)
-    hits = set()
-    if d.is_dir():
-        for p in d.glob("*.yaml"):
-            if _HASH64.fullmatch(p.stem) and p.stem.startswith(prefix):
-                hits.add(p.stem)
-        for p in d.glob("*.approved"):
-            stem = p.name[: -len(".approved")]
-            if _HASH64.fullmatch(stem) and stem.startswith(prefix):
-                hits.add(stem)
-    if not hits:
-        raise BtError(f"no held draft matching {prefix}")
-    if len(hits) > 1:
-        raise BtError(
-            f"{prefix} matches {len(hits)} held drafts: "
-            + ", ".join(sorted(hits))
-        )
-    h = next(iter(hits))
-    try:
-        (d / f"{h}.approved").unlink()
-    except FileNotFoundError:
-        pass
-    return h
-
-
 def consume_approval(case_dir, draft, rendered):
     """True once when an approval exists for this exact send tuple:
     the ``.approved`` marker is claimed by renaming it to a unique

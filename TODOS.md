@@ -8,6 +8,10 @@ Deferred from the step 1 ship (owner approved 2026-10-03), to fix first in step 
 
 - **Priority:** P3. Free-text period words after a placeholder ({offer}/month, {offer} per month) with a once-period offer pass; the period should come from the structured period field (best-effort word lists, 0010 amendment).
 
+## Mod send check (deferred, decision 0020)
+
+- **Priority:** P1. Mod send check: send through a betterterms-owned send tool instead of inspecting arbitrary connector calls.
+
 ## Walk-away and approval guard (deferred, decision 0019)
 
 - **Priority:** P1. Design a walk-away and approval guard that does not parse shell (for example an OS-level separate user or keychain for the floor). The `PreToolUse` file guard shipped in step 4 was removed for 0.10.0: it blocked first-case writes, research source adds and unrelated projects, and it was bypassable because the hook and the agent run as the same OS user.

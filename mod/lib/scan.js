@@ -9,9 +9,7 @@
 // failing -- is never cached: caching an empty held list would hide
 // real drafts until some other file happened to move. A short burst
 // window lets ui.render reuse the whole snapshot so a redraw or drag
-// storm stats the tree once, not once per frame. The pre-send guard
-// asks for a fresh scan (burst is off) and the gate re-runs
-// regardless, so a stale fingerprint can only ever deny.
+// storm stats the tree once, not once per frame.
 //
 // The module holds $-free state; register.js resets it per session.
 
@@ -143,9 +141,9 @@ export async function scanCases(host, { burst = false } = {}) {
   }
   const ledger = ledgerCache.parsed;
   const root = `${home}/cases`;
-  const rootStat = await IO.statIf(host, root, { resolve: true });
+  const rootStat = await IO.statIf(host, root);
   if (rootStat?.kind !== "dir") {
-    return { home, root, resolvedRoot: null, cases: [], saved: ledger.saved, savedOnce: ledger.once };
+    return { home, root, cases: [], saved: ledger.saved, savedOnce: ledger.once };
   }
   const bt = await IO.findBt(host);
   const cases = await Promise.all(
@@ -155,7 +153,6 @@ export async function scanCases(host, { burst = false } = {}) {
   );
   const snap = {
     home, root,
-    resolvedRoot: rootStat.realPath ?? root,
     cases, saved: ledger.saved, savedOnce: ledger.once,
   };
   burstSnap = snap;

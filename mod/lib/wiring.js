@@ -22,28 +22,12 @@ const replied = new Set();
 let lastPrint = "";
 let lastStatus = "";
 
-// A write whose path resolves inside a case dir is bookkeeping, not a
-// send; the resolve stops a link under cases/ masquerading as one.
-export async function isCaseWrite(host, snap, e) {
-  const fp = e.file_path ?? e.path ?? e.notebook_path;
-  if (typeof fp !== "string" || snap.resolvedRoot == null) return false;
-  let real = (await IO.statIf(host, fp, { resolve: true }))?.realPath;
-  if (real === undefined) {
-    const idx = fp.lastIndexOf("/");
-    if (idx <= 0) return false;
-    const parent = await IO.statIf(host, fp.slice(0, idx), { resolve: true });
-    if (parent?.realPath === undefined) return false;
-    real = `${parent.realPath}${fp.slice(idx)}`;
-  }
-  return real === snap.resolvedRoot || real.startsWith(`${snap.resolvedRoot}/`);
-}
-
-async function runGate(host, snap, c, approved) {
+async function runGate(host, snap, c) {
   const dir = `${snap.root}/${c.id}`;
   const bt = await IO.findBt(host);
   if (bt === null) return { result: "error", reasons: ["bt.py not found beside the mod; install the betterterms plugin"] };
   const inbound = await host.fsExists(`${dir}/inbound.yaml`);
-  const proc = await IO.runProc(host, snap.home, C.gateArgv(bt, dir, c.id, { inbound, approved }));
+  const proc = await IO.runProc(host, snap.home, C.gateArgv(bt, dir, c.id, { inbound }));
   if (proc.error) return { result: "error", reasons: [`gate run failed: ${proc.error}`] };
   try {
     const out = JSON.parse(proc.stdout);
@@ -83,27 +67,6 @@ export async function getSelected(host) {
   return typeof value === "string" ? value : null;
 }
 
-// Record the press: the full hash goes into $.state.approvals. This is
-// the only writer; nothing else may mint an approval.
-async function markApproved(host, hash) {
-  const { value } = await host.stateApprovals().catch(() => ({ value: undefined }));
-  await host.setApprovals({ ...(value ?? {}), [hash]: true });
-}
-
-// True once per approval: the entry is removed as it is read, so a
-// second send of the same text is held again. A write that did not
-// land (version drift, a throw) is not a take: fail closed.
-async function takeApproval(host, hash) {
-  const { value, version } =
-    await host.stateApprovals().catch(() => ({ value: undefined, version: 0 }));
-  if (value == null || typeof value !== "object" || value[hash] !== true) return false;
-  const next = { ...value };
-  delete next[hash];
-  const res = await host.setApprovals(next, { ifVersion: version })
-    .catch(() => undefined);
-  return res != null && res.isSet !== false;
-}
-
 // The pane's Button/Input handlers; the gate's hash check covers a
 // stale snapshot. The terms actions delegate to ui/terms.js, which
 // owns the editor's state.
@@ -127,11 +90,11 @@ export function paneActions(host, snap) {
           `betterterms: ${A.hash8(held.hash) ?? "that hash"} is not ` +
           `the current held draft for ${c.id}`);
       }
+      // `held approve` writes the hash-bound marker (and refuses a
+      // non-current hash itself); the submitted prompt tells the
+      // agent to spend it once through `bt.py gate --approved`.
       const res = await runHeld(host, snap, "approve", c.id, held.hash);
       if (!res.ok) return host.toast(`betterterms: approve failed: ${res.error}`);
-      await markApproved(host, res.hash);
-      // A failed submit still leaves the approval recorded; the user
-      // can resend the draft by hand and the hash check carries it.
       await host.submit({ text: A.approvePromptText(res.hash, c.id) }).catch(() =>
         host.toast(`betterterms: approved ${A.hash8(res.hash)}; resend the draft`));
     },
@@ -155,7 +118,7 @@ export function paneActions(host, snap) {
         host.toast(`betterterms: could not drop the old held draft: ${drop.error}`);
       }
       await host.fsWrite(`${snap.root}/${c.id}/draft.yaml`, A.draftYaml(c, held, text)).catch(() => {});
-      await runGate(host, snap, c, false);
+      await runGate(host, snap, c);
       host.invalidate("ui.render");
     },
     openTerms: (c) => T.openTerms(host, snap, c),
@@ -167,104 +130,6 @@ export function paneActions(host, snap) {
     closeTerms: () => T.closeTerms(host),
     savingsData: () => V.savingsData(host, snap),
   };
-}
-
-// The pre-send guard. The gate re-runs on the draft as it sits on
-// disk, the call is checked against the freshly rendered text, and a
-// held draft passes only on an unused approval in $.state: a pane
-// press, or the mod's own prompt.submit hook on a typed `bt approve`.
-// A .approved marker on disk never counts by itself; the marker is
-// only what `gate --approved` spends, re-armed when the press has no
-// marker left to spend and disarmed when the re-gate does not.
-export async function gateSend(host, snap, c, e, next) {
-  const gate = await runGate(host, snap, c, false);
-  const verdict = C.decideSend(gate, c);
-  if (verdict.kind === "deny") {
-    host.toast(`betterterms: draft for ${c.id} blocked by the gate`);
-    return { deny: `betterterms gate: ${verdict.reason}` };
-  }
-  if (C.normalize(c.rendered ?? "") !== C.normalize(gate.rendered ?? "")) {
-    return { deny: "betterterms: draft.yaml changed since this text was gated; re-run the gate" };
-  }
-  const shape = C.sendShapeError(e, gate.rendered);
-  if (shape !== null) return { deny: `betterterms: ${shape}` };
-  if (verdict.kind === "held") {
-    const hash = verdict.hash;
-    if (hash === null) {
-      host.invalidate("ui.render");
-      return { deny: A.heldDenyText(null) };
-    }
-    const dir = `${snap.root}/${c.id}`;
-    const marker = `${dir}/held/${hash}.approved`;
-    if (!(await takeApproval(host, hash))) {
-      host.invalidate("ui.render");
-      return { deny: A.heldDenyText(hash) };
-    }
-    // The press proved consent; if an agent-side `gate --approved`
-    // already spent the marker, the mod re-arms it so the resend
-    // cannot deadlock on a file the agent was never meant to manage.
-    if (!(await host.fsExists(marker).catch(() => false))) {
-      const armed = await runHeld(host, snap, "approve", c.id, hash);
-      if (!armed.ok) {
-        return { deny: `betterterms: approval could not be restored: ${armed.error}` };
-      }
-    }
-    const again = await runGate(host, snap, c, true);
-    if (again.result !== "pass") {
-      // A marker the re-gate did not spend (a verdict for other text,
-      // a block) goes away again rather than waiting on disk.
-      if (await host.fsExists(marker).catch(() => false)) {
-        await runHeld(host, snap, "disarm", c.id, hash).catch(() => {});
-      }
-      return { deny: `betterterms gate: ${(again.reasons ?? []).join("; ") || "not pass after approval"}` };
-    }
-    host.notice(e.tool_use_id, "betterterms: approved, gate pass");
-    host.toast(`betterterms: draft for ${c.id} sent`);
-    return next(e);
-  }
-  if (verdict.kind === "allow") {
-    host.notice(e.tool_use_id, "betterterms: gate pass");
-    host.toast(`betterterms: draft for ${c.id} sent`);
-    return next(e);
-  }
-  const answer = await host.ask(verdict.question, { options: ["Send", "Hold"], header: "betterterms" })
-    .catch(() => null);
-  if (answer !== "Send") return { deny: "betterterms: send held; not approved" };
-  host.notice(e.tool_use_id, "betterterms: approved, gate pass");
-  return next(e);
-}
-
-// prompt.submit fires only on user prompts (the composer, or the
-// bridge when a session resumes on it). A typed `bt approve <case>
-// <hash8>` counts only when the typed prefix matches the case's
-// current gate.json hash: the draft the last gate verdict held. A
-// stale hash is refused with a toast and records nothing; the same
-// press-side rule as the pane. The settings hook writes the marker
-// on its own; the send check re-arms it when the approval arrives
-// without one. A failed observer never blocks the prompt.
-const TYPED_APPROVE =
-  /^\s*bt\s+approve\s+([a-z0-9-]+)\s+([0-9a-f]{8,64})\s*$/i;
-
-export async function promptSubmit(host, e, next) {
-  try {
-    const kind = e?.origin?.kind;
-    const m = kind === "composer" || kind === "bridge"
-      ? TYPED_APPROVE.exec(String(e?.text ?? ""))
-      : null;
-    if (m !== null) {
-      const home = await IO.homeDir(host);
-      const gate = home === null ? null : C.parseGate(
-        await IO.readIf(host, `${home}/cases/${m[1]}/gate.json`));
-      const hash = typeof gate?.hash === "string" ? gate.hash : null;
-      if (hash !== null && hash.startsWith(m[2].toLowerCase())) {
-        await markApproved(host, hash);
-      } else {
-        host.toast(
-          `betterterms: ${m[2]} is not the current held draft for ${m[1]}`);
-      }
-    }
-  } catch { /* an observer never blocks the prompt */ }
-  return next(e);
 }
 
 export async function tick(host) {

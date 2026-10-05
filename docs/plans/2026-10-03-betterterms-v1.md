@@ -226,7 +226,7 @@ Same file layout as step 6, `mode: coach`, `direction: receive`. Coach skill flo
 
 **Files:** `mod/.claude-plugin/plugin.json` (`name: betterterms-mod`), `mod/hooks/hooks.json` (`"modules": ["./register.js"]`), `mod/register.js`, `mod/lib/cases.js`, `mod/register.test.js`; marketplace gains the second plugin.
 
-- [ ] Pane: case pipeline (found, researched, in exchange, waiting, closed) with next action. Band: "N drafts waiting for approval". Toast on new inbound in `thread.md`. Pre-send hook runs `bt.py gate` and requires approval per autonomy. Reads only `$BETTERTERMS_HOME/cases` and `ledger.jsonl`.
+- [ ] Pane: case pipeline (found, researched, in exchange, waiting, closed) with next action. Band: "N drafts waiting for approval". Toast on new inbound in `thread.md`. Pre-send hook runs `bt.py gate` and requires approval per autonomy. Reads only `$BETTERTERMS_HOME/cases` and `ledger.jsonl`. (Amended by decision 0020: no pre-send hook ships; the mod is a cockpit only and `gate --approved` enforces approval.)
 - [ ] `claude plugin test mod` passes; verify. Commit.
 
 ## Step 10: Launch docs (PR 10, 0.10.0)

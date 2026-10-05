@@ -216,13 +216,15 @@ class ApproveCommandTest(HookCase):
         self.assertTrue((held_dir / f"{h}.approved").is_file())
         out = hook_json(proc)
         note = additional_context(out)
-        # The note leads with the no-mod instruction: run the gate
-        # with --approved once, then send the rendered text verbatim.
+        # The note tells the agent to run the gate with --approved
+        # once, then send the rendered text verbatim. The mod's send
+        # check is gone (decision 0020), so the same instruction
+        # applies with or without the mod loaded.
         self.assertIn("approved", note)
         self.assertIn("bt.py gate", note)
         self.assertIn("--approved", note)
         self.assertIn("verbatim", note)
-        self.assertLess(note.index("--approved"), note.index("mod"))
+        self.assertNotIn("send check", note)
 
     def test_approve_bad_hash_blocks(self):
         self.make_case()

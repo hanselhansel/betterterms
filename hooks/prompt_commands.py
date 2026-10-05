@@ -253,9 +253,8 @@ def _held(verb, case_id, hash8):
             f"betterterms: the user approved draft {short} for "
             f"{case_id}. Run `bt.py gate {case_id} --approved` once, "
             "then send the rendered text it returns verbatim as its "
-            "own argument, nothing added. With betterterms-mod "
-            "loaded an extra gate run is harmless: the mod's send "
-            "check re-arms the marker."
+            "own argument, nothing added. The marker spends once: a "
+            "second --approved run holds the draft again."
         )
     else:
         _pass(

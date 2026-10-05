@@ -1,6 +1,7 @@
 # 0019. Always-on file guard deferred: same-user enforcement does not hold
 
-Status: accepted. Date: 2026-10-05.
+Status: accepted. Amended by 0020: `bt.py held disarm` left with the
+mod send check it served. Date: 2026-10-05.
 
 ## Context
 
@@ -27,8 +28,8 @@ the agent it guards against is worse than stating the limit plainly.
 
 - The `PreToolUse` guard leaves release 0.10.0: `hooks/guard.py`, its
   `hooks.json` entry and `tests/test_guard_hook.py` are removed.
-  `hooks/prompt_commands.py` (typed `bt` commands), the session hook
-  and `bt.py held disarm` stay.
+  `hooks/prompt_commands.py` (typed `bt` commands) and the session hook
+  stay. (`bt.py held disarm` stayed then; decision 0020 removed it.)
 - Docs state the boundary plainly: outside the mod, nothing technical
   stops the agent from reading the walk-away file or writing an
   approval marker if it tries. The skills instruct it never to, the

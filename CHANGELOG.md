@@ -13,16 +13,11 @@
   `held/<hash>.approved`, are written only by a user action, and are
   consumed atomically after one send. Held records whose stored fields
   do not hash back to their filename never list.
-- `bt.py held disarm <case_id> <hash8>` removes only the `.approved`
-  marker and keeps the held draft; `betterterms-mod` runs it when a
-  marker it re-armed was not spent by the re-gate. `bt.py held drop
-  <case_id> <hash8>` removes the record and marker with no thread
-  marker; the mod runs it when an edited draft replaces the held one.
-  In mod mode an approval lives in `$.state` only, recorded by the
-  pane press or the mod's `prompt.submit` hook on a typed `bt approve`,
-  and only while the hash is the case's current `gate.json` hash: a
-  stale hash is refused plainly. A `.approved` file on disk never
-  authorizes a send by itself.
+- `bt.py held drop <case_id> <hash8>` removes the record and marker
+  with no thread marker; the mod runs it when an edited draft replaces
+  the held one. An approval pressed in the pane or typed through
+  `bt approve` applies only while the hash is the case's current
+  `gate.json` hash: a stale hash is refused plainly.
 - Typed commands through a `UserPromptSubmit` hook
   (`hooks/prompt_commands.py`): `bt approve`, `bt reject`, `bt floor`,
   `bt terms` with `target=` and `alternative=` keys in either order.
@@ -65,23 +60,11 @@
 - Root `plugin.json` gains the `skills` key. Docs describe the three
   display modes (mod, widget, chat) and what each guarantees.
 - The mod finds the core `bt.py` through the marketplace cache layout,
-  scans case folders on stat fingerprints with burst reuse, and its
-  send guard applies one strict shape by key class: exactly one
-  string argument equals the freshly re-gated rendered text; an
-  address or id key (`to`, `cc`, `bcc`, `from`, `recipient(s)`,
-  `email`, `channel`, `references`, `inreplyto`, or any key ending in
-  `id`, `ids` or `ts`) takes one whitespace-free token; a `subject`
-  or `title` takes at most 80 characters, no digits, no `<`, `&`, `%`
-  or `://`, no Unicode format characters and none of the words
-  accept, agree, deal, sign, cancel, pay or offer; a content key
-  (`attachments`, `content`, `html`, `htmlbody`, `blocks`, `body2`,
-  or any key containing `html`) denies when non-empty; every other
-  non-empty string or numeric leaf denies, a string that parses as a
-  number counting as numeric. A Bash call is never a send, and the
-  file-path tools (Write, Edit, NotebookEdit, MultiEdit) pass through
-  untouched and never toast "sent". Editing a held draft in the pane
-  drops the old record quietly before the re-gate, and an approval
-  pressed or typed for a hash that is not the case's current
+  scans case folders on stat fingerprints with burst reuse, never
+  caches a case whose held list could not run, revalidates a cached
+  `bt.py` path, and scans case folders in parallel. Editing a held
+  draft in the pane drops the old record quietly before the re-gate,
+  and an approval for a hash that is not the case's current
   `gate.json` hash refuses as stale.
 - `bt.py ledger add` accepts `--period once` for one-time savings,
   recorded as `saved_once` and totaled in `once_by_currency` /
@@ -122,6 +105,12 @@
 - The optional anonymized response-sharing line; no such code ships.
 
 ### Deferred
+- The mod's outgoing `tool.call` send check (decision 0020): removed
+  after four review rounds could not settle one rule that admits every
+  legitimate send shape and denies every forged one. The mod ships as
+  a cockpit only; approvals in every mode are enforced by the gate's
+  hash-bound one-use `--approved` marker. A betterterms-owned send
+  tool is the future boundary (P1 TODO).
 - The always-on `PreToolUse` file guard (decision 0019): removed after
   review showed it blocking first-case writes, research source adds
   and files in unrelated projects, while staying bypassable because

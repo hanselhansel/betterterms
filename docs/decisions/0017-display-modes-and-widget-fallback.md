@@ -1,7 +1,7 @@
 # 0017. Display modes and the widget fallback for cloud sessions
 
 Status: accepted (release lanes R4 and R7, spec 6.8). Amended by
-0019. Date: 2026-10-09.
+0019 and 0020. Date: 2026-10-09.
 
 ## Context
 
@@ -53,12 +53,12 @@ better path. The `PreToolUse` file guard named here was removed in
 
 ## Consequences
 
-Strength, stated plainly (spec 6.8): mod approval is the strongest,
-because a keypress lands in `$.state` the agent cannot write. Widget
-and chat approval land as an `.approved` file the agent could also
-write: it runs as the user, so nothing technical stops a forged
-marker; the skills' rule never to write one is the boundary there
-(0019 removed the `PreToolUse` guard that tried to enforce it). All
+Strength, stated plainly (spec 6.8): all three modes land the same
+`.approved` file, spent once by `gate --approved`. The agent runs as
+the user in every mode, so nothing technical stops a forged marker or
+an ungated send; the skills' rule never to write one is the boundary
+there (0019 removed the `PreToolUse` guard that tried to enforce it,
+and 0020 removed the mod's `$.state` approvals and send check). All
 modes share the guarantee that counts most: text inside an
 inbound message can never become a user message, so nothing a
 counterparty writes can approve a draft. Codex has no prompt hook in

@@ -20,8 +20,8 @@ hook, written through stdin, and blocked so the model never receives
 it. In a Projects thread that message stays visible to project
 members, so the terminal stays the better path there.
 
-State the boundary plainly: outside the mod, the agent runs as your
-user, so nothing technical stops it from reading `.floor` if it
+State the boundary plainly: the agent runs as your user, so nothing
+technical stops it from reading `.floor` if it
 tries (decision [0019](../decisions/0019-guard-deferred.md) is why the
 limit is stated, not enforced). The skills instruct it never to, and
 the gate blocks any draft that states the walk-away.
@@ -56,10 +56,8 @@ placeholders the gate renders itself: `{offer}`, `{target}`,
 Every floor-related block reports one generic reason ("outside your limits;
 escalate to the user"), so no single gate answer states the number. A
 determined agent could still probe the gate with repeated guesses until a
-block flips to a pass, which is why the skills cap gate calls per turn and
-the mod watches tool calls (decision
-[0017](../decisions/0017-display-modes-and-widget-fallback.md) states the
-limit; a probe counter is tracked in TODOS). See
+block flips to a pass, which is why the skills cap gate calls per turn (a
+probe counter is tracked in TODOS). See
 [decision 0007](../decisions/0007-gate-hardening.md) for the hardening list.
 
 ## Held drafts and hash-bound approvals
@@ -84,21 +82,21 @@ The gate accepts `--approved` only when an approval file matches the
 hash of the newly rendered text, and it consumes the file after one
 use: the marker is claimed by an atomic rename, so two racing sends
 can never share one approval. Edit the text and the old approval no
-longer matches: the send is
-denied and the draft is held again. Typing "yes" in chat approves
-nothing. `bt.py held disarm <case_id> <hash8>` removes only the
-marker: the mod runs it when a marker it re-armed was not spent by the
-re-gate, so a leftover marker never waits on disk for a later call.
+longer matches: the draft is held again. Typing "yes" in chat approves
+nothing.
 
 Held records from before tuple-bound names (the filename hashed the
 rendered text alone) still list, flagged `legacy: true`. They cannot
 be approved or spent; re-run the gate to hold the draft under the
 current hash.
 
-In mod mode the file alone never authorizes a send. Consent lives in
-the mod's `$.state`, written by the pane press or by the mod's own
-`prompt.submit` hook on your typed `bt approve`; the marker is only
-what `gate --approved` spends on the resend.
+The mod does not inspect outgoing tool calls or prompts (decision
+[0020](../decisions/0020-mod-send-check-deferred.md)). A pane press
+runs `bt.py held approve`, which writes the marker for that exact
+hash, and submits a prompt telling the agent to run `bt.py gate
+<case> --approved` once and send the returned rendered text verbatim.
+In every mode the marker is the approval the gate spends, and the
+only one.
 
 `bt reject <case_id> <hash8>` drops the held draft. `bt terms
 <case_id> target=<a> alternative=<b>` writes target and best
@@ -112,9 +110,15 @@ through with a note.
 
 | Mode | Where | What approval means |
 |---|---|---|
-| Mod | Claude Code terminal or Desktop with `betterterms-mod` | A keypress or click recorded in mod state the agent cannot write. The strongest path: no file the agent creates, and no text in a counterparty's email, can approve a draft. |
-| Widget | Projects cloud threads with a widget-posting tool | A `held/<hash>.approved` file written by the prompt hook after your typed `bt approve` (the widget button only fills the message box; you press Enter). Weaker than the mod: the agent runs as you and can write files, so nothing technical stops a forged marker; the skills' instruction never to write one is the boundary there. |
-| Chat | Codex, plain cloud sessions, `claude -p` | The same typed commands and the same approval file; with no prompt hook the agent runs `bt.py held approve` after you type `bt approve`. Same strength as the widget mode. |
+| Mod | Claude Code terminal or Desktop with `betterterms-mod` | A keypress or click runs `bt.py held approve` for the displayed hash and submits the prompt that sends the agent through `bt.py gate --approved` once. The mod is a cockpit only: it never inspects outgoing tool calls (decision 0020). |
+| Widget | Projects cloud threads with a widget-posting tool | A `held/<hash>.approved` file written by the prompt hook after your typed `bt approve` (the widget button only fills the message box; you press Enter). |
+| Chat | Codex, plain cloud sessions, `claude -p` | The same typed commands and the same approval file; with no prompt hook the agent runs `bt.py held approve` after you type `bt approve`. |
+
+All three modes share one enforcement: the gate's hash-bound one-use
+`--approved` marker. They also share one limit: the agent runs as
+your user, so nothing technical stops a forged marker or an ungated
+send if it sets out to; the skills' instruction never to is the
+boundary there (decision 0019).
 
 Every mode shares the guarantee that counts most: text inside an
 inbound message can never become a user message, so it can never
@@ -127,12 +131,11 @@ triggering body counts as you.
   `bt.py gate`. An agent acting outside that path is outside its reach. The
   skills route every send through the gate, and the default autonomy asks
   before every send, which keeps a human on each turn.
-- Outside the mod, the agent runs as your user. Nothing technical
-  stops it from reading the walk-away file or writing an approval
-  marker if it tries; the skills instruct it never to, and the gate
-  blocks any draft that states the walk-away. Only the mod's in-memory
-  approval resists a determined agent, because it lives in state the
-  agent's file access cannot write. Decision
+- With or without the mod, the agent runs as your user. Nothing
+  technical stops it from reading the walk-away file, writing an
+  approval marker, or sending ungated text if it tries; the skills
+  instruct it never to, and the gate blocks any draft that states the
+  walk-away. Decision
   [0019](../decisions/0019-guard-deferred.md) covers the limit.
 - It checks structure, not truth. A sourced fact can still be wrong; source
   records carry URLs and read dates so you can check them.

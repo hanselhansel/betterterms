@@ -1,23 +1,20 @@
-// Pure approval-flow helpers for the betterterms mod: the deny/submit
-// wordings, the status line and the draft.yaml rewrite for Edit. The
-// $.state references live in register.js: the audit needs each ref's
-// plugin and key spelled as literals in the file that calls $.state.
-// Everything that touches `$` (fs reads, bt.py subprocesses, state
-// writes, presses) lives in register.js and lib/wiring.js: the
+// Pure approval-flow helpers for the betterterms mod: the approve
+// prompt wording, the status line and the draft.yaml rewrite for
+// Edit. The $.state references live in register.js: the audit needs
+// each ref's plugin and key spelled as literals in the file that
+// calls $.state. Everything that touches `$` (fs reads, bt.py
+// subprocesses, presses) lives in register.js and lib/wiring.js: the
 // hooks-module audit follows `$` only into functions declared in
 // register.js, never across an import.
 //
-// The approval invariant (spec 6.3): a send held by the gate is denied
-// with the pane's name, never asked inline. Consent is an unused
-// $.state entry, written only by the pane press or by the mod's own
-// prompt.submit hook on a typed `bt approve`; a .approved marker on
-// disk never counts by itself. The marker is only what
-// `bt.py gate --approved` spends: the send check re-arms it for the
-// re-gate when needed, and disarms it when the re-gate does not spend
-// it. The entry is spent on read; the marker is spent by the gate.
+// The approval contract (spec 6.3, amended by decision 0020): the
+// Approve press writes the hash-bound marker through
+// `bt.py held approve`, and the submitted prompt sends the agent
+// through `bt.py gate --approved` exactly once. The marker is the
+// only consent the gate spends, in every mode.
 
 export const GATE_TIMEOUT_MS = 30000;
-export const EMPTY_SNAP = { home: null, root: null, resolvedRoot: null, cases: [], saved: {}, savedOnce: {} };
+export const EMPTY_SNAP = { home: null, root: null, cases: [], saved: {}, savedOnce: {} };
 
 // "$486" for USD, "EUR 200" otherwise: only USD gets the sign.
 export function money(currency, v) {
@@ -52,17 +49,13 @@ export function hash8(hash) {
   return hash.slice(0, 8);
 }
 
-export function heldDenyText(hash) {
-  const h8 = hash8(hash);
-  return h8 === null
-    ? "betterterms: held for your approval in the BetterTerms pane."
-    : `betterterms: held for your approval in the BetterTerms pane (draft ${h8}).`;
-}
-
+// The prompt the press submits: the marker is armed, so one
+// `gate --approved` run spends it and returns the rendered text,
+// which is then sent verbatim as its own argument.
 export function approvePromptText(hash, caseId) {
   return `betterterms: the user approved draft ${hash8(hash)} for ${caseId}. ` +
-    "Send it now: the approved text verbatim as its own argument, " +
-    "nothing added. The send guard re-runs the gate; do not run it yourself.";
+    `Run bt.py gate ${caseId} --approved exactly once, then send the ` +
+    "returned rendered text verbatim as its own argument, nothing added.";
 }
 
 export function statusText(nCases, saved, once) {

@@ -160,33 +160,29 @@ One card per held draft, in arrival order. Each card shows:
 Edit opens the draft text in an input field. Saving an edit re-runs the gate before the card
 can be approved.
 
-**How approval reaches the send** (security invariant). A hook may not wait on its own promise
-past 10 seconds, and a hook that times out is skipped, which would let the send through. So
-the mod never holds a send open while it waits for the user:
+**How approval reaches the send** (amended by decision 0020). The mod registers no `tool.call`
+or `prompt.submit` hook; it ships as a cockpit only and never inspects outgoing tool calls or
+prompts. Approval enforcement is the gate's hash-bound one-use `--approved` marker, in every
+display mode:
 
-1. The agent's send tool call reaches the mod's `tool.call` hook. The mod runs the gate. On
-   `needs_approval` it records the held draft (case id, rendered text, SHA-256 of the rendered
-   text) in `$.state`, returns `{ deny }` telling the agent the draft is held for the user, and
-   shows the band and the badge.
-2. When the user presses Approve, the mod writes an approval for that exact hash into
-   `$.state` and submits a prompt telling the agent the draft was approved and may be sent.
-3. On the resend, the hook recomputes the hash of the newly rendered text. A matching,
-   unused approval lets the call run the gate with `--approved`, then `next(e)`. Any change to
-   the text, a second use, or a missing approval denies it again.
-4. The hook has a `.catch` handler that denies the send. A failed or timed-out hook never
-   lets a send through.
+1. The gate holds a `needs_approval` draft as `held/<hash>.yaml`; the mod shows the card, the
+   band and the badge.
+2. When the user presses Approve, the mod runs `bt.py held approve <case> <hash8>` (which
+   refuses any hash that is not the case's current `gate.json` hash) and submits a prompt
+   telling the agent to run `bt.py gate <case> --approved` exactly once and send the returned
+   rendered text verbatim as its own argument.
+3. The gate spends the marker atomically on that run. A second `--approved` call, a changed
+   text, or a missing marker holds the draft again.
 
-In mod mode, approvals live in `$.state` only. The agent can write files but cannot write `$.state`, so no
-file it creates, and no text in a counterparty's email, can approve a draft. Typing "yes" in
-chat does not approve a held draft while the mod is loaded.
+The agent runs as the user's OS user, so nothing technical stops a forged marker or an ungated
+send (decision 0019); the skills' instruction is the boundary there, and a betterterms-owned
+send tool is the P1 answer (decision 0020). Typing "yes" in chat never approves: only a user
+action writes the marker.
 
-**Held drafts never expire.** The 10-second limit applies to the hook, which returns at once
-after holding the draft. The draft itself waits in the Approvals tab for as long as the user
+**Held drafts never expire.** The draft itself waits in the Approvals tab for as long as the user
 takes: minutes, hours or days. Held drafts are also written to the case folder
 (`held/<hash>.yaml`, rendered text plus gate reasons), so a new session rebuilds the
-Approvals tab from files after Claude Code restarts. Only the approval itself lives in
-`$.state`, so an approval always comes from a press in the current session. Nothing is sent
-while nobody is there to press.
+Approvals tab from files after Claude Code restarts.
 
 ### 6.4 Terms editor
 
