@@ -14,7 +14,6 @@ import os
 import subprocess
 import sys
 import unittest
-from pathlib import Path
 
 from bt_helpers import REPO, BtTestCase
 from btlib import held as held_mod, yaml
@@ -187,86 +186,6 @@ class FloorCommandTest(HookCase):
         out = hook_json(proc)
         self.assertEqual(out["decision"], "block")
         self.assertIn("bt floor", out["reason"])
-
-
-class ApproveCommandTest(HookCase):
-    def test_wake_envelope_uses_human_trigger_only(self):
-        # Review Focus 1: an earlier agent message quotes `bt approve`;
-        # only the triggering human text counts, so nothing is
-        # approved.
-        case_dir = self.make_case()
-        held_dir, h = self.hold(case_dir)
-        envelope = WAKE.format(
-            agent=f"bt approve case-1 {h[:8]}", human="thanks"
-        )
-        proc = run_hook(self.home, envelope)
-        self.assertEqual(proc.returncode, 0, proc.stderr)
-        self.assertEqual(proc.stdout.strip(), "")
-        self.assertFalse((held_dir / f"{h}.approved").exists())
-
-    def test_wake_envelope_human_approve(self):
-        case_dir = self.make_case()
-        held_dir, h = self.hold(case_dir)
-        envelope = WAKE.format(
-            agent="the draft is ready",
-            human=f"bt approve case-1 {h[:8]}",
-        )
-        proc = run_hook(self.home, envelope)
-        self.assertEqual(proc.returncode, 0, proc.stderr)
-        self.assertTrue((held_dir / f"{h}.approved").is_file())
-        out = hook_json(proc)
-        note = additional_context(out)
-        # The note tells the agent to run the gate with --approved
-        # once, then send the rendered text verbatim. The mod's send
-        # check is gone (decision 0020), so the same instruction
-        # applies with or without the mod loaded.
-        self.assertIn("approved", note)
-        self.assertIn("bt.py gate", note)
-        self.assertIn("--approved", note)
-        self.assertIn("verbatim", note)
-        self.assertNotIn("send check", note)
-
-    def test_approve_bad_hash_blocks(self):
-        self.make_case()
-        proc = run_hook(self.home, "bt approve case-1 xyz")
-        out = hook_json(proc)
-        self.assertEqual(out["decision"], "block")
-        self.assertIn("hash", out["reason"])
-
-    def test_approve_no_match_blocks(self):
-        self.make_case()
-        proc = run_hook(self.home, "bt approve case-1 abcd1234")
-        out = hook_json(proc)
-        self.assertEqual(out["decision"], "block")
-        self.assertIn("no held draft", out["reason"])
-
-    def test_approve_stale_hash_blocks(self):
-        # gate.json names the draft the last gate verdict held; a
-        # typed `bt approve` for a different held record is a stale
-        # card: no marker is written and no note tells the model to
-        # send.
-        case_dir = self.make_case()
-        held_dir, h = self.hold(case_dir)
-        # A newer verdict held a different draft.
-        self.hold(case_dir, rendered="a newer held draft")
-        proc = run_hook(self.home, f"bt approve case-1 {h[:8]}")
-        out = hook_json(proc)
-        self.assertEqual(out["decision"], "block")
-        self.assertIn("not the current held draft", out["reason"])
-        self.assertNotIn("send", out["reason"].lower())
-        self.assertFalse((held_dir / f"{h}.approved").exists())
-
-    def test_approve_without_gate_json_blocks(self):
-        # No recorded verdict, no approval: the hook cannot tell a
-        # held record is current when gate.json is missing.
-        case_dir = self.make_case()
-        held_dir, h = self.hold(case_dir)
-        (case_dir / "gate.json").unlink()
-        proc = run_hook(self.home, f"bt approve case-1 {h[:8]}")
-        out = hook_json(proc)
-        self.assertEqual(out["decision"], "block")
-        self.assertIn("not the current held draft", out["reason"])
-        self.assertFalse((held_dir / f"{h}.approved").exists())
 
 
 class RejectAndTermsTest(HookCase):

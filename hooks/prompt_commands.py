@@ -17,16 +17,18 @@ grammar is handled here:
 the model; its reason never carries the amount. A message that only
 resembles a command still blocks, under two different rules. Floor
 is default deny: the words ``bt`` and ``floor`` adjacent -- any
-whitespace, any case -- anywhere in the message, on any line and
-after any prefix or markdown, plus any digit in the message, blocks
-with the usage line. Approve, reject, and terms keep the
-start-anchored rule: the trimmed text starts with ``bt <verb>`` --
-one leading backtick or a leading slash allowed -- and carries the
-piece the verb needs, a hex token of six or more characters for
-approve and reject, ``=`` for terms. Everything else is prose and
-passes to the model. The hook fails closed: input it cannot read,
-or a command that raises, blocks instead of passing through,
-because the text may carry a walk-away.
+whitespace, any case -- plus any digit blocks with the usage line,
+and that rule runs over the raw prompt, not only the user's slice
+of a wake envelope: quoted or agent text carrying ``bt floor`` and
+a number may name the walk-away, so a non-command prompt that trips
+the backstop blocks too. Approve, reject, and terms keep the
+start-anchored rule: the trimmed user text starts with ``bt
+<verb>`` -- one leading backtick or a leading slash allowed -- and
+carries the piece the verb needs, a hex token of six or more
+characters for approve and reject, ``=`` for terms. Everything else
+is prose and passes to the model. The hook fails closed: input it
+cannot read, or a command that raises, blocks instead of passing
+through, because the text may carry a walk-away.
 """
 
 import json
@@ -91,12 +93,17 @@ def _unescape(text):
 
 
 def user_text(prompt):
-    """The user's own text inside ``prompt``. A Projects wake envelope
-    contributes only the body of the ``<message>`` carrying both
-    ``trigger="true"`` and ``from="human"``; a prompt with no ``<wake``
-    is used whole. An envelope with no human trigger contributes
-    nothing at all, so agent text can never become a command."""
-    if "<wake" not in prompt:
+    """The user's own text inside ``prompt``. A prompt counts as a
+    Projects wake envelope only when its trimmed text starts with
+    ``<wake`` and carries a ``<message`` element; then only the body
+    of the ``<message>`` carrying both ``trigger="true"`` and
+    ``from="human"`` counts, and an envelope with no human trigger
+    contributes nothing at all, so agent text can never become a
+    command. A ``<wake`` substring anywhere else, or a ``<wake``
+    opener with no ``<message>``, is the user's own words and the
+    whole prompt is used."""
+    t = prompt.lstrip()
+    if not (t.startswith("<wake") and "<message" in t):
         return prompt
     for m in _MESSAGE.finditer(prompt):
         attrs = dict(_ATTR.findall(m.group(1)))
@@ -238,6 +245,28 @@ def _floor(case_id, raw):
     )
 
 
+def approve_command(case_id):
+    """The full gate command the approve note names, runnable as
+    printed: ``python3 <abs bt.py> gate <case> --draft <case
+    dir>/draft.yaml --inbound <case dir>/inbound.yaml --approved``,
+    the inbound flag only when the file exists."""
+    from btlib import cases
+
+    d = cases.case_dir(case_id)
+    argv = [
+        "python3",
+        str(_btpath.bt_path()),
+        "gate",
+        case_id,
+        "--draft",
+        str(d / "draft.yaml"),
+    ]
+    if (d / "inbound.yaml").is_file():
+        argv += ["--inbound", str(d / "inbound.yaml")]
+    argv.append("--approved")
+    return " ".join(argv)
+
+
 def _held(verb, case_id, hash8):
     h = hash8.lower()
     if not re.fullmatch(r"[0-9a-f]{8,64}", h):
@@ -249,9 +278,13 @@ def _held(verb, case_id, hash8):
         return
     short = str(out.get("hash") or h)[:8]
     if verb == "approve":
+        # The instruction must run as printed: the resolved absolute
+        # bt.py path and the case's own draft path, --inbound when an
+        # inbound.yaml sits beside it, --approved last.
+        gate = approve_command(case_id)
         _pass(
             f"betterterms: the user approved draft {short} for "
-            f"{case_id}. Run `bt.py gate {case_id} --approved` once, "
+            f"{case_id}. Run `{gate}` once, "
             "then send the rendered text it returns verbatim as its "
             "own argument, nothing added. The marker spends once: a "
             "second --approved run holds the draft again."
@@ -307,12 +340,21 @@ def _handle(cmd):
 def main():
     try:
         event = json.loads(sys.stdin.read() or "{}")
-        text = user_text(str(event.get("prompt") or ""))
+        raw = str(event.get("prompt") or "")
+        text = user_text(raw)
         cmd = parse(text)
         if cmd is not None:
             _handle(cmd)
             return 0
-        lookalike = _lookalike_verb(text)
+        # Fail-closed backstop: the floor rule runs over the raw
+        # prompt, not only the user's slice of it. Envelope or quoted
+        # text carrying `bt floor` plus a number may name the
+        # walk-away, so it blocks like a floor lookalike even when
+        # the user slice is innocent.
+        if _FLOOR_WORDS.search(raw) and re.search(r"\d", raw):
+            lookalike = "floor"
+        else:
+            lookalike = _lookalike_verb(text)
         if lookalike is not None:
             _block(f"betterterms: expected '{USAGE[lookalike]}'")
     except Exception:
