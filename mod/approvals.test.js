@@ -131,6 +131,32 @@ describe("tabs and rows", () => {
     }
   });
 
+  test("gate rows read only the Bash command string", () => {
+    // Only input.command names what ran: a `bt.py gate` mention in
+    // the description or any other input field keeps the stock row.
+    const props = (input, output) => ({
+      tool: "Bash", tool_use_id: "tu1", input,
+      isRunning: false, isErrored: false, isInterrupted: false, output,
+    });
+    const out = { stdout: '{"result":"pass","reasons":[]}', stderr: "" };
+    for (const input of [
+      { command: "ls", description: `python3 ${BT} gate ${CASE_ID}` },
+      { command: "true", prompt: `run bt.py gate ${CASE_ID} now` },
+      { description: `bt.py gate ${CASE_ID}` },
+    ]) {
+      assert.equal(gateRow(props(input, out)), null, JSON.stringify(input));
+    }
+    // The command field itself still collapses.
+    const gate = props(
+      {
+        command: `python3 ${BT} gate ${CASE_ID} --draft ${DIR}/draft.yaml`,
+        description: "check the draft",
+      },
+      out,
+    );
+    assert.equal(gateRow(gate)?.text, "✓ Gate pass");
+  });
+
   test("band text counts held drafts and draws Review", () => {
     const el = { Box: "Box", Text: "Text", Button: "Button" };
     const tree = bandTree(el, { held: 1, pending: 0, repliers: ["Comcast"] }, () => {});

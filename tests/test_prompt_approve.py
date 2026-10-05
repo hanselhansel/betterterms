@@ -127,6 +127,52 @@ class ApproveCommandTest(HookCase):
         )
         self.assertEqual(again.returncode, 3, again.stdout)
 
+    def test_approve_note_command_runs_once_with_space_in_home(self):
+        # Every argv element is quoted when the command is printed:
+        # with a BETTERTERMS_HOME containing a space, the note's
+        # command still parses to the real paths, runs as printed and
+        # spends the marker exactly once.
+        home = self.tmp / "bt home"
+        case_id, case_dir = new_case(home)
+        write_case_files(
+            case_dir,
+            brief=dict(BRIEF_PAY, autonomy=2),
+            plan=plan_for("pay", 1200),
+            floor=1200,
+        )
+        draft = send_draft(
+            action="cancel", offer=None, template="please end my plan"
+        )
+        (case_dir / "draft.yaml").write_text(yaml.dump(draft))
+        proc, out = run_bt_json(
+            home, "gate", case_id, "--draft",
+            str(case_dir / "draft.yaml"),
+        )
+        self.assertEqual(proc.returncode, 3, out)
+        h = out["hash"]
+        proc = run_hook(home, f"bt approve {case_id} {h[:8]}")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        note = additional_context(hook_json(proc))
+        m = re.search(r"`(python3 [^`]+)`", note)
+        self.assertIsNotNone(m, note)
+        argv = shlex.split(m.group(1))
+        self.assertEqual(
+            argv[argv.index("--draft") + 1],
+            str(case_dir / "draft.yaml"),
+        )
+        env = dict(os.environ, BETTERTERMS_HOME=str(home))
+        first = subprocess.run(
+            argv, capture_output=True, text=True, env=env, timeout=30
+        )
+        self.assertEqual(
+            first.returncode, 0, first.stdout + first.stderr
+        )
+        self.assertEqual(json.loads(first.stdout)["result"], "pass")
+        again = subprocess.run(
+            argv, capture_output=True, text=True, env=env, timeout=30
+        )
+        self.assertEqual(again.returncode, 3, again.stdout)
+
     def test_approve_bad_hash_blocks(self):
         self.make_case()
         proc = run_hook(self.home, "bt approve case-1 xyz")

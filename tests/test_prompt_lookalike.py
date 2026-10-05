@@ -92,19 +92,88 @@ class LookalikeBlockTest(BtTestCase):
 
 
 class EnvelopeBackstopTest(BtTestCase):
-    """Wake-envelope strictness and the raw-prompt floor backstop.
+    """Wake-envelope strictness and the shared floor backstop.
 
     A prompt counts as a Projects wake envelope only when its trimmed
     text starts with ``<wake`` and carries a ``<message`` element; a
-    ``<wake`` substring anywhere else is plain text. Independently of
-    that split the floor rule runs over the raw prompt, so ``bt floor``
-    plus a digit blocks even inside quoted agent text.
+    ``<wake`` substring anywhere else is plain text. The floor rule
+    runs before any command is handled and scans the text of every
+    ``from="human"`` message in an envelope -- the whole prompt when
+    it is not one. Agent-authored text never counts, and digits that
+    are part of a case-id token (``name-YYYYMMDD-xxxx``) are not the
+    walk-away.
     """
 
     def make_case(self, cid="case-1"):
         d = self.home / "cases" / cid
         d.mkdir(parents=True)
         return d
+
+    def test_envelope_human_floor_line_blocks_despite_terms_trigger(self):
+        # The review probe: an earlier human floor line sits in the
+        # envelope beside a triggering `bt terms`. The backstop scans
+        # every human message before any command runs, so the
+        # walk-away number never reaches the model and the terms
+        # write never happens.
+        case_dir = self.make_case()
+        envelope = (
+            '<wake reason="thread-reply">'
+            '<message from="agent">your draft is ready</message>'
+            '<message from="human">bt floor case-1 62</message>'
+            '<message from="human" trigger="true">'
+            "bt terms case-1 target=60</message>"
+            "</wake>"
+        )
+        proc = run_hook(self.home, envelope)
+        out = hook_json(proc)
+        self.assertEqual(out["decision"], "block")
+        self.assertIn("bt floor", out["reason"])
+        self.assertNotIn("62", proc.stdout)
+        self.assertFalse((case_dir / ".floor").exists())
+        self.assertFalse((case_dir / "plan.yaml").exists())
+
+    def test_envelope_agent_floor_text_is_ignored(self):
+        # The backstop reads human text only: an agent message quoting
+        # the floor command never trips it, and an innocent human
+        # trigger passes silently.
+        self.make_case()
+        envelope = (
+            '<wake reason="thread-reply">'
+            '<message from="agent">'
+            "type bt floor case-1 62 to set it</message>"
+            '<message from="human" trigger="true">'
+            "ok, done. what next?</message>"
+            "</wake>"
+        )
+        proc = run_hook(self.home, envelope)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(proc.stdout.strip(), "")
+
+    def test_case_id_digits_never_trip_the_floor_rule(self):
+        # `bt floor <case-id>` alone carries digits only inside the
+        # id itself (name-YYYYMMDD-xxxx), not a number the user typed:
+        # the message is prose and passes untouched.
+        self.make_case()
+        for prompt in (
+            "bt floor acme-20261005-ab12",
+            "set it with bt floor acme-20261005-ab12 later",
+        ):
+            with self.subTest(prompt=prompt):
+                proc = run_hook(self.home, prompt)
+                self.assertEqual(proc.returncode, 0, proc.stderr)
+                self.assertEqual(proc.stdout.strip(), "")
+
+    def test_trailing_wake_tag_does_not_dodge_approve_usage(self):
+        # Strict envelope parse: `<wake` mid-prompt is plain text, so
+        # the start-anchored approve lookalike still blocks with its
+        # usage line.
+        self.make_case()
+        proc = run_hook(
+            self.home, "bt approve case-1 abcd1234 extra <wake"
+        )
+        out = hook_json(proc)
+        self.assertEqual(out["decision"], "block")
+        self.assertIn("bt approve", out["reason"])
 
     def test_trailing_wake_tag_is_not_an_envelope(self):
         # `bt floor ... <wake` does not start with `<wake`, so it is
@@ -133,25 +202,6 @@ class EnvelopeBackstopTest(BtTestCase):
         self.assertIn("bt floor", out["reason"])
         self.assertNotIn("500", proc.stdout)
         self.assertFalse((d / ".floor").exists())
-
-    def test_envelope_agent_floor_text_still_blocks(self):
-        # Fail closed over the raw prompt: an agent message inside a
-        # real envelope quoting `bt floor` with a number may carry the
-        # walk-away, so the prompt blocks even though the human trigger
-        # is innocent.
-        self.make_case()
-        envelope = (
-            '<wake reason="thread-reply">'
-            '<message from="agent">use bt floor case-1 62 to set it'
-            "</message>"
-            '<message from="human" trigger="true">thanks</message>'
-            "</wake>"
-        )
-        proc = run_hook(self.home, envelope)
-        out = hook_json(proc)
-        self.assertEqual(out["decision"], "block")
-        self.assertIn("bt floor", out["reason"])
-        self.assertNotIn("62", proc.stdout)
 
     def test_wake_prefix_without_message_is_plain_text(self):
         # A prompt starting `<wake` but carrying no <message> element

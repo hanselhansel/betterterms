@@ -49,6 +49,18 @@ export function hash8(hash) {
   return hash.slice(0, 8);
 }
 
+// POSIX single-quote escaping, like shlex.quote: a token of shell-safe
+// characters prints bare; anything else wraps in single quotes with an
+// embedded ' written '"'"'. A home path with a space must word-split
+// back to one argv element when the printed command is run.
+const SH_SAFE = /^[A-Za-z0-9_@%+=:,./-]+$/;
+export function shQuote(s) {
+  const str = String(s);
+  if (SH_SAFE.test(str)) return str;
+  return `'${str.replace(/'/g, `'"'"'`)}'`;
+}
+const shJoin = (argv) => argv.map(shQuote).join(" ");
+
 // The prompt the press submits: the marker is armed, so one
 // `gate --approved` run spends it and returns the rendered text,
 // which is then sent verbatim as its own argument. `argv` is the
@@ -57,7 +69,7 @@ export function hash8(hash) {
 // draft path, so the instruction runs as printed.
 export function approvePromptText(hash, caseId, argv) {
   return `betterterms: the user approved draft ${hash8(hash)} for ${caseId}. ` +
-    `Run \`${argv.join(" ")}\` exactly once, then send the ` +
+    `Run \`${shJoin(argv)}\` exactly once, then send the ` +
     "returned rendered text verbatim as its own argument, nothing added.";
 }
 
@@ -66,7 +78,7 @@ export function approvePromptText(hash, caseId, argv) {
 // same runnable command.
 export function approveFallbackText(hash, caseId, argv) {
   return `betterterms: approved ${hash8(hash)} for ${caseId}, but the ` +
-    `prompt did not send. Run \`${argv.join(" ")}\` once, then send ` +
+    `prompt did not send. Run \`${shJoin(argv)}\` once, then send ` +
     "the returned rendered text verbatim as its own argument.";
 }
 

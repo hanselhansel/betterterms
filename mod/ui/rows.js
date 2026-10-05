@@ -5,8 +5,6 @@
 //   ● Held for you         on needs_approval
 // Pure: register.js hands the ToolUse props in and wraps the verdict.
 
-import { collectStrings } from "../lib/cases.js";
-
 // A gate call is one plain `bt.py gate` invocation (usually as a
 // full path: python3 .../scripts/bt.py gate ...). A command that
 // composes anything else -- `;`, `&&`, `||`, `|`, redirection,
@@ -16,13 +14,16 @@ const GATE_CALL = /\bbt\.py\s+gate\b/;
 const COMPOSED = /[;|&<>`$()\r\n\\]/;
 
 // props: the ToolUse row's {tool, input, output, isRunning, ...}.
+// Only input.command, the Bash call's command string, is tested: a
+// `bt.py gate` mention in the description or any other field is not
+// the command that ran and keeps the stock row.
 // Returns {text, color} for a gate row, null for anything else, so the
 // hook can defer to the stock row.
 export function gateRow(props) {
-  const input = props?.input;
-  const isGate = collectStrings(input).some(
-    (s) => GATE_CALL.test(s) && !COMPOSED.test(s),
-  );
+  const command = props?.input?.command;
+  const isGate = typeof command === "string"
+    && GATE_CALL.test(command)
+    && !COMPOSED.test(command);
   if (!isGate || props.isRunning) return null;
   const stdout = typeof props.output === "object" && props.output !== null
     ? props.output.stdout

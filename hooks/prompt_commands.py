@@ -16,23 +16,27 @@ grammar is handled here:
 ``bt floor`` always blocks, so the walk-away is never forwarded to
 the model; its reason never carries the amount. A message that only
 resembles a command still blocks, under two different rules. Floor
-is default deny: the words ``bt`` and ``floor`` adjacent -- any
-whitespace, any case -- plus any digit blocks with the usage line,
-and that rule runs over the raw prompt, not only the user's slice
-of a wake envelope: quoted or agent text carrying ``bt floor`` and
-a number may name the walk-away, so a non-command prompt that trips
-the backstop blocks too. Approve, reject, and terms keep the
-start-anchored rule: the trimmed user text starts with ``bt
-<verb>`` -- one leading backtick or a leading slash allowed -- and
-carries the piece the verb needs, a hex token of six or more
-characters for approve and reject, ``=`` for terms. Everything else
-is prose and passes to the model. The hook fails closed: input it
-cannot read, or a command that raises, blocks instead of passing
-through, because the text may carry a walk-away.
+is default deny and runs first, at the shared layer: before any
+command is handled, the text of every ``from="human"`` message in a
+wake envelope -- the whole prompt when it is not one -- is scanned
+for ``bt`` and ``floor`` adjacent (any whitespace, any case) plus a
+digit in that same message; digits inside a case-id token like
+``name-YYYYMMDD-xxxx`` are the id, not a number the user typed.
+Agent-authored text never counts. A hit always blocks: the floor
+write runs only when the triggering message parses as a valid floor
+command, and nothing passes through with a note. Approve, reject,
+and terms keep the start-anchored rule: the trimmed user text starts
+with ``bt <verb>`` -- one leading backtick or a leading slash
+allowed -- and carries the piece the verb needs, a hex token of six
+or more characters for approve and reject, ``=`` for terms.
+Everything else is prose and passes to the model. The hook fails
+closed: input it cannot read, or a command that raises, blocks
+instead of passing through, because the text may carry a walk-away.
 """
 
 import json
 import re
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -66,10 +70,13 @@ _TERMS_KV = re.compile(r"(\w+)=(\S+)")
 _TERMS_KEYS = ("target", "alternative")
 
 # Floor is default deny: the words `bt` and `floor` adjacent, any
-# whitespace and any case, anywhere in the message. The digit check
-# lives in _lookalike_verb; `bt floor` talk with no number in it is
+# whitespace and any case, anywhere in the message text. The digit
+# check lives in _floor_hit; `bt floor` talk with no number in it is
 # prose about the command.
 _FLOOR_WORDS = re.compile(r"\bbt\s+floor\b", re.I)
+# A case id (name-YYYYMMDD-xxxx) carries digits that are the id, not
+# a typed number: they never count toward the floor rule's digit.
+_CASE_ID_TOKEN = re.compile(r"\b[a-z0-9][a-z0-9-]*-\d{8}-[0-9a-f]{4}\b")
 # The other lookalikes count only at the start of the trimmed text,
 # after at most one backtick or a leading slash. A `bt <verb>`
 # mention inside prose is chat text, not a command attempt.
@@ -115,6 +122,29 @@ def user_text(prompt):
     return ""
 
 
+def _human_texts(prompt):
+    """Every ``from="human"`` body inside a wake envelope, or the
+    whole prompt when it is not one (the same strict test as
+    ``user_text``). Agent text never enters the list."""
+    t = prompt.lstrip()
+    if not (t.startswith("<wake") and "<message" in t):
+        return [prompt]
+    return [
+        _unescape(m.group(2))
+        for m in _MESSAGE.finditer(prompt)
+        if dict(_ATTR.findall(m.group(1))).get("from") == "human"
+    ]
+
+
+def _floor_hit(text):
+    """The one floor rule: ``bt`` and ``floor`` adjacent, plus a
+    digit in the same text. Digits inside a case-id token do not
+    count."""
+    if _FLOOR_WORDS.search(text) is None:
+        return False
+    return bool(re.search(r"\d", _CASE_ID_TOKEN.sub(" ", text)))
+
+
 def _terms_args(pairs_text):
     """The ``key=value`` tail of a ``bt terms`` message: each key at
     most once, at least one of ``target`` or ``alternative`` present,
@@ -158,16 +188,12 @@ def parse(text):
 
 
 def _lookalike_verb(text):
-    """The verb a non-command message resembles, or None. Floor runs
-    first and searches the whole message: ``bt`` and ``floor``
-    adjacent plus any digit claims to set the walk-away no matter
-    what precedes it. Approve, reject, and terms count only at the
-    start of the trimmed text -- one leading backtick or a leading
-    slash allowed -- and still need their marker piece: a hash-like
-    token for approve and reject, ``=`` for terms. Anything else is
-    prose."""
-    if _FLOOR_WORDS.search(text) and re.search(r"\d", text):
-        return "floor"
+    """The verb a non-command message resembles, or None. Approve,
+    reject, and terms count only at the start of the trimmed text --
+    one leading backtick or a leading slash allowed -- and still need
+    their marker piece: a hash-like token for approve and reject,
+    ``=`` for terms. Floor is not repeated here: ``_floor_hit`` runs
+    on every human text before this point. Anything else is prose."""
     t = text.strip()
     m = _LOOKALIKE.match(t)
     if m is None:
@@ -264,7 +290,7 @@ def approve_command(case_id):
     if (d / "inbound.yaml").is_file():
         argv += ["--inbound", str(d / "inbound.yaml")]
     argv.append("--approved")
-    return " ".join(argv)
+    return shlex.join(argv)
 
 
 def _held(verb, case_id, hash8):
@@ -343,18 +369,21 @@ def main():
         raw = str(event.get("prompt") or "")
         text = user_text(raw)
         cmd = parse(text)
+        # Fail-closed backstop at the shared layer, before any
+        # command is handled: the floor rule scans every human
+        # message in a wake envelope (the whole prompt when it is not
+        # one). A hit always blocks -- the floor write runs only when
+        # the triggering message is itself a floor command.
+        if any(_floor_hit(t) for t in _human_texts(raw)):
+            if cmd is not None and cmd["verb"] == "floor":
+                _handle(cmd)
+            else:
+                _block(f"betterterms: expected '{USAGE['floor']}'")
+            return 0
         if cmd is not None:
             _handle(cmd)
             return 0
-        # Fail-closed backstop: the floor rule runs over the raw
-        # prompt, not only the user's slice of it. Envelope or quoted
-        # text carrying `bt floor` plus a number may name the
-        # walk-away, so it blocks like a floor lookalike even when
-        # the user slice is innocent.
-        if _FLOOR_WORDS.search(raw) and re.search(r"\d", raw):
-            lookalike = "floor"
-        else:
-            lookalike = _lookalike_verb(text)
+        lookalike = _lookalike_verb(text)
         if lookalike is not None:
             _block(f"betterterms: expected '{USAGE[lookalike]}'")
     except Exception:

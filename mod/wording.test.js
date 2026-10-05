@@ -6,11 +6,23 @@
 
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 
 import * as C from "./lib/cases.js";
 import * as A from "./lib/approvals.js";
 import { CASE_ID, THREAD } from "./testkit.js";
 import { HASH, HASH8 } from "./heldkit.js";
+
+// A POSIX word-split of a printed command must hand back the same
+// argv: eval + set -- parses quoting without running the words.
+function shSplit(cmd) {
+  const out = execFileSync(
+    "sh",
+    ["-c", 'eval "set -- $CMD"; printf "%s\\n" "$@"'],
+    { env: { ...process.env, CMD: cmd }, encoding: "utf8" },
+  );
+  return out.replace(/\n$/, "").split("\n");
+}
 
 describe("lib/approvals helpers", () => {
   test("hash8 takes the first 8 hex chars", () => {
@@ -53,6 +65,26 @@ describe("lib/approvals helpers", () => {
     assert.match(text, /did not send/);
     assert.ok(text.includes(`\`${argv.join(" ")}\``), text);
     assert.match(text, /verbatim/);
+  });
+
+  test("approve texts quote each argv element for the shell", () => {
+    // A path with a space (a BETTERTERMS_HOME like "bt home") must
+    // arrive inside quotes, so the printed command parses back to
+    // the same argv when a user or the agent runs it.
+    const argv = [
+      "python3", "/x/bt home/scripts/bt.py", "gate", CASE_ID,
+      "--draft", `/bt home/cases/${CASE_ID}/draft.yaml`,
+      "--inbound", `/bt home/cases/${CASE_ID}/inbound.yaml`,
+      "--approved",
+    ];
+    for (const text of [
+      A.approvePromptText(HASH, CASE_ID, argv),
+      A.approveFallbackText(HASH, CASE_ID, argv),
+    ]) {
+      const m = /`([^`]+)`/.exec(text);
+      assert.ok(m, text);
+      assert.deepEqual(shSplit(m[1]), argv);
+    }
   });
 
   test("statusText matches the spec line, per currency", () => {
