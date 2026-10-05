@@ -1,6 +1,6 @@
 # 0020. Mod send check deferred: the mod ships as a cockpit only
 
-Status: accepted. Amends 0012, 0017, 0018 and 0019. Date: 2026-10-10.
+Status: accepted. Amends 0012, 0014, 0017, 0018 and 0019. Date: 2026-10-05.
 
 ## Context
 

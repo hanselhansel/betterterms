@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.10.0] - 2026-10-04
+## [0.10.0] - 2026-10-05
 
 ### Added
 - `~/.betterterms/config.yaml` (`autonomy`, `currency`, `sign_off`,
@@ -23,12 +23,18 @@
   `bt terms` with `target=` and `alternative=` keys in either order.
   `bt floor` writes on stdin and blocks the prompt so the model never
   receives the walk-away; `bt approve`, `bt reject` and `bt terms`
-  are handled first, then passed through with a note. A `bt <verb>`
-  lookalike blocks only when the message starts with it (one leading
-  backtick or a leading slash allowed) and still carries the piece
-  the verb needs: a digit for floor, a hex token of six or more
-  characters for approve and reject, `=` for terms. Anything else is
-  prose and passes untouched.
+  are handled first, then passed through with a note. `bt floor`
+  lookalikes block anywhere in the raw prompt the moment a digit
+  follows: the floor rule runs over the whole message as a
+  fail-closed backstop, inside wake-envelope text included.
+  `bt approve`, `bt reject` and `bt terms` lookalikes block only
+  when the message starts with them (one leading backtick or a
+  leading slash allowed) and still carry the piece the verb needs:
+  a hex token of six or more characters for approve and reject, `=`
+  for terms. Anything else is prose and passes untouched. A prompt
+  counts as a wake envelope only when it starts with `<wake` and
+  carries a `<message>` element; a trailing or mid-text `<wake` tag
+  is plain user text.
   In a cloud session the session-start hook warns when the betterterms
   home sits in the ephemeral VM home.
 - `betterterms-mod`, an optional Claude Code cockpit plugin: pane with
@@ -91,6 +97,26 @@
   scan fingerprints case files by inode with mtime and size, never
   caches a case whose held list could not run, revalidates a cached
   `bt.py` path, and scans case folders in parallel.
+- Autonomy 2 means approve each send in code now, not only in docs:
+  the gate holds every send at levels 1 and 2 for a hash-bound
+  approval; levels 3 and 4 behave as before. When a gate call holds
+  a new draft for a case, the previous current held record is dropped
+  quietly, like `held drop`; the cockpit lists a superseded record
+  greyed and labeled, outside the band and badge counts, while it
+  lasts. The Approvals tab sorts the current card first and gives it
+  the `a`/`e`/`r` keys, the approve press has a one-press-per-hash
+  in-flight guard and skips an already-approved record, and saving an
+  edit toasts the new gate verdict.
+- The approve instructions in the mod and the prompt hook print the
+  whole runnable command (`python3 <resolved bt.py> gate <case_id>
+  --draft <case dir>/draft.yaml [--inbound <case dir>/inbound.yaml]
+  --approved`), told to run exactly once and to send the returned
+  rendered text verbatim as its own argument. The mod's fallback
+  toast on a failed prompt submit carries the same command.
+- A `bt.py gate` transcript row collapses to the one-line verdict
+  only for a plain standalone invocation; a command composed with
+  `;`, `&&`, `||`, pipes, redirects, substitutions or a second line
+  keeps the stock row.
 - `scripts/vendor-into-repo` enables the plugin without copying the
   skills (a copy would load each skill twice); `--no-plugin` vendors
   the skills alone.

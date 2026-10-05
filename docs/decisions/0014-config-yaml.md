@@ -1,6 +1,8 @@
 # 0014. config.yaml and hash-bound approvals
 
-Status: accepted (release lane R3, spec 5 and 6.3).
+Status: accepted (release lane R3, spec 5 and 6.3). Amended by 0019
+and 0020: the PreToolUse guard section C names is deferred, and the
+`.approved` marker is the only consent record in every display mode.
 Date: 2026-10-07.
 
 ## Context

@@ -101,7 +101,8 @@ the gate blocks any draft that states the walk-away, and of the typed
 hook runs; `bt approve`, `bt reject` and `bt terms` are handled first,
 then passed through with a note. Approvals in every mode are enforced by
 the gate's hash-bound one-use `--approved` marker: a pane press in the
-mod or a `bt approve` you type writes it. Full detail:
+mod or a `bt approve` you type writes it, and a typed `yes` in chat
+approves nothing. Full detail:
 [docs/guides/safety-model.md](docs/guides/safety-model.md).
 
 ## Privacy

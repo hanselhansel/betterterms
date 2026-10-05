@@ -137,8 +137,8 @@ cannot bind the arrow keys, and a pane opens by itself only at 144 columns or wi
 | Pane (`/betterterms`) | Tabs 1 Cases, 2 Approvals (with a count badge), 3 Savings |
 | Band above the prompt | Shown only when something needs the user: "Comcast replied, 1 draft waiting" with a Review button (digit hotkey) |
 | Status line | `bt: 4 cases · $486/yr saved` |
-| Toast | A reply arrived, a draft was sent, a draft was blocked |
-| Gate rows in the transcript | Each `bt.py gate` tool row redrawn as one line: `✓ Gate pass`, `✗ Gate block: <reason>`, or `● Held for you` |
+| Toast | A reply arrived, a held or blocked verdict, a refused approval (amended by decision 0020: no "draft sent" toast, nothing watches the send) |
+| Gate rows in the transcript | Each plain `bt.py gate` tool row redrawn as one line: `✓ Gate pass`, `✗ Gate block: <reason>`, or `● Held for you`; a call composed with shell operators keeps the stock row |
 
 ### 6.2 Cases tab
 
@@ -150,7 +150,10 @@ The terminal draws it with block characters. Up and down move between cases, Ent
 
 ### 6.3 Approvals tab
 
-One card per held draft, in arrival order. Each card shows:
+One card per held draft. The card whose hash matches the case's current `gate.json`
+hash sorts first and takes the `a`/`e`/`r` keys; a held record the last gate call
+replaced lists greyed as "superseded" and counts nowhere (a new hold drops the old
+current record quietly, so superseded is the rare overlap). Each card shows:
 
 - the full rendered message, with new numbers highlighted,
 - why it was held, in the gate's own words,
@@ -169,8 +172,10 @@ display mode:
    band and the badge.
 2. When the user presses Approve, the mod runs `bt.py held approve <case> <hash8>` (which
    refuses any hash that is not the case's current `gate.json` hash) and submits a prompt
-   telling the agent to run `bt.py gate <case> --approved` exactly once and send the returned
-   rendered text verbatim as its own argument.
+   telling the agent to run `python3 <resolved bt.py> gate <case> --draft <case
+   dir>/draft.yaml [--inbound <case dir>/inbound.yaml] --approved` exactly once and send
+   the returned rendered text verbatim as its own argument. A failed prompt submit
+   toasts the same runnable command.
 3. The gate spends the marker atomically on that run. A second `--approved` call, a changed
    text, or a missing marker holds the draft again.
 
@@ -230,18 +235,27 @@ reduction). All numbers come from `bt.py ledger total --json`.
 The mod reads case folders under `~/.betterterms/cases/` with `$.fs` and runs `bt.py` through
 `$.process.run` for every gate, floor and ledger action. It parses no business rules itself.
 Pane state (selected tab, selected case) lives in `$.state`. Nothing the mod draws is
-appended to the conversation, except the deny messages and the approval prompt in 6.3.
+appended to the conversation except the approval prompt in 6.3 (amended by decision 0020:
+no `tool.call` hook, so no deny messages).
 
 ### 6.7 Tests
 
 Every pane, band and approval behavior has a `claude plugin test` case, run once on
-`terminal` and once on `desktop`:
+`terminal` and once on `desktop` (amended by decision 0020: the send-check cases are
+replaced by the pass-through and marker-spend cases):
 
-- held draft shows in the band and the badge, Approve sends exactly once,
-- an edited draft must re-pass the gate before Approve works,
-- a resend with different text is denied,
-- a forged approval file in the case folder is ignored,
-- a throwing gate call denies the send,
+- a held draft shows in the band and the badge; the card whose hash matches the case's
+  `gate.json` hash sorts first and takes the keys; a superseded record sits greyed,
+  labeled and outside the counts,
+- Approve runs `held approve` for the displayed hash and submits the runnable
+  `gate --approved` prompt; the command the prompt prints passes once and holds again
+  on a second run,
+- an approval press on a hash that is not the case's current `gate.json` hash refuses
+  plainly; a press on an already-approved record and a second in-flight press are
+  skipped,
+- an edited draft re-gates and toasts the verdict,
+- a call carrying the gated text and a typed `bt approve` reach the underlying op
+  untouched: the mod registers no `tool.call` or `prompt.submit` hook,
 - terms editor writes the walk-away through stdin and never puts it in argv,
 - all three number fields follow a drag.
 
