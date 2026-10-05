@@ -1,0 +1,8 @@
+{
+  "extraKnownMarketplaces": {
+    "betterterms": {
+      "source": { "source": "github", "repo": "hanselhansel/betterterms", "ref": "feat/release-v1" }
+    }
+  },
+  "enabledPlugins": { "betterterms@betterterms": true }
+}
