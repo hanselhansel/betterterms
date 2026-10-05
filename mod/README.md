@@ -27,7 +27,8 @@ hash-bound one-use `--approved` marker, in every mode.
   `2 Approvals` counts held drafts in its label and draws one card per
   held draft: the rendered text with the money spans lit, the gate's
   reasons, and Approve and send (`a`), Edit (`e`), Reject (`r`) on the
-  top card. `3 Savings` shows the ledger's `saved_per_year` totals per
+  current card (the hash `gate.json` names, sorted first; a superseded
+  record greys out and counts nowhere). `3 Savings` shows the ledger's `saved_per_year` totals per
   currency, one-time savings as `$N once`, plus a cumulative chart.
   Opens itself at session start when
   cases exist; `/betterterms` or `/betterterms-cases` reopens it.
@@ -53,9 +54,11 @@ waiting for you. The Approve press (`a` or click) does two things:
    bound to the SHA-256 of the send tuple. `held approve` refuses a
    hash that is not the case's current `gate.json` hash, so a stale
    card can never approve the new text.
-2. It submits a prompt telling the agent to run `bt.py gate <case>
-   --approved` exactly once and send the returned rendered text
-   verbatim as its own argument, nothing added.
+2. It submits a prompt telling the agent to run `python3 <resolved
+   bt.py> gate <case> --draft <case dir>/draft.yaml [--inbound <case
+   dir>/inbound.yaml] --approved` exactly once and send the returned
+   rendered text verbatim as its own argument, nothing added. A
+   failed prompt submit toasts the same runnable command.
 
 The gate spends the marker atomically on that run: a second
 `--approved` call holds the draft again, and different rendered text

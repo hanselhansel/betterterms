@@ -21,8 +21,8 @@ export async function readIf(host, path) {
   try { return await host.fsRead(path); } catch { return undefined; }
 }
 
-export async function statIf(host, path, init) {
-  try { return await host.fsStat(path, init); } catch { return undefined; }
+export async function statIf(host, path) {
+  try { return await host.fsStat(path); } catch { return undefined; }
 }
 
 export async function listIf(host, path) {

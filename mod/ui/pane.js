@@ -2,9 +2,11 @@
 //   1 Cases      one card per case, selected shows the offer bar,
 //                the six-step strip and a note; `t` swaps the list for
 //                the terms editor (ui/terms.js)
-//   2 Approvals  one card per held draft, oldest first, with the
-//                rendered text, the gate's reasons, and the three
-//                actions: Approve and send (a), Edit (e), Reject (r)
+//   2 Approvals  one card per held draft, the case's current gate
+//                hash first and superseded records greyed below,
+//                with the rendered text, the gate's reasons, and the
+//                three actions: Approve and send (a), Edit (e),
+//                Reject (r)
 //   3 Savings    the ledger totals and chart (ui/savings.js)
 //
 // Trees only: the hook resolves the element set and hands `view`
@@ -124,16 +126,22 @@ function moneyText(el, text, key) {
   );
 }
 
-// a/e/r bind on the top card only: one key fires one card, so several
-// held drafts still leave the oldest keyboard-reachable (finding 17).
-function heldCard(el, c, held, view, top) {
+// a/e/r bind on the first current card only: one key fires one card,
+// so several held drafts still leave the oldest keyboard-reachable
+// (finding 17). A record whose hash is not the case's gate.json hash
+// is superseded: it renders greyed, labeled, and without hotkeys.
+function heldCard(el, c, held, view, { keys = false, superseded = false } = {}) {
   const { Box, Text, Button, Input } = el;
   const h8 = hash8(held.hash);
-  const hotkey = top ? { approve: "a", edit: "e", reject: "r" } : {};
+  const hotkey = keys ? { approve: "a", edit: "e", reject: "r" } : {};
   const rows = [
     h(Text, { key: `held-h-${h8}`, dimColor: true },
-      `${c.id} · held ${held.heldAt || "?"} · ${h8}${held.approved ? " · approved" : ""}`),
-    moneyText(el, held.rendered, `held-t-${h8}`),
+      superseded
+        ? `${c.id} · superseded · ${h8}`
+        : `${c.id} · held ${held.heldAt || "?"} · ${h8}${held.approved ? " · approved" : ""}`),
+    ...(superseded
+      ? [h(Text, { key: `held-t-${h8}`, dimColor: true }, held.rendered)]
+      : [moneyText(el, held.rendered, `held-t-${h8}`)]),
     ...held.reasons.map((r, i) =>
       h(Text, { key: `held-r-${h8}-${i}`, dimColor: true }, `• ${r}`)),
   ];
@@ -170,13 +178,21 @@ function heldCard(el, c, held, view, top) {
 
 function approvalsTab(el, snap, view) {
   const { Box, Text } = el;
-  const pairs = snap.cases.flatMap((c) => (c.held ?? []).map((held) => [c, held]));
-  const cards = pairs.map(([c, held], i) => heldCard(el, c, held, view, i === 0));
+  // Current records first, superseded below: the draft the last gate
+  // verdict held is the one a/e/r and the badge act on.
+  const pairs = snap.cases
+    .flatMap((c) => (c.held ?? []).map((held) => [c, held]))
+    .sort(([cA, hA], [cB, hB]) =>
+      Number(hB.hash === cB.gateHash) - Number(hA.hash === cA.gateHash));
+  const cards = pairs.map(([c, held], i) => {
+    const superseded = held.hash !== c.gateHash;
+    return heldCard(el, c, held, view, { keys: i === 0 && !superseded, superseded });
+  });
   if (cards.length === 0) {
     cards.push(h(Text, { key: "held-none", dimColor: true }, "nothing held for approval"));
   } else if (pairs.length > 1) {
     cards.push(h(Text, { key: "held-keys", dimColor: true },
-      "keys a/e/r act on the top card"));
+      "keys a/e/r act on the current draft"));
   }
   return h(Box, { key: "approvals", flexDirection: "column" }, ...cards);
 }

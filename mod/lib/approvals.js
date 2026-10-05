@@ -51,11 +51,23 @@ export function hash8(hash) {
 
 // The prompt the press submits: the marker is armed, so one
 // `gate --approved` run spends it and returns the rendered text,
-// which is then sent verbatim as its own argument.
-export function approvePromptText(hash, caseId) {
+// which is then sent verbatim as its own argument. `argv` is the
+// full command the mod itself would run (C.gateArgv plus
+// --approved): the resolved absolute bt.py path and the case's own
+// draft path, so the instruction runs as printed.
+export function approvePromptText(hash, caseId, argv) {
   return `betterterms: the user approved draft ${hash8(hash)} for ${caseId}. ` +
-    `Run bt.py gate ${caseId} --approved exactly once, then send the ` +
+    `Run \`${argv.join(" ")}\` exactly once, then send the ` +
     "returned rendered text verbatim as its own argument, nothing added.";
+}
+
+// The toast when the prompt could not be submitted: the marker is
+// armed but the agent never saw the instruction, so it carries the
+// same runnable command.
+export function approveFallbackText(hash, caseId, argv) {
+  return `betterterms: approved ${hash8(hash)} for ${caseId}, but the ` +
+    `prompt did not send. Run \`${argv.join(" ")}\` once, then send ` +
+    "the returned rendered text verbatim as its own argument.";
 }
 
 export function statusText(nCases, saved, once) {

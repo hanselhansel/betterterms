@@ -90,7 +90,7 @@ export function wire(on: OpHook, w: Wired) {
   }));
   on('fs.stat', (_$: never, e: { path: string }) =>
     e.path in w.files || e.path in w.dirs
-      ? { value: { kind: e.path in w.dirs ? 'dir' : 'file', size: 1, mtimeMs: 2, isLink: false, realPath: e.path } }
+      ? { value: { kind: e.path in w.dirs ? 'dir' : 'file', size: 1, mtimeMs: 2, isLink: false } }
       : { deny: 'ENOENT' });
   on('fs.write', (_$: never, e: { path: string; value: string }) => {
     w.files[e.path] = e.value;
@@ -120,7 +120,6 @@ export function wire(on: OpHook, w: Wired) {
   });
   on('ui.status', (_$: never, e: { text?: string }) => { w.statuses.push(e.text ?? ''); return { value: undefined }; });
   on('ui.toast', (_$: never, e: { text: string }) => { w.toasts.push(e.text); return { value: undefined }; });
-  on('ui.notice', () => ({ value: undefined }));
   on('ui.invalidate', () => ({ value: undefined }));
   on('command.register', () => ({ value: {} }));
   on('clock.every', () => ({ value: undefined }));
@@ -206,9 +205,6 @@ export function fresh(over: Partial<Wired> = {}): Wired {
     ...over,
   };
 }
-
-export const approvals = (w: Wired) =>
-  (w.state.get('betterterms-mod/approvals')?.value ?? {}) as Record<string, true>;
 
 export const PANE_PROPS = {
   title: 'betterterms', isFocused: true, bodyColumns: 100, placement: 'dock' as const,

@@ -19,8 +19,36 @@ const POLL_MS = 3000;
 // reply, and the last print/status so redraws fire only on change.
 const seen = new Map();
 const replied = new Set();
+// Hashes with an approval press armed: one press per hash, so a
+// second press on a stale snapshot cannot arm or submit twice. The
+// guard stays set after a successful press (a rescan marks the
+// record approved and takes over); a failure or a reject/drop
+// releases it.
+const approving = new Set();
 let lastPrint = "";
 let lastStatus = "";
+
+// register() reseeds the engine-facing caches per session; this is
+// the wiring half of that reset, and the unit world calls it through
+// testkit's fake engine the same way.
+export function resetWiring() {
+  seen.clear();
+  replied.clear();
+  approving.clear();
+  lastPrint = "";
+  lastStatus = "";
+}
+
+// The gate argv the approve instruction names: the same call the mod
+// runs for a re-gate, with --inbound when the case carries one and
+// --approved last.
+async function approveArgv(host, snap, c) {
+  const dir = `${snap.root}/${c.id}`;
+  const bt = await IO.findBt(host);
+  if (bt === null) return null;
+  const inbound = await host.fsExists(`${dir}/inbound.yaml`);
+  return [...C.gateArgv(bt, dir, c.id, { inbound }), "--approved"];
+}
 
 async function runGate(host, snap, c) {
   const dir = `${snap.root}/${c.id}`;
@@ -71,6 +99,11 @@ export async function getSelected(host) {
 // stale snapshot. The terms actions delegate to ui/terms.js, which
 // owns the editor's state.
 export function paneActions(host, snap) {
+  // Release armed presses whose record left the snapshot (spent,
+  // rejected or dropped): a same-tuple re-hold may approve again.
+  const alive = new Set(
+    (snap?.cases ?? []).flatMap((c) => (c.held ?? []).map((h) => h.hash)));
+  for (const h of approving) if (!alive.has(h)) approving.delete(h);
   return {
     openTab: async (n) => {
       await host.setTab(n === 2 || n === 3 ? n : 1);
@@ -90,15 +123,38 @@ export function paneActions(host, snap) {
           `betterterms: ${A.hash8(held.hash) ?? "that hash"} is not ` +
           `the current held draft for ${c.id}`);
       }
+      if (held.approved) {
+        return host.toast(
+          `betterterms: draft ${A.hash8(held.hash)} is already approved`);
+      }
+      // One press per hash while an approval is armed; a second press
+      // on the same card before the rescan lands is ignored quietly.
+      if (approving.has(held.hash)) return;
+      approving.add(held.hash);
       // `held approve` writes the hash-bound marker (and refuses a
       // non-current hash itself); the submitted prompt tells the
-      // agent to spend it once through `bt.py gate --approved`.
+      // agent to spend it once through `bt.py gate --approved`, as
+      // the full argv the mod itself would run.
       const res = await runHeld(host, snap, "approve", c.id, held.hash);
-      if (!res.ok) return host.toast(`betterterms: approve failed: ${res.error}`);
-      await host.submit({ text: A.approvePromptText(res.hash, c.id) }).catch(() =>
-        host.toast(`betterterms: approved ${A.hash8(res.hash)}; resend the draft`));
+      if (!res.ok) {
+        approving.delete(held.hash);
+        return host.toast(`betterterms: approve failed: ${res.error}`);
+      }
+      const argv = await approveArgv(host, snap, c);
+      if (argv === null) {
+        approving.delete(held.hash);
+        return host.toast(
+          "betterterms: approve failed: bt.py not found beside the mod");
+      }
+      try {
+        await host.submit({ text: A.approvePromptText(res.hash, c.id, argv) });
+      } catch {
+        host.toast(A.approveFallbackText(res.hash, c.id, argv));
+      }
+      host.invalidate("ui.render");
     },
     reject: async (c, held) => {
+      approving.delete(held.hash);
       const res = await runHeld(host, snap, "reject", c.id, held.hash);
       if (!res.ok) return host.toast(`betterterms: reject failed: ${res.error}`);
       host.toast(`betterterms: draft ${A.hash8(held.hash)} rejected`);
@@ -110,6 +166,7 @@ export function paneActions(host, snap) {
     },
     saveEdit: async (c, held, text) => {
       A.setEditing(null);
+      approving.delete(held.hash);
       // The edited text is a new send tuple: the old held record is
       // dropped quietly (no thread marker) before the re-gate re-lists
       // the draft under its new hash.
@@ -118,7 +175,16 @@ export function paneActions(host, snap) {
         host.toast(`betterterms: could not drop the old held draft: ${drop.error}`);
       }
       await host.fsWrite(`${snap.root}/${c.id}/draft.yaml`, A.draftYaml(c, held, text)).catch(() => {});
-      await runGate(host, snap, c);
+      const verdict = await runGate(host, snap, c);
+      // The verdict is the answer the user watches for: block reasons
+      // to redraft against, or the new held hash to approve.
+      if (verdict.result === "needs_approval") {
+        host.toast(`betterterms: held as ${A.hash8(verdict.hash) ?? "draft"}`);
+      } else if (verdict.result !== "pass") {
+        host.toast(
+          `betterterms: ${verdict.result}` +
+          (verdict.reasons.length > 0 ? `: ${verdict.reasons.join("; ")}` : ""));
+      }
       host.invalidate("ui.render");
     },
     openTerms: (c) => T.openTerms(host, snap, c),

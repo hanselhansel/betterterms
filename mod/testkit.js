@@ -6,6 +6,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { resetScan } from "./lib/scan.js";
 import { resetBt } from "./lib/hostio.js";
+import { resetWiring } from "./lib/wiring.js";
 
 // The element factory the engine injects. Hooks call it only when a
 // render hook runs; tests stub it before firing those hooks.
@@ -189,16 +190,17 @@ export function caseDirs(over = {}) {
 }
 
 export function fakeDollar(opts = {}) {
-  // Each fake $ is a fresh session, so the module-level scan cache
-  // and the resolved-bt cache reset exactly as register() resets them
-  // for the engine.
+  // Each fake $ is a fresh session, so the module-level caches and
+  // baselines (scan, resolved bt.py, poll and approve guards) reset
+  // exactly as register() resets them for the engine.
   resetScan();
   resetBt();
+  resetWiring();
   const env = opts.env ?? { BETTERTERMS_HOME: HOME };
   const files = opts.files ?? {};
   const dirs = opts.dirs ?? {};
   const calls = {
-    run: [], toast: [], open: [], ask: [], notice: [], invalidate: [],
+    run: [], toast: [], open: [], invalidate: [],
     register: [], every: [], submit: [], status: [], write: [],
     read: [], stat: [], list: [],
   };
@@ -259,13 +261,13 @@ export function fakeDollar(opts = {}) {
         if (ents.length === 0 && !(p in dirs)) throw new Error(`ENOENT ${p}`);
         return ents;
       },
-      stat: async (p, init) => {
+      stat: async (p) => {
         calls.stat.push(p);
         const st = (opts.stats ?? {})[p];
         if (p in files)
-          return { kind: "file", size: files[p].length, mtimeMs: st?.mtimeMs ?? bumps.get(p) ?? 1, ino: st?.ino ?? inoOf(p), isLink: false, realPath: st?.realPath ?? p };
+          return { kind: "file", size: files[p].length, mtimeMs: st?.mtimeMs ?? bumps.get(p) ?? 1, ino: st?.ino ?? inoOf(p), isLink: false };
         if (p in dirs)
-          return { kind: "dir", size: 0, mtimeMs: dirMtime(p), ino: st?.ino ?? inoOf(p), isLink: false, realPath: st?.realPath ?? p };
+          return { kind: "dir", size: 0, mtimeMs: dirMtime(p), ino: st?.ino ?? inoOf(p), isLink: false };
         throw new Error(`ENOENT ${p}`);
       },
     },
@@ -294,8 +296,6 @@ export function fakeDollar(opts = {}) {
       resolve: () => ({ Box: "Box", Text: "Text", Button: "Button", Input: "Input", Select: "Select" }),
       toast: (t) => calls.toast.push(t),
       open: async (req) => { calls.open.push(req); return { isPlaced: true }; },
-      notice: (id, t) => calls.notice.push({ id, text: t }),
-      ask: async (q, init) => { calls.ask.push({ q, init }); return opts.answer ?? "Hold"; },
       invalidate: (w) => calls.invalidate.push(w),
       status: (t) => calls.status.push(t),
       log: () => {},

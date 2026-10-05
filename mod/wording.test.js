@@ -21,14 +21,38 @@ describe("lib/approvals helpers", () => {
 
   test("approvePromptText sends the agent through gate --approved", () => {
     // The press arms the marker; the prompt tells the agent to run
-    // `bt.py gate <case> --approved` once and send the rendered text
-    // it returns verbatim as its own argument (decision 0020).
-    const text = A.approvePromptText(HASH, CASE_ID);
+    // the same gate argv the mod would run -- resolved absolute bt.py
+    // path, the case's draft path, --approved -- exactly once and
+    // send the rendered text it returns verbatim as its own
+    // argument (decision 0020).
+    const argv = [
+      "python3", "/x/skills/betterterms-guardrails/scripts/bt.py",
+      "gate", CASE_ID, "--draft", `/bt/cases/${CASE_ID}/draft.yaml`,
+      "--approved",
+    ];
+    const text = A.approvePromptText(HASH, CASE_ID, argv);
     assert.match(text, new RegExp(`approved draft ${HASH8} for ${CASE_ID}`));
-    assert.match(text, new RegExp(`bt\\.py gate ${CASE_ID} --approved`));
+    assert.ok(text.includes(`\`${argv.join(" ")}\``), text);
     assert.match(text, /verbatim as its own argument/);
-    assert.match(text, /once/);
+    assert.match(text, /exactly once/);
     assert.doesNotMatch(text, /send guard|send check/i);
+  });
+
+  test("approveFallbackText carries the same runnable command", () => {
+    // When the prompt cannot be submitted the marker is already
+    // armed: the fallback toast repeats the command so the agent or
+    // the user can run it by hand.
+    const argv = [
+      "python3", "/x/skills/betterterms-guardrails/scripts/bt.py",
+      "gate", CASE_ID, "--draft", `/bt/cases/${CASE_ID}/draft.yaml`,
+      "--inbound", `/bt/cases/${CASE_ID}/inbound.yaml`,
+      "--approved",
+    ];
+    const text = A.approveFallbackText(HASH, CASE_ID, argv);
+    assert.match(text, new RegExp(`approved ${HASH8}`));
+    assert.match(text, /did not send/);
+    assert.ok(text.includes(`\`${argv.join(" ")}\``), text);
+    assert.match(text, /verbatim/);
   });
 
   test("statusText matches the spec line, per currency", () => {

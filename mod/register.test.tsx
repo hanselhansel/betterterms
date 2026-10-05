@@ -45,7 +45,7 @@ function wire(on: OpHook) {
   }));
   on('fs.stat', (_$: never, e: { path: string }) =>
     e.path in FILES || e.path in DIRS
-      ? { value: { kind: e.path in DIRS ? 'dir' : 'file', size: 1, mtimeMs: 2, isLink: false, realPath: e.path } }
+      ? { value: { kind: e.path in DIRS ? 'dir' : 'file', size: 1, mtimeMs: 2, isLink: false } }
       : { deny: 'ENOENT' });
   on('tool.call', (_$: never, e: { tool: string }) => ({ result: { ran: e.tool } }));
   on('prompt.submit', (_$: never, e: { text: string }) => ({ text: e.text }));

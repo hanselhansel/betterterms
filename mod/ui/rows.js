@@ -7,10 +7,13 @@
 
 import { collectStrings } from "../lib/cases.js";
 
-// A gate call is a shell command carrying bt.py (usually as a full
-// path: python3 .../scripts/bt.py gate ...) and the gate verb.
-const GATE_CALL = /\bbt\.py\b/;
-const GATE_VERB = /\bgate\b/;
+// A gate call is one plain `bt.py gate` invocation (usually as a
+// full path: python3 .../scripts/bt.py gate ...). A command that
+// composes anything else -- `;`, `&&`, `||`, `|`, redirection,
+// command substitution, a subshell, a second line -- keeps the
+// stock row: collapsing it would hide the rest of what ran.
+const GATE_CALL = /\bbt\.py\s+gate\b/;
+const COMPOSED = /[;|&<>`$()\r\n\\]/;
 
 // props: the ToolUse row's {tool, input, output, isRunning, ...}.
 // Returns {text, color} for a gate row, null for anything else, so the
@@ -18,7 +21,7 @@ const GATE_VERB = /\bgate\b/;
 export function gateRow(props) {
   const input = props?.input;
   const isGate = collectStrings(input).some(
-    (s) => GATE_CALL.test(s) && GATE_VERB.test(s),
+    (s) => GATE_CALL.test(s) && !COMPOSED.test(s),
   );
   if (!isGate || props.isRunning) return null;
   const stdout = typeof props.output === "object" && props.output !== null

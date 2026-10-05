@@ -40,8 +40,69 @@ describe("approve press", () => {
     assert.equal(state.get("approvals"), undefined);
     assert.equal(calls.submit.length, 1);
     assert.match(calls.submit[0], new RegExp(`approved draft ${HASH8} for ${CASE_ID}`));
-    assert.match(calls.submit[0], /bt\.py gate \S+ --approved/);
+    // The instruction is runnable as printed: the same argv the mod
+    // uses for a re-gate -- the resolved absolute bt.py path, the
+    // case's own draft path, --approved -- with --inbound only when
+    // the case carries one.
+    const gate = `python3 ${BT} gate ${CASE_ID} --draft ${DIR}/draft.yaml --approved`;
+    assert.ok(calls.submit[0].includes(`\`${gate}\``), calls.submit[0]);
+    assert.match(calls.submit[0], /exactly once/);
     assert.match(calls.submit[0], /verbatim as its own argument/);
+  });
+
+  test("the approve prompt carries --inbound when the case has one", async () => {
+    const { $, calls } = held$({
+      files: heldFiles({ [`${DIR}/inbound.yaml`]: "offer: 1000\n" }),
+    });
+    await approvePress($);
+    const gate =
+      `python3 ${BT} gate ${CASE_ID} --draft ${DIR}/draft.yaml ` +
+      `--inbound ${DIR}/inbound.yaml --approved`;
+    assert.equal(calls.submit.length, 1);
+    assert.ok(calls.submit[0].includes(`\`${gate}\``), calls.submit[0]);
+  });
+
+  test("a failed prompt submit toasts the same runnable command", async () => {
+    const files = heldFiles();
+    const { $, calls } = fakeDollar({
+      files, dirs: heldDirs(), held: heldOpt(),
+    });
+    $.prompt.submit = async () => {
+      throw new Error("no composer");
+    };
+    await approvePress($);
+    // The marker is armed; the toast carries the command the prompt
+    // would have carried, so the send path is still one run away.
+    assert.equal(`${DIR}/held/${HASH}.approved` in files, true);
+    const gate = `python3 ${BT} gate ${CASE_ID} --draft ${DIR}/draft.yaml --approved`;
+    const toast = calls.toast.join("\n");
+    assert.ok(toast.includes(`\`${gate}\``), toast);
+    assert.match(toast, /did not send/);
+  });
+
+  test("a second press while the first is armed is ignored", async () => {
+    const { $, calls } = held$();
+    const card = await approvalsCard($);
+    const press = () =>
+      findNode(card, byKey(`approve-${HASH8}`)).props.onPress();
+    await Promise.all([press(), press()]);
+    const runs = calls.run.filter((r) => r.argv[3] === "approve");
+    assert.equal(runs.length, 1, "one press arms one approval");
+    assert.equal(calls.submit.length, 1);
+  });
+
+  test("a press on an already-approved record is skipped", async () => {
+    const files = heldFiles();
+    files[`${DIR}/held/${HASH}.approved`] = `hash: ${HASH}\n`;
+    const { $, calls } = fakeDollar({
+      files, dirs: heldDirs(), held: heldOpt(),
+    });
+    const card = await approvalsCard($);
+    assert.match(JSON.stringify(card), /approved/);
+    await findNode(card, byKey(`approve-${HASH8}`)).props.onPress();
+    assert.equal(calls.run.some((r) => r.argv[3] === "approve"), false);
+    assert.equal(calls.submit.length, 0);
+    assert.match(calls.toast.join("\n"), /already approved/);
   });
 
   test("the marker the press armed spends exactly once", async () => {
@@ -96,23 +157,33 @@ describe("approve press", () => {
     assert.deepEqual(rejectRun.argv, ["python3", BT, "held", "reject", CASE_ID, HASH8]);
   });
 
-  test("a/e/r bind on the top card only when several drafts wait", async () => {
+  test("the current card sorts first and takes a/e/r; superseded is greyed", async () => {
+    // REC2 is not the hash gate.json names: it is superseded, listed
+    // below the current card, greyed and labeled, without hotkeys,
+    // and outside the badge count even though it sorts first in the
+    // held list.
     const REC2 = {
       action: "send", offer: 900, period: "year", currency: "USD",
       rendered: "I can pay $900 a year if that closes this out.",
       reasons: ["offer exceeds autonomy"], held_at: "2026-10-04T13:00:00+00:00",
     };
     const HASH2 = heldHash(REC2);
+    const H28 = HASH2.slice(0, 8);
     const { $ } = fakeDollar({
-      files: heldFiles(), dirs: heldDirs(), held: { [CASE_ID]: [REC, REC2] },
+      files: heldFiles(), dirs: heldDirs(), held: { [CASE_ID]: [REC2, REC] },
     });
     const tree = await approvalsCard($);
-    // The oldest (first listed) card takes the keys; the rest need a press.
     assert.equal(findNode(tree, byKey(`approve-${HASH8}`)).props.hotkey, "a");
     assert.equal(findNode(tree, byKey(`edit-open-${HASH8}`)).props.hotkey, "e");
     assert.equal(findNode(tree, byKey(`reject-${HASH8}`)).props.hotkey, "r");
-    assert.equal(findNode(tree, byKey(`approve-${HASH2.slice(0, 8)}`)).props.hotkey, undefined);
-    assert.match(JSON.stringify(tree), /top card/);
+    assert.equal(findNode(tree, byKey(`approve-${H28}`)).props.hotkey, undefined);
+    const flat = JSON.stringify(tree);
+    assert.match(flat, /superseded/);
+    assert.ok(flat.indexOf(`held-h-${HASH8}`) < flat.indexOf(`held-h-${H28}`),
+      "the current card comes first even when it lists later");
+    assert.equal(
+      findNode(tree, byKey("tab-2")).props.label, "2 Approvals (1)",
+      "the badge counts the current record only");
   });
 });
 
@@ -157,6 +228,40 @@ describe("edit flow", () => {
     assert.match(wrote.text, /template: \|-/);
     assert.match(wrote.text, /I can pay \$1,200 a year/);
     assert.match(wrote.text, /action: send/);
+  });
+
+  test("saveEdit toasts the gate verdict", async () => {
+    // A held verdict names the new hash; a block names its reasons,
+    // so the answer the user watches for lands in a toast.
+    const { $, calls } = fakeDollar({
+      files: heldFiles(), dirs: heldDirs(), held: heldOpt(),
+      gate: {
+        result: "needs_approval",
+        reasons: ["action 'cancel' requires --approved"],
+        rendered: RENDERED, hash: HASH,
+      },
+    });
+    const snap = await R.scanCases($);
+    const tree = paneTree(
+      ELS, snap, { tab: 2, selected: null, editing: HASH }, R.paneActions($, snap));
+    await findNode(tree, (n) => n.tag === "Input").props.onSubmit("edited text");
+    assert.match(calls.toast.join("\n"), new RegExp(`held as ${HASH8}`));
+  });
+
+  test("saveEdit toasts block reasons", async () => {
+    const { $, calls } = fakeDollar({
+      files: heldFiles(), dirs: heldDirs(), held: heldOpt(),
+      gate: {
+        result: "block",
+        reasons: ["outside your limits; escalate to the user"],
+        rendered: null,
+      },
+    });
+    const snap = await R.scanCases($);
+    const tree = paneTree(
+      ELS, snap, { tab: 2, selected: null, editing: HASH }, R.paneActions($, snap));
+    await findNode(tree, (n) => n.tag === "Input").props.onSubmit("edited text");
+    assert.match(calls.toast.join("\n"), /block: outside your limits/);
   });
 
   test("edit then press a approves the new text only; the old card is gone", async () => {

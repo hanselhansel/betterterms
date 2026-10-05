@@ -48,7 +48,7 @@ export function hostOf($) {
     envHome: () => $.env.get("HOME"),
     fsRead: (p) => $.fs.read(p),
     fsWrite: (p, t) => $.fs.write(p, t),
-    fsStat: (p, i) => $.fs.stat(p, i),
+    fsStat: (p) => $.fs.stat(p),
     fsList: (p) => $.fs.list(p),
     fsExists: (p) => $.fs.exists(p),
     procRun: (argv, init) => $.process.run(argv, init),
@@ -74,6 +74,7 @@ export const paneActions = ($, snap) => W.paneActions(hostOf($), snap);
 export function register(on) {
   IO.resetBt();
   S.resetScan();
+  W.resetWiring();
   on("session.start", async ($, e, next) => W.sessionStart(hostOf($), e, next));
 
   on("command.run", { command: "betterterms" }, ($) => W.runCommand(hostOf($)));

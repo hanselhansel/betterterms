@@ -64,7 +64,7 @@ function wire(on: OpHook, w: Wired) {
   }));
   on('fs.stat', (_$: never, e: { path: string }) =>
     e.path in w.files || e.path in w.dirs
-      ? { value: { kind: e.path in w.dirs ? 'dir' : 'file', size: 1, mtimeMs: 2, isLink: false, realPath: e.path } }
+      ? { value: { kind: e.path in w.dirs ? 'dir' : 'file', size: 1, mtimeMs: 2, isLink: false } }
       : { deny: 'ENOENT' });
   on('fs.write', () => ({ value: undefined }));
   on('state.get', (_$: never, e: { plugin: string; key: string }) => {
@@ -90,7 +90,6 @@ function wire(on: OpHook, w: Wired) {
   on('ui.open', () => ({ value: { isPlaced: true } }));
   on('ui.status', () => ({ value: undefined }));
   on('ui.toast', (_$: never, e: { text: string }) => { w.toasts.push(e.text); return { value: undefined }; });
-  on('ui.notice', () => ({ value: undefined }));
   on('ui.invalidate', () => ({ value: undefined }));
   on('command.register', () => ({ value: {} }));
   on('clock.every', () => ({ value: undefined }));

@@ -101,6 +101,36 @@ describe("tabs and rows", () => {
     assert.equal(gateRow(props(null, { isRunning: true })), null);
   });
 
+  test("only a single plain gate invocation collapses", () => {
+    const props = (command, output) => ({
+      tool: "Bash", tool_use_id: "tu1",
+      input: { command },
+      isRunning: false, output,
+    });
+    const out = { stdout: '{"result":"pass","reasons":[]}', stderr: "" };
+    // The plain invocation -- flags and all -- still redraws.
+    assert.equal(
+      gateRow(props(
+        `python3 ${BT} gate ${CASE_ID} --draft ${DIR}/draft.yaml --inbound ${DIR}/inbound.yaml --approved`,
+        out,
+      ))?.text,
+      "✓ Gate pass",
+    );
+    // Anything composed around the call keeps the stock row.
+    for (const command of [
+      `python3 ${BT} gate ${CASE_ID} --draft ${DIR}/draft.yaml && echo done`,
+      `python3 ${BT} gate ${CASE_ID} --draft ${DIR}/draft.yaml; ls`,
+      `python3 ${BT} gate ${CASE_ID} --draft ${DIR}/draft.yaml || true`,
+      `python3 ${BT} gate ${CASE_ID} --draft ${DIR}/draft.yaml | tail -1`,
+      `python3 ${BT} gate ${CASE_ID} --draft ${DIR}/draft.yaml 2>/dev/null`,
+      `python3 ${BT} gate ${CASE_ID} --draft ${DIR}/draft.yaml < /dev/null`,
+      `echo \`python3 ${BT} gate ${CASE_ID}\``,
+      `python3 ${BT} gate ${CASE_ID} --draft ${DIR}/draft.yaml\nls`,
+    ]) {
+      assert.equal(gateRow(props(command, out)), null, command);
+    }
+  });
+
   test("band text counts held drafts and draws Review", () => {
     const el = { Box: "Box", Text: "Text", Button: "Button" };
     const tree = bandTree(el, { held: 1, pending: 0, repliers: ["Comcast"] }, () => {});

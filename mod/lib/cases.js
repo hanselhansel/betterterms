@@ -130,19 +130,27 @@ export function bandText(held, pending, repliers = []) {
   return parts.join(", ");
 }
 
-// Total held drafts across cases (the Approvals badge).
+// Total current held drafts across cases (the Approvals badge). Only
+// the record the last gate verdict held counts: a hash that is not
+// the case's gate.json hash is superseded and shown greyed.
 export function heldTotal(cases) {
-  return cases.reduce((n, c) => n + (c.held?.length ?? 0), 0);
+  return cases.reduce(
+    (n, c) =>
+      n + (c.held ?? []).filter((h) => h.hash === c.gateHash).length,
+    0,
+  );
 }
 
-// Cases whose saved verdict leaves a send pending and whose held files
-// do not already cover that rendered text, so the band does not count
-// one draft twice.
+// Cases whose saved verdict leaves a send pending and whose current
+// held record does not already cover that rendered text, so the band
+// does not count one draft twice.
 export function pendingWithoutHeld(cases) {
   return cases.filter((c) => {
     if (!c.pending) return false;
     const want = normalize(c.rendered ?? "");
-    return !(c.held ?? []).some((h) => normalize(h.rendered ?? "") === want);
+    return !(c.held ?? []).some(
+      (h) => h.hash === c.gateHash && normalize(h.rendered ?? "") === want,
+    );
   }).length;
 }
 
