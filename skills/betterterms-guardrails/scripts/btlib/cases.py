@@ -15,7 +15,15 @@ import secrets
 from datetime import date
 from pathlib import Path
 
-from . import BtError, MAX_AMOUNT, PERIODS, config, inputs, minor, yaml
+from . import (
+    BtError,
+    MAX_AMOUNT,
+    PERIODS,
+    config,
+    inputs,
+    worse_than_floor,
+    yaml,
+)
 from .floorio import read_floor, set_floor
 
 PACK_RE = re.compile(r"[a-z0-9-]{1,64}")
@@ -384,14 +392,6 @@ def check_plan_limits(plan, floor, direction, brief=None):
             raise BtError(
                 "best_alternative amount must be a positive number or null"
             )
-    floor = minor(floor)
     for v in values:
-        if v is None:
-            continue
-        v = minor(v)
-        if not math.isfinite(v) or (
-            direction == "receive" and v < floor
-        ) or (
-            direction == "pay" and v > floor
-        ):
+        if v is not None and worse_than_floor(v, floor, direction):
             raise BtError("plan conflicts with your limits")

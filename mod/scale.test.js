@@ -242,6 +242,37 @@ describe("terms editor", () => {
     ]);
     assert.equal(calls.toast.some((t) => /terms saved/.test(t)), true);
   });
+
+  test("a refused save toasts the bt.py reason", async () => {
+    // A refused command is exit 2 with {"error": ...} on stdout: the
+    // toast shows the CLI's own reason, not a bare exit code. A
+    // refused set-terms also stops the save before set-floor runs.
+    for (const [cmd, reason] of [
+      ["set-terms",
+        "target is on the wrong side of your walk-away; nothing saved"],
+      ["set-floor",
+        "walk-away is on the wrong side of your target; nothing saved"],
+    ]) {
+      const { $, calls } = fakeDollar({
+        files: termsFiles(), dirs: termsDirs(),
+        run: (argv) => argv.includes(cmd)
+          ? { exitCode: 2, stdout: JSON.stringify({ error: reason }), stderr: "" }
+          : { exitCode: 0, stdout: '{"ok":true}', stderr: "" },
+      });
+      const { tree } = await openEditor($);
+      await findNode(tree(), byKey("save-terms")).props.onPress();
+      assert.equal(
+        calls.toast.some((t) => t.includes(reason)), true,
+        `toasts: ${calls.toast.join(" | ")}`,
+      );
+      if (cmd === "set-terms") {
+        assert.equal(
+          calls.run.some((r) => r.argv.includes("set-floor")), false,
+          "a refused set-terms still ran set-floor",
+        );
+      }
+    }
+  });
 });
 
 describe("savings tab", () => {

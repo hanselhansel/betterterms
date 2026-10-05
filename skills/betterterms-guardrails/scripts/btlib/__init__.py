@@ -1,6 +1,8 @@
 """betterterms runtime library. Python stdlib plus the vendored
 PyYAML under ``_vendor``; no network access."""
 
+import math
+
 MAX_TEXT = 64 * 1024
 """The 64 KB bound on every text the gate or the scorer scans: a
 rendered draft, an inbound message, a fact body. Size is checked
@@ -29,6 +31,23 @@ def minor(value):
     the same form ``money_text`` renders, so every limit comparison
     reads the number the counterparty would see."""
     return float(f"{float(value):.2f}")
+
+
+def worse_than_floor(value, floor, direction):
+    """True when ``value`` sits on the wrong side of the walk-away
+    for the case direction: above it on ``pay``, below it on
+    ``receive``. Both sides are compared as rendered (rounded to the
+    minor unit), so a rendered amount can never slip past the floor
+    inside the raw comparison tolerance. A non-finite side or an
+    unknown direction counts as worse: the check fails closed."""
+    v, f = minor(value), minor(floor)
+    if not (math.isfinite(v) and math.isfinite(f)):
+        return True
+    if direction == "receive":
+        return v < f
+    if direction == "pay":
+        return v > f
+    return True
 
 
 class BtError(Exception):

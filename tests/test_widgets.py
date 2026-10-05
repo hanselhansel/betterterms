@@ -58,7 +58,9 @@ class TermsWidgetTest(WidgetCase):
         # The walk-away enters only through the user's own typed
         # command: the widget reports set or not set and leaves the
         # field empty, so the value 62 appears nowhere in the html.
-        case_id, _ = self.make_case(floor=62)
+        case_id, _ = self.make_case(
+            floor=62, plan=plan_for("pay", 62, target=50)
+        )
         proc, out = self.widget("terms", case_id)
         self.assertEqual(proc.returncode, 0, out)
         html = out["html"]

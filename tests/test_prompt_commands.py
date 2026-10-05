@@ -243,6 +243,50 @@ class RejectAndTermsTest(HookCase):
         self.assertEqual(plan["target"], 60)
         self.assertEqual(plan["best_alternative"]["amount"], 50)
 
+    def _pay_case_with_floor(self, floor="70.00"):
+        d = self.make_case()
+        (d / "brief.yaml").write_text(yaml.dump({"direction": "pay"}))
+        (d / ".floor").write_text(f"{floor}\n")
+        return d
+
+    def test_terms_past_walk_away_blocks_with_reason(self):
+        # A refused set-terms blocks the prompt outright: the reason
+        # reaches the user and no note ever reaches the model.
+        case_dir = self._pay_case_with_floor()
+        proc = run_hook(self.home, "bt terms case-1 target=100")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        out = hook_json(proc)
+        self.assertEqual(out["decision"], "block")
+        self.assertNotIn("hookSpecificOutput", out)
+        self.assertIn("wrong side of your walk-away", out["reason"])
+        self.assertNotRegex(out["reason"], r"\d")
+        # Nothing saved: the bare case dir still has no plan.yaml.
+        self.assertFalse((case_dir / "plan.yaml").exists())
+
+    def test_terms_inside_walk_away_saves_and_notes(self):
+        case_dir = self._pay_case_with_floor()
+        proc = run_hook(self.home, "bt terms case-1 target=60")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertIn(
+            "terms", additional_context(hook_json(proc))
+        )
+        plan = yaml.load((case_dir / "plan.yaml").read_text())
+        self.assertEqual(plan["target"], 60)
+
+    def test_floor_below_saved_target_blocks_with_reason(self):
+        d = self._pay_case_with_floor()
+        (d / ".floor").unlink()
+        (d / "plan.yaml").write_text(yaml.dump({"target": 100}))
+        proc = run_hook(self.home, "bt floor case-1 65")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        out = hook_json(proc)
+        self.assertEqual(out["decision"], "block")
+        self.assertIn("wrong side of your target", out["reason"])
+        # The refusal reason never carries a number, like every
+        # other floor-path block.
+        self.assertNotRegex(out["reason"], r"\d")
+        self.assertFalse((d / ".floor").exists())
+
     def test_terms_repeated_key_blocks(self):
         case_dir = self.make_case()
         proc = run_hook(

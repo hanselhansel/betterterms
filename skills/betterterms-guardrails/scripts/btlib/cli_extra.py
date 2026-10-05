@@ -17,6 +17,7 @@ from . import (
     config,
     held,
     widgets,
+    worse_than_floor,
     yaml,
 )
 
@@ -71,13 +72,28 @@ def _money(raw):
 
 def cmd_case_set_terms(args):
     """Write ``target`` and ``best_alternative`` into plan.yaml
-    (spec 6.4). Never reads or writes ``.floor``: the walk-away enters
-    only through ``case set-floor``."""
+    (spec 6.4). When a floor exists the target is checked against it
+    first (the same plan-limits comparison the gate runs, read in the
+    floor's period): a target on the wrong side of the walk-away
+    refuses with nothing saved, since the plan would then conflict
+    with the user's limits on every later gate call. The command
+    reads ``.floor`` for that check but never writes or echoes it."""
     d = cases.require_case(args.case_id)
     plan = cases.load_plan(d)
     touched = False
     if args.target is not None:
-        plan["target"] = _money(args.target)
+        target = _money(args.target)
+        floor = cases.read_floor(d)
+        if floor is not None and worse_than_floor(
+            target,
+            floor,
+            cases.direction_of(cases.load_brief(d)),
+        ):
+            raise BtError(
+                "target is on the wrong side of your walk-away; "
+                "nothing saved"
+            )
+        plan["target"] = target
         touched = True
     if any(
         v is not None for v in (args.alternative, args.period, args.note)

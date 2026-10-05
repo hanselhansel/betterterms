@@ -121,6 +121,18 @@ export function closeTerms(host) {
   host.invalidate("ui.render");
 }
 
+// The reason a failed bt.py call prints: a refused command is exit 2
+// with {"error": "..."} on stdout, so the toast shows the CLI's own
+// words (like the wrong-side refusals), not a bare exit code.
+const btError = (p) => {
+  if (p?.error) return p.error;
+  try {
+    const out = JSON.parse(p?.stdout ?? "");
+    if (typeof out?.error === "string") return out.error;
+  } catch { /* stdout was not JSON */ }
+  return p?.stderr || `exit ${p?.exitCode}`;
+};
+
 // s: target and best alternative land in plan.yaml through
 // `case set-terms`; the walk-away goes to `case set-floor` on stdin,
 // never argv (spec 6.4). A missing walk-away refuses, since the gate
@@ -145,17 +157,13 @@ export async function saveTerms(host) {
   let fail = null;
   if (argv.length > 6) {
     const p = await IO.runProc(host, t.home, argv);
-    if (p?.error || p?.exitCode !== 0) {
-      fail = p?.error ?? p?.stderr ?? `exit ${p?.exitCode}`;
-    }
+    if (p?.error || p?.exitCode !== 0) fail = btError(p);
   }
   if (fail === null) {
     const p = await IO.runProc(host, t.home,
       ["python3", bt, "case", "set-floor", t.caseId],
       { stdin: `${amt(t.walkaway)}\n` });
-    if (p?.error || p?.exitCode !== 0) {
-      fail = p?.error ?? p?.stderr ?? `exit ${p?.exitCode}`;
-    }
+    if (p?.error || p?.exitCode !== 0) fail = btError(p);
   }
   t.saved = fail === null;
   host.toast(t.saved

@@ -34,8 +34,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from btlib import (
-    BtError, cases, cli_extra, gate, held, inputs, ledger, score,
-    sources, yaml,
+    BtError, cases, cli_extra, floorio, gate, held, inputs, ledger,
+    score, sources, worse_than_floor, yaml,
 )
 
 
@@ -56,6 +56,20 @@ def cmd_case_set_floor(args):
         raw = getpass.getpass("Walk-away number (hidden): ")
     else:
         raw = sys.stdin.read()
+    # The value parses before the conflict check so a malformed
+    # walk-away reports the parse message, then a saved target checks
+    # the side: a walk-away that would strand the target on its wrong
+    # side refuses with nothing saved (the mirror of the set-terms
+    # refusal). Neither message ever carries a number.
+    value = floorio.parse_number(raw)
+    target = cases.positive(cases.load_plan(d).get("target"))
+    if target is not None and worse_than_floor(
+        target, value, cases.direction_of(cases.load_brief(d))
+    ):
+        raise BtError(
+            "walk-away is on the wrong side of your target; "
+            "nothing saved"
+        )
     cases.set_floor(d, raw)
     return 0, {"ok": True}
 

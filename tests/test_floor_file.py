@@ -30,10 +30,13 @@ LIMITS = "outside your limits; escalate to the user"
 class FloorFileCase(BtTestCase):
     def make_case(self, floor=None):
         case_id, case_dir = new_case(self.home)
+        # No saved target: set-floor now refuses a walk-away on the
+        # wrong side of one, and these floors are file-mechanics
+        # fixtures, not conflict checks.
         write_case_files(
             case_dir,
             brief=dict(BRIEF_PAY),
-            plan=dict(PLAN_BILLS),
+            plan=dict(PLAN_BILLS, target=None),
             floor=floor,
         )
         return case_id, case_dir

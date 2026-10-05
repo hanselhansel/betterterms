@@ -27,8 +27,13 @@ LIMITS = "outside your limits; escalate to the user"
 class SetFloorParseTest(BtTestCase):
     def make_case(self):
         case_id, case_dir = new_case(self.home)
+        # No saved target: the parse table's floors would otherwise
+        # sit on the wrong side of it and refuse before parsing is
+        # what the test exercises.
         write_case_files(
-            case_dir, brief=dict(BRIEF_PAY), plan=dict(PLAN_BILLS)
+            case_dir,
+            brief=dict(BRIEF_PAY),
+            plan=dict(PLAN_BILLS, target=None),
         )
         return case_id, case_dir
 
@@ -95,6 +100,94 @@ class SetFloorParseTest(BtTestCase):
         self.assertNotIn("1,200", proc.stdout)
         self.assertNotIn("1,200", proc.stderr)
         self.assertEqual((case_dir / ".floor").read_text().strip(), "900.00")
+
+
+class SetFloorTargetTest(BtTestCase):
+    """set-floor refuses a walk-away that would leave the saved
+    target on its wrong side: below the target on a pay case, above
+    it on a receive case. The refusal carries no numbers and writes
+    nothing. With no saved target there is no side to check, so the
+    floor lands as before."""
+
+    WRONG_SIDE = (
+        "walk-away is on the wrong side of your target; nothing saved"
+    )
+
+    def test_floor_below_saved_target_refused_pay(self):
+        case_id, case_dir = new_case(self.home)
+        run_bt_json(
+            self.home, "case", "set-terms", case_id, "--target", "100"
+        )
+        proc, out = run_bt_json(
+            self.home, "case", "set-floor", case_id, stdin="70\n"
+        )
+        self.assertEqual(proc.returncode, 2, out)
+        self.assertEqual(out["error"], self.WRONG_SIDE)
+        self.assertNotRegex(out["error"], r"\d")
+        self.assertFalse((case_dir / ".floor").exists())
+
+    def test_floor_above_saved_target_refused_receive(self):
+        case_id, case_dir = new_case(self.home, direction="receive")
+        run_bt_json(
+            self.home, "case", "set-terms", case_id, "--target", "80"
+        )
+        proc, out = run_bt_json(
+            self.home, "case", "set-floor", case_id, stdin="100\n"
+        )
+        self.assertEqual(proc.returncode, 2, out)
+        self.assertEqual(out["error"], self.WRONG_SIDE)
+        self.assertFalse((case_dir / ".floor").exists())
+
+    def test_existing_floor_kept_after_refusal(self):
+        case_id, case_dir = new_case(self.home)
+        run_bt_json(self.home, "case", "set-floor", case_id, stdin="120\n")
+        run_bt_json(
+            self.home, "case", "set-terms", case_id, "--target", "100"
+        )
+        proc, _ = run_bt_json(
+            self.home, "case", "set-floor", case_id, stdin="70\n"
+        )
+        self.assertEqual(proc.returncode, 2)
+        self.assertEqual(
+            (case_dir / ".floor").read_text().strip(), "120.00"
+        )
+
+    def test_floor_equal_saved_target_lands(self):
+        case_id, case_dir = new_case(self.home)
+        run_bt_json(
+            self.home, "case", "set-terms", case_id, "--target", "100"
+        )
+        proc, out = run_bt_json(
+            self.home, "case", "set-floor", case_id, stdin="100\n"
+        )
+        self.assertEqual(proc.returncode, 0, out)
+        self.assertEqual(
+            (case_dir / ".floor").read_text().strip(), "100.00"
+        )
+
+    def test_no_saved_target_floor_lands(self):
+        case_id, case_dir = new_case(self.home)
+        proc, out = run_bt_json(
+            self.home, "case", "set-floor", case_id, stdin="70\n"
+        )
+        self.assertEqual(proc.returncode, 0, out)
+        self.assertEqual(
+            (case_dir / ".floor").read_text().strip(), "70.00"
+        )
+
+    def test_bad_input_errors_before_the_target_check(self):
+        # A malformed walk-away reports the parse message, not the
+        # conflict, even when the conflict would also fire.
+        case_id, case_dir = new_case(self.home)
+        run_bt_json(
+            self.home, "case", "set-terms", case_id, "--target", "100"
+        )
+        proc, out = run_bt_json(
+            self.home, "case", "set-floor", case_id, stdin="abc\n"
+        )
+        self.assertEqual(proc.returncode, 2, out)
+        self.assertEqual(out["error"], FLOOR_MSG)
+        self.assertFalse((case_dir / ".floor").exists())
 
 
 class SetFloorTtyTest(BtTestCase):
