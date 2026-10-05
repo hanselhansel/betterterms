@@ -25,27 +25,36 @@ directly (`subscriptions`, `cancel`, `refunds`, `bills`, `ai-api`, `salary`,
 
 ## Claude Code cloud sessions
 
-Marketplace plugins do not load in cloud sessions, but a repo can
-enable one for them. Vendor the kit into the repo the session works
-on:
+A cloud session never installs the plugins a repo's
+`.claude/settings.json` declares under `enabledPlugins`, including
+marketplaces listed under `extraKnownMarketplaces`. What a cloud
+session does read: skills under `.claude/skills/` in every case, and
+a repo's `hooks` and permission rules when the session has exactly
+one repository. Two paths cover cloud sessions:
 
-- `python3 scripts/vendor-into-repo <repo>` merges two keys into
-  `<repo>/.claude/settings.json`: the betterterms marketplace under
-  `extraKnownMarketplaces` and `betterterms@betterterms` under
-  `enabledPlugins`. Commit the result.
-- When a session starts in that repo, Claude Code installs the enabled
-  plugin from the marketplace, so the skills and the typed `bt`
-  commands (`bt approve`, `bt floor`) run in cloud sessions
-  too. That install reads `github.com/hanselhansel/betterterms`, which
-  must be reachable from the session; public works. The script does
-  not copy the skills in this mode: the plugin supplies them, and a
-  copy would load each skill twice.
-- `python3 scripts/vendor-into-repo --no-plugin <repo>` vendors only
-  the skills into `<repo>/.claude/skills/` (with a
-  `.betterterms-version` marker) for sessions that cannot reach the
-  marketplace. No prompt hook runs then, so a typed `bt` command
+- **Projects threads**: add betterterms under Project settings >
+  Plugins from the `hanselhansel/betterterms` marketplace, then
+  start a new thread. Changes to project plugins reach new threads,
+  never a running one.
+- **A plain cloud session or a single-repo project**: run
+  `python3 scripts/vendor-into-repo <repo>` and commit the result.
+  It vendors the skills into `<repo>/.claude/skills/` (with a
+  `.betterterms-version` marker), copies the hook scripts into
+  `<repo>/.claude/betterterms/hooks/` (with its own marker), and
+  merges `UserPromptSubmit` and `SessionStart` entries into
+  `<repo>/.claude/settings.json` with `$CLAUDE_PROJECT_DIR` paths.
+  Existing keys are kept and entries are never duplicated. The
+  vendored hooks apply only in a session with one repository, so a
+  multi-repo project must use Project settings > Plugins instead.
+- `python3 scripts/vendor-into-repo --no-hooks <repo>` vendors only
+  the skills. No prompt hook runs then, so a typed `bt` command
   reaches the model as ordinary chat text; the terminal
   `case set-floor` command is the only safe floor path there.
+
+Hooks load at session start. Installing the plugin mid-session
+activates the typed-command hook at the next session start
+(`/reload-plugins` locally); until then a typed `bt floor` reaches
+the model.
 
 In a Projects thread, the skills post the same views as interactive
 widgets: cases, the approval card, the terms editor, savings. A widget

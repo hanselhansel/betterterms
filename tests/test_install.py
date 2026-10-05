@@ -131,11 +131,11 @@ class InstallSkillsTest(ScriptTestCase):
 
 
 class VendorIntoRepoTest(ScriptTestCase):
-    def test_no_plugin_vendors_skills_and_writes_version_marker(self):
+    def test_no_hooks_vendors_skills_and_writes_version_marker(self):
         target = self.tmp / "consumer"
         (target / ".git").mkdir(parents=True)
         proc = run(self.repo, "vendor-into-repo", str(target),
-                   "--no-plugin", home=self.home)
+                   "--no-hooks", home=self.home)
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         bt = target / ".claude/skills/betterterms-guardrails/scripts/bt.py"
         self.assertTrue(bt.is_file())
@@ -151,37 +151,83 @@ class VendorIntoRepoTest(ScriptTestCase):
                 (target / ".claude/skills" / name / "SKILL.md").is_file(),
                 name,
             )
+        self.assertFalse((target / ".claude" / "betterterms").exists())
+        self.assertFalse(
+            (target / ".claude" / "settings.json").exists()
+        )
 
-    def test_default_enables_plugin_without_copying_skills(self):
-        """Decision G: when the plugin is enabled it supplies the
-        skills, so vendoring copies nothing (a copy would load each
-        skill twice)."""
+    def test_default_vendors_skills_hooks_and_settings(self):
+        """Repo-declared plugins never load in cloud sessions, so the
+        default vendors the pieces a session reads: the skills, the
+        hook scripts, and the hook entries in settings.json."""
         target = self.tmp / "consumer"
         (target / ".git").mkdir(parents=True)
-        proc = run(self.repo, "vendor-into-repo", str(target), home=self.home)
+        proc = run(self.repo, "vendor-into-repo", str(target),
+                   home=self.home)
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
-        self.assertFalse((target / ".claude" / "skills").exists())
+        self.assertTrue(
+            (
+                target
+                / ".claude/skills/betterterms-guardrails/scripts/bt.py"
+            ).is_file()
+        )
+        for name in ("prompt_commands.py", "_btpath.py",
+                     "session-start.sh"):
+            self.assertTrue(
+                (
+                    target / ".claude/betterterms/hooks" / name
+                ).is_file(),
+                name,
+            )
         settings = json.loads(
             (target / ".claude" / "settings.json").read_text()
         )
+        self.assertNotIn("enabledPlugins", settings)
+        events = settings["hooks"]
         self.assertEqual(
-            settings["enabledPlugins"], {"betterterms@betterterms": True}
+            [h["command"] for e in events["UserPromptSubmit"]
+             for h in e["hooks"]],
+            [
+                'python3 "$CLAUDE_PROJECT_DIR/.claude/betterterms/'
+                'hooks/prompt_commands.py"'
+            ],
+        )
+        self.assertEqual(
+            [h["command"] for e in events["SessionStart"]
+             for h in e["hooks"]],
+            [
+                'bash "$CLAUDE_PROJECT_DIR/.claude/betterterms/'
+                'hooks/session-start.sh"'
+            ],
         )
 
-    def test_default_warns_about_stale_vendored_copies(self):
+    def test_default_notes_a_stale_enabled_plugins_entry(self):
+        # A settings file written by the old vendor run enables the
+        # plugin; that never loads in cloud and would load the skills
+        # twice locally, so the script says so and keeps the key.
         target = self.tmp / "consumer"
-        write_skill(target / ".claude" / "skills", "betterterms-start")
-        proc = run(self.repo, "vendor-into-repo", str(target), home=self.home)
+        settings = target / ".claude" / "settings.json"
+        settings.parent.mkdir(parents=True)
+        settings.write_text(
+            json.dumps(
+                {"enabledPlugins": {"betterterms@betterterms": True}}
+            )
+        )
+        proc = run(self.repo, "vendor-into-repo", str(target),
+                   home=self.home)
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
-        self.assertIn("betterterms-start", proc.stdout)
-        self.assertIn("plugin supplies the skills", proc.stdout)
+        self.assertIn("enabledPlugins", proc.stdout)
+        self.assertTrue(
+            json.loads(settings.read_text())["enabledPlugins"]
+            ["betterterms@betterterms"]
+        )
 
     def test_vendor_is_idempotent(self):
         target = self.tmp / "consumer"
         target.mkdir()
         for _ in range(2):
             proc = run(self.repo, "vendor-into-repo", str(target),
-                       "--no-plugin", home=self.home)
+                       "--no-hooks", home=self.home)
             self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
 
     def test_vendor_refuses_missing_or_nondir(self):

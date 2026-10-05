@@ -117,9 +117,15 @@
   only for a plain standalone invocation; a command composed with
   `;`, `&&`, `||`, pipes, redirects, substitutions or a second line
   keeps the stock row.
-- `scripts/vendor-into-repo` enables the plugin without copying the
-  skills (a copy would load each skill twice); `--no-plugin` vendors
-  the skills alone.
+- `scripts/vendor-into-repo` no longer writes `enabledPlugins` or
+  `extraKnownMarketplaces`: cloud sessions never install plugins a
+  repo declares. It now vendors the skills into
+  `<repo>/.claude/skills/`, copies the hook scripts into
+  `<repo>/.claude/betterterms/hooks/`, and merges `UserPromptSubmit`
+  and `SessionStart` entries into `<repo>/.claude/settings.json`
+  with `$CLAUDE_PROJECT_DIR` paths, keeping other keys and never
+  duplicating entries; vendored hooks apply only in a session with
+  one repository. `--no-hooks` vendors the skills alone.
 - `scripts/doctor` reports native Windows as unsupported.
 
 ### Removed
@@ -149,7 +155,9 @@
 - Shared Projects threads are single-trust: any member can approve a
   draft or set the walk-away.
 - `bt.py score` can be probed for the floor like the gate can.
-- `scripts/vendor-into-repo` enables the plugin unpinned.
+- `scripts/vendor-into-repo` vendored hooks apply only in a
+  single-repository cloud session; multi-repo Projects threads
+  ignore them.
 - Approvals bind the send tuple, not the recipient.
 - A decimal comma in an amount parses as a thousands separator.
 

@@ -1,7 +1,8 @@
 # 0017. Display modes and the widget fallback for cloud sessions
 
 Status: accepted (release lanes R4 and R7, spec 6.8). Amended by
-0019 and 0020. Date: 2026-10-09.
+0019 and 0020. Amended: cloud plugin loading, 2026-10-06.
+Date: 2026-10-09.
 
 ## Context
 
@@ -65,3 +66,13 @@ counterparty writes can approve a draft. Codex has no prompt hook in
 this release, so Codex users set the walk-away in the terminal and
 approve in chat, where the agent runs `bt.py held approve` after the
 user typed `bt approve`.
+
+Amendment 2026-10-06, cloud plugin loading: a cloud session never
+installs plugins declared in a repo's `.claude/settings.json`, so
+`vendor-into-repo` no longer writes `enabledPlugins`. Widget and
+chat typed commands count on a live prompt hook, confirmed by the
+session-start line "betterterms is installed." in context. Projects
+threads load the plugin from Project settings > Plugins into each
+new thread; other cloud sessions vendor skills and hooks into the
+repo, and those hooks apply only when the session has exactly one
+repository.

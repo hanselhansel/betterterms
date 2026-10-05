@@ -20,6 +20,16 @@ hook, written through stdin, and blocked so the model never receives
 it. In a Projects thread that message stays visible to project
 members, so the terminal stays the better path there.
 
+The typed path works only where the prompt hook runs, which the
+session-start line "betterterms is installed." in context confirms:
+the plugin or a vendored repo's hooks loaded at session start. A
+plugin installed mid-session turns it on at the next session start
+(`/reload-plugins` locally). Where no hook runs, a typed `bt floor`
+reaches the model, so the skills point at the terminal
+`case set-floor` command instead, and in a Projects thread without
+the plugin they say to add betterterms under Project settings >
+Plugins and start a new thread.
+
 State the boundary plainly: the agent runs as your user, so nothing
 technical stops it from reading `.floor` if it
 tries (decision [0019](../decisions/0019-guard-deferred.md) is why the
@@ -75,7 +85,8 @@ as `held/<hash>.approved`, and written only by a user action:
 - a keypress or click on Approve in the `betterterms-mod` Approvals
   tab,
 - your own `bt approve <case_id> <hash8>` message caught by the
-  prompt hook (a widget button types it for you), or
+  prompt hook (a widget button types it for you; the session-start
+  line confirms the hook is active), or
 - `bt.py held approve`, run by the agent only in a host with no
   prompt hook and only after you typed `bt approve`.
 
@@ -112,7 +123,7 @@ through with a note.
 | Mode | Where | What approval means |
 |---|---|---|
 | Mod | Claude Code terminal or Desktop with `betterterms-mod` | A keypress or click runs `bt.py held approve` for the displayed hash and submits the prompt that sends the agent through `bt.py gate --approved` once. The mod is a cockpit only: it never inspects outgoing tool calls (decision 0020). |
-| Widget | Projects cloud threads with a widget-posting tool | A `held/<hash>.approved` file written by the prompt hook after your typed `bt approve` (the widget button only fills the message box; you press Enter). |
+| Widget | A session with a widget-posting tool and the prompt hook active (a Projects thread needs betterterms added in Project settings > Plugins, then a new thread) | A `held/<hash>.approved` file written by the prompt hook after your typed `bt approve` (the widget button only fills the message box; you press Enter). |
 | Chat | Codex, plain cloud sessions, `claude -p` | The same typed commands and the same approval file; with no prompt hook the agent runs `bt.py held approve` after you type `bt approve`. |
 
 All three modes share one enforcement: the gate's hash-bound one-use
@@ -154,8 +165,10 @@ triggering body counts as you.
   threads.
 - `bt.py score` reads the same `.floor` the gate does, so it can be
   probed for the number the same way.
-- `scripts/vendor-into-repo` enables the plugin unpinned; a vendored
-  repo tracks whatever the marketplace serves.
+- `scripts/vendor-into-repo` copies skills and hooks pinned to the
+  checked-out version, but a vendored repo's hooks apply only in a
+  session with exactly one repository; multi-repo Projects threads
+  ignore them.
 - An approval binds the send tuple, not the recipient: it does not
   check who the message goes to.
 - Amounts typed with a decimal comma parse as thousands separators

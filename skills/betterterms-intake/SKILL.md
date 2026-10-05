@@ -68,26 +68,31 @@ drafted: misreading them is the biggest source of lost value.
 
    - On a terminal it asks `Walk-away number (hidden): ` and does not
      echo what they type.
-   - In a session with a tool that posts interactive widgets (a
-     Projects cloud thread), post the `html` from
+   - Whether a typed `bt floor` or a terms widget is safe hangs on
+     the session-start line: "betterterms is installed." present in
+     this context means the prompt hook is active (the plugin, or a
+     vendored repo's hooks in a session with one repository).
+     Without the line the hook is not active in this session: never
+     suggest a typed `bt floor` and post no terms widget; give the
+     terminal command above, or in a Projects thread tell the user
+     to add betterterms under Project settings > Plugins
+     (marketplace hanselhansel/betterterms) and start a new thread.
+     A plugin installed mid-session activates the hook at the next
+     session start, or after `/reload-plugins` locally.
+   - With the line present in a session that posts interactive
+     widgets, post the `html` from
      `python3 <bt> widget terms <case_id>`
-     as is, but only when the plugin's session-start line
-     ("betterterms is installed.") is present in this context: it
-     means the prompt hook is live to catch the typed command. Its
-     walk-away field types `bt floor <case_id> <amount>`
+     as is. Its walk-away field types `bt floor <case_id> <amount>`
      as the user's own message, and the prompt hook writes it like
      the terminal command. That value stays visible in the thread,
      so the terminal command stays the better path whenever the
-     user has a terminal. When the session-start line is absent the
-     hook is not running and a typed `bt floor` would reach the
-     model: point the user to the terminal command above instead.
+     user has a terminal.
    - In Claude Code with the `betterterms-mod` plugin, the terms
      editor in the BetterTerms pane (`t` on the case) sets the same
      value by drag, nudge, or a typed field, and writes it through
      `case set-floor` itself.
-   - In a session where the prompt hook runs (Claude Code with the
-     plugin installed, including a repo that vendored it), the user
-     may instead type `bt floor <case_id> <amount>` as a chat
+   - With the line present, the user may instead type
+     `bt floor <case_id> <amount>` as a chat
      message: the hook writes it and blocks the message, so the model
      never receives it. The text still sits in the thread where the
      model can read it later, so the terminal command stays the
@@ -98,9 +103,10 @@ drafted: misreading them is the biggest source of lost value.
    - Never run `case set-floor` yourself, with or without a heredoc:
      the value would pass through you, and the skills instruct you
      never to read, print, or write the walk-away. If the user
-     has no terminal and the session has no prompt hook and no
-     widget tool, say so: there is no safe way to set the number in
-     that chat, and they need a terminal.
+     has no terminal and the session-start line is absent, there is
+     no safe way to set the number in this chat: in a Projects
+     thread the fix is Project settings > Plugins plus a new thread;
+     anywhere else they need a terminal.
 
    While you are on the limit, ask which period it is per: `once`,
    `month`, or `year`. Write the answer to `brief.yaml` as `period`;

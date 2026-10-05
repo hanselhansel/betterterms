@@ -26,15 +26,24 @@ walk-away number you set yourself.
      or a typed field.
    - A Projects cloud thread: the terms widget's walk-away field
      types `bt floor <case_id> <amount>` into your message box; you
-     press Enter and the prompt hook writes it. The value stays
-     visible in the thread, so the terminal is the better path when
-     you have one.
-   - Any chat surface where the prompt hook runs (Claude Code with
-     the plugin installed, including a repo that vendored it): type
+     press Enter and the prompt hook writes it. The thread needs the
+     plugin: add betterterms under Project settings > Plugins
+     (marketplace `hanselhansel/betterterms`) and start a new
+     thread. Without it a typed `bt floor` reaches the model, so
+     the skill falls back to the terminal command. The value stays
+     visible in the thread either way, so the terminal is the better
+     path when you have one.
+   - Any chat surface where the prompt hook is active: type
      `bt floor <case_id> <amount>` yourself. The hook writes it and
      blocks the message, so the model never receives it that turn,
-     though the text stays in the thread.
-   - Codex and hook-less hosts have no prompt hook, so a typed
+     though the text stays in the thread. The session-start line
+     "betterterms is installed." in the session context is the sign
+     the hook is active: the plugin or the vendored repo hooks
+     loaded at session start. A plugin installed mid-session
+     activates the hook at the next session start (`/reload-plugins`
+     locally).
+   - Codex, hook-less hosts, and any session without the
+     session-start line have no live prompt hook, so a typed
      `bt floor` would reach the model. Use the terminal command
      there; there is no safe in-chat path without the hook.
 
@@ -102,7 +111,11 @@ session.
 One command per message, wherever you type to the agent. A
 `UserPromptSubmit` hook reads it before the model does. Only `bt
 floor` is kept from the model where the hook runs; the other commands
-are handled first, then passed through with a note.
+are handled first, then passed through with a note. The hook is
+active when the session-start line "betterterms is installed." sits
+in the session context, which happens when the plugin or a vendored
+repo's hooks loaded at session start; a mid-session plugin install
+activates it at the next session start (`/reload-plugins` locally).
 
 | Command | What it does |
 |---|---|
@@ -123,7 +136,7 @@ plainly:
 | Mode | When | What it guarantees |
 |---|---|---|
 | Mod | Claude Code terminal or Desktop with `betterterms-mod` installed | The cockpit: a pane with Cases, Approvals, and Savings tabs, a band over the prompt when a draft waits, toasts on replies, and one-line gate rows. Approval is your keypress or click: it runs `bt.py held approve` for the displayed hash and submits the prompt that sends the agent through `bt.py gate --approved` once. The mod never inspects outgoing tool calls (decision 0020). Typing "yes" in chat approves nothing. |
-| Widget | A session with a tool that posts interactive widgets (Projects cloud threads) | The same views as posted widgets. A button fills your message box with the typed command; you still press Enter, so every action is yours. Approval lands as a `held/<hash>.approved` file the prompt hook writes. |
+| Widget | A session with a tool that posts interactive widgets and the prompt hook active (a Projects thread needs betterterms added in Project settings > Plugins, then a new thread) | The same views as posted widgets. A button fills your message box with the typed command; you still press Enter, so every action is yours. Approval lands as a `held/<hash>.approved` file the prompt hook writes. |
 | Chat | Codex, plain cloud sessions, `claude -p` | Text summaries and the same typed commands. Where the session has no prompt hook, the agent runs `bt.py held approve` itself after you reply `bt approve`. |
 
 The honest line on strength: every mode enforces approval the same way,

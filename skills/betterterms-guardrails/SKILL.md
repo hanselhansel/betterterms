@@ -74,9 +74,11 @@ paths:
 
 - a keypress or click on Approve in the `betterterms-mod` Approvals
   tab,
-- the user's own `bt approve <case_id> <hash8>` message, which the
-  prompt hook handles first and then passes through with a note (a
-  widget button can type it for them), or
+- the user's own `bt approve <case_id> <hash8>` message in a session
+  where the prompt hook is active (the session-start line
+  "betterterms is installed." is in context), which the hook handles
+  first and then passes through with a note (a widget button can
+  type it for them), or
 - `python3 <bt> held approve
   <case_id> <hash8>`, which the agent runs only in a host with no
   prompt hook and only after the user typed `bt approve` for that
@@ -118,12 +120,16 @@ How a held draft reaches the user depends on the session (spec 6.8):
   Desktop). Held drafts sit in its Approvals tab and the user's
   keypress or click approves. The agent posts nothing.
 - Widget: the session has a tool that posts interactive widgets
-  (Projects cloud threads). The agent posts the `html` from
+  (Projects cloud threads) and the session-start line "betterterms
+  is installed." is in context, meaning the prompt hook catches the
+  typed commands the buttons fill. The agent posts the `html` from
   `python3 <bt> widget approval <case_id> <hash8>`
   as is. Its buttons type the `bt` command into the user's message
   box, and the user presses Enter. `python3 <bt> widget cases`,
   `python3 <bt> widget terms <case_id>` and `python3 <bt> widget
-  savings` cover the other views.
+  savings` cover the other views. Without the session-start line
+  the hook is not active: post no widget, since a button's typed
+  `bt floor` would reach the model.
 - Chat: neither (Codex, plain cloud sessions, `claude -p`). The
   agent prints the rendered text and the reasons, then the typed
   commands: `bt approve <case_id> <hash8>` to approve and send, or
@@ -320,6 +326,9 @@ holds, end the exchange with the user's yes.
   runs; `bt approve`, `bt reject` and `bt terms` are handled first
   and then passed through with a note. The user enters
   the floor themselves by running `bt.py case set-floor`; intake has
-  the exact wording.
+  the exact wording. When the session-start line is absent the hook
+  is not active, so a typed `bt floor` would reach you: point the
+  user to the terminal command instead, or in a Projects thread to
+  Project settings > Plugins and a new thread.
 - Nothing personal goes into the repo. Case files live in the user's
   betterterms home.
