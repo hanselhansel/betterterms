@@ -19,8 +19,7 @@ tests/test_prompt_commands.py.
 import unittest
 
 from bt_helpers import REPO, BtTestCase
-from btlib import yaml
-from test_prompt_commands import additional_context, run_hook, hook_json
+from test_prompt_commands import run_hook, hook_json
 
 
 class LookalikeBlockTest(BtTestCase):
@@ -117,12 +116,12 @@ class EnvelopeBackstopTest(BtTestCase):
     text starts with ``<wake`` and carries a ``<message`` element; a
     ``<wake`` substring anywhere else is plain text. The floor rule
     runs before any command is handled and scans the raw prompt, with
-    the bodies of well-formed non-triggering ``<message>`` elements
-    out of scope: an agent body is never the user's text, and inside
-    an envelope an earlier human body was already handled when it was
-    sent. A malformed element or stray markup still counts. Digits
-    that are part of a case-id token (``name-YYYYMMDD-xxxx``) are not
-    the walk-away, while any other token after the case id is.
+    only the bodies of well-formed ``from="agent"`` message elements
+    out of scope: a match inside any human body, a malformed element
+    or stray markup still counts, because an envelope forwards its
+    earlier human bodies to the model. Digits that are part of a
+    case-id token (``name-YYYYMMDD-xxxx``) are not the walk-away,
+    while any other token after the case id is.
     """
 
     def make_case(self, cid="case-1"):
@@ -130,12 +129,12 @@ class EnvelopeBackstopTest(BtTestCase):
         d.mkdir(parents=True)
         return d
 
-    def test_envelope_prior_human_floor_line_is_ignored(self):
-        # An earlier human floor line was already handled when it was
-        # sent: the backstop scans the triggering body and the text
-        # outside well-formed elements only, so it does not block the
-        # trigger. The triggering `bt terms` runs and lands in
-        # plan.yaml; the floor is never written.
+    def test_envelope_human_floor_line_blocks_despite_terms_trigger(self):
+        # An earlier human floor line sits in the envelope beside a
+        # triggering `bt terms`. The earlier body still counts: the
+        # envelope forwards it to the model, walk-away included, so
+        # the backstop blocks before any command runs and the terms
+        # write never happens.
         case_dir = self.make_case()
         envelope = (
             '<wake reason="thread-reply">'
@@ -146,17 +145,20 @@ class EnvelopeBackstopTest(BtTestCase):
             "</wake>"
         )
         proc = run_hook(self.home, envelope)
-        note = additional_context(hook_json(proc))
-        self.assertIn("terms", note)
+        out = hook_json(proc)
+        self.assertEqual(out["decision"], "block")
+        self.assertIn("bt floor", out["reason"])
         self.assertNotIn("62", proc.stdout)
         self.assertFalse((case_dir / ".floor").exists())
-        plan = yaml.load((case_dir / "plan.yaml").read_text())
-        self.assertEqual(plan["target"], 60)
+        self.assertFalse((case_dir / "plan.yaml").exists())
 
-    def test_envelope_prior_human_floor_plain_trigger_passes(self):
-        # The named regression: a prior human `bt floor` line beside
-        # a plain-language trigger -- the envelope passes untouched
-        # and writes no floor.
+    def test_envelope_prior_human_floor_plain_trigger_blocks(self):
+        # A prior human `bt floor` line beside a plain-language
+        # trigger blocks too: the wake envelope forwards every human
+        # body to the model, so exempting the earlier one would let
+        # the walk-away through. Projects envelopes carry only the
+        # triggering message in practice, so the re-scan costs
+        # nothing. Nothing is written or echoed.
         d = self.make_case()
         envelope = (
             '<wake reason="thread-reply">'
@@ -167,8 +169,10 @@ class EnvelopeBackstopTest(BtTestCase):
             "</wake>"
         )
         proc = run_hook(self.home, envelope)
-        self.assertEqual(proc.returncode, 0, proc.stderr)
-        self.assertEqual(proc.stdout.strip(), "")
+        out = hook_json(proc)
+        self.assertEqual(out["decision"], "block")
+        self.assertIn("bt floor", out["reason"])
+        self.assertNotIn("62", proc.stdout)
         self.assertFalse((d / ".floor").exists())
 
     def test_envelope_agent_floor_text_is_ignored(self):

@@ -20,10 +20,10 @@ any command is handled, the live text is scanned for ``bt`` and
 ``floor`` adjacent (any whitespace, any case) plus a digit outside
 a case-id token like ``name-YYYYMMDD-xxxx``, or any non-empty
 token after a case id, digits or words. Live text is the prompt
-minus the bodies of well-formed non-triggering ``<message>``
-elements: an agent body is never the user's text, and in a wake
-envelope an earlier human body was already handled when it was
-sent. A hit always blocks: the floor write runs only when the
+minus the bodies of well-formed ``from="agent"`` message elements
+only: a human body stays in scope, triggering or not, because a
+wake envelope would otherwise forward a walk-away it carries to
+the model. A hit always blocks: the floor write runs only when the
 triggering message parses as a valid floor command, and nothing
 passes through with a note. Approve, reject, and terms keep the
 start-anchored rule: the trimmed user text starts with ``bt
@@ -121,22 +121,15 @@ def user_text(prompt):
 
 def _live_text(prompt):
     """Live text for the floor rule: the prompt minus the bodies of
-    well-formed ``<message>`` elements that are not the user's new
-    text. An agent body never is, and inside a wake envelope an
-    earlier human body was handled when it was sent."""
-    env = prompt.lstrip()
-    envelope = env.startswith("<wake") and "<message" in env
+    well-formed ``from="agent"`` elements. A human body stays in
+    scope even when it is not the trigger: the envelope forwards it
+    to the model, so a walk-away inside must still block."""
     parts, pos = [], 0
     for m in _MESSAGE.finditer(prompt):
         head = m.group(1).rstrip()
         if head.endswith("/"):
             continue
-        attrs = dict(_ATTR.findall(head))
-        if attrs.get("from") == "agent" or (
-            envelope
-            and attrs.get("from") == "human"
-            and attrs.get("trigger") != "true"
-        ):
+        if dict(_ATTR.findall(head)).get("from") == "agent":
             parts.append(prompt[pos : m.start(2)])
             pos = m.end(2)
     parts.append(prompt[pos:])
