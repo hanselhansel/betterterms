@@ -31,7 +31,7 @@ _SLOT = re.compile(r"\{\{([a-z0-9_]+)\}\}")
 # ``{{css}}`` slot so the shipped fragments stay identical in shape.
 # Light and dark tokens ride on prefers-color-scheme.
 _CSS = """\
-.bt-w{font:13px/1.45 -apple-system,"Segoe UI",sans-serif;max-width:34em;padding:12px;border:1px solid var(--bt-line);border-radius:8px;background:var(--bt-bg);color:var(--bt-fg);--bt-bg:#fff;--bt-fg:#1b1b1b;--bt-muted:#555;--bt-line:#d8d8d8;--bt-chip:#f1f1f1;--bt-accent:#0a7d4a;--bt-warn:#b00020}
+.bt-w{font:15px/1.45 -apple-system,"Segoe UI",sans-serif;max-width:34em;padding:12px;border:1px solid var(--bt-line);border-radius:8px;background:var(--bt-bg);color:var(--bt-fg);--bt-bg:#fff;--bt-fg:#1b1b1b;--bt-muted:#555;--bt-line:#d8d8d8;--bt-chip:#f1f1f1;--bt-accent:#0a7d4a;--bt-warn:#b00020}
 @media (prefers-color-scheme:dark){.bt-w{--bt-bg:#1c1c1e;--bt-fg:#ececec;--bt-muted:#9a9a9a;--bt-line:#48484a;--bt-chip:#2c2c2e;--bt-accent:#34c07c;--bt-warn:#ff6b6b}}
 .bt-w h3{margin:0 0 8px;font-size:14px}
 .bt-chip{display:inline-block;background:var(--bt-chip);border-radius:4px;padding:1px 7px;margin:0 4px 4px 0;font-size:12px}
