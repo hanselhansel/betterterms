@@ -77,8 +77,8 @@ A ``send`` offer whose digits equal
 the floor's digits in a different period routes too (``amount
 matches your limit's digits``): the converted value clears the band
 but the digits still restate the walk-away number. Irreversible
-actions, coach mode, autonomy 1 and a ``send`` offer at the floor
-also need approval.
+actions, coach mode, autonomy 1 or 2 and a ``send`` offer at the
+floor also need approval.
 
 ``block`` dominates ``needs_approval``, which dominates ``pass``, and
 every floor-related block reports the same generic reason so no
@@ -335,8 +335,11 @@ def check(case_dir, draft, approved=False, inbound=None):
         findings.append(("approval", f"action {action!r} requires --approved"))
     if mode == "coach":
         findings.append(("approval", "coach mode: the user approves every send"))
-    if autonomy == 1:
-        findings.append(("approval", "autonomy 1: the user approves every send"))
+    if autonomy in (1, 2):
+        findings.append((
+            "approval",
+            f"autonomy {autonomy}: the user approves every send",
+        ))
     if clean:
         for reason in review.review(find, never_items):
             findings.append(("approval", reason))
@@ -373,7 +376,8 @@ def check(case_dir, draft, approved=False, inbound=None):
     ):
         return "pass", [], rendered
     if rendered is not None:
-        held.hold(case_dir, draft, rendered, reasons)
+        h = held.hold(case_dir, draft, rendered, reasons)
+        held.supersede(case_dir, h)
     if approved:
         reasons.append(held.NO_APPROVAL)
     return "needs_approval", reasons, rendered

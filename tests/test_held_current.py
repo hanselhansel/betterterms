@@ -7,6 +7,7 @@ Split from test_held.py under the 400-line cap."""
 import unittest
 
 from bt_helpers import run_bt_json, send_draft
+from btlib import held
 from test_held import HeldCase
 
 STALE = "not the current held draft"
@@ -15,18 +16,25 @@ STALE = "not the current held draft"
 class CurrentHashTest(HeldCase):
     def test_approve_refuses_a_stale_hash(self):
         # gate.json names the draft the last gate verdict held. A held
-        # record whose hash differs (an old card, a draft edited since)
-        # cannot be approved: exit 2 with a plain reason, no marker.
+        # record whose hash differs (a card written beside it, a draft
+        # from before a pass or block verdict) cannot be approved:
+        # exit 2 with a plain reason, no marker.
         case_id, case_dir = self.make_case()
         proc, out = self.gate(case_id, self.held_draft())
-        stale = out["hash"]
-        newer = send_draft(
+        current = out["hash"]
+        # A second record written beside the current one resolves but
+        # is not the hash the verdict names. The gate drops the
+        # previous current itself when it holds a new hash, so a
+        # stale record only ever sits beside a verdict it did not
+        # come from.
+        other = send_draft(
             action="cancel",
             offer=None,
             template="please end my membership",
         )
-        proc, out = self.gate(case_id, newer)
-        current = out["hash"]
+        stale = held.hold(
+            case_dir, other, "please end my membership", []
+        )
         self.assertNotEqual(stale, current)
         proc, out = run_bt_json(
             self.home, "held", "approve", case_id, stale[:8]
@@ -72,6 +80,49 @@ class CurrentHashTest(HeldCase):
         )
         self.assertEqual(proc.returncode, 2, out)
         self.assertIn(STALE, out["error"])
+
+    def test_a_new_hold_drops_the_previous_current_record(self):
+        # Holding a new hash for a case drops the old current record
+        # quietly, like `held drop`: no `## rejected` thread marker,
+        # and one card stays current in the pane.
+        case_id, case_dir = self.make_case()
+        proc, out = self.gate(case_id, self.held_draft())
+        self.assertEqual(proc.returncode, 3, out)
+        stale = out["hash"]
+        newer = send_draft(
+            action="cancel",
+            offer=None,
+            template="please end my membership",
+        )
+        proc, out = self.gate(case_id, newer)
+        self.assertEqual(proc.returncode, 3, out)
+        current = out["hash"]
+        self.assertNotEqual(stale, current)
+        held_dir = case_dir / "held"
+        self.assertFalse((held_dir / f"{stale}.yaml").exists())
+        self.assertTrue((held_dir / f"{current}.yaml").is_file())
+        # The drop is quiet: no reject marker lands in thread.md.
+        thread = case_dir / "thread.md"
+        text = thread.read_text() if thread.exists() else ""
+        self.assertNotIn("rejected", text)
+        # held list reports exactly one record.
+        proc, out = run_bt_json(self.home, "held", "list", case_id)
+        self.assertEqual(proc.returncode, 0, out)
+        self.assertEqual(
+            [e["hash"] for e in out["held"]], [current]
+        )
+
+    def test_re_hold_of_the_same_tuple_keeps_the_record(self):
+        # Re-gating identical text holds the same hash: the record
+        # must not be dropped by its own refresh.
+        case_id, case_dir = self.make_case()
+        proc, out = self.gate(case_id, self.held_draft())
+        h = out["hash"]
+        proc, out = self.gate(case_id, self.held_draft())
+        self.assertEqual(out["hash"], h)
+        self.assertTrue(
+            (case_dir / "held" / f"{h}.yaml").is_file()
+        )
 
 
 if __name__ == "__main__":

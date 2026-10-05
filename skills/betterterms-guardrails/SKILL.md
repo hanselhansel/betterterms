@@ -58,7 +58,7 @@ Exit codes and results:
   block, redraft without the blocked content.
 - 2: usage or file error. Fix the call.
 - 3, `needs_approval`: the action is irreversible, coach mode,
-  autonomy level 1, a `send` offer at the user's limit, a `send`
+  autonomy level 1 or 2, a `send` offer at the user's limit, a `send`
   offer in a period the floor cannot compare, or the review scan
   flagged the rendered text. The draft is held: the gate writes
   `held/<hash>.yaml` in the case folder (the rendered text and the

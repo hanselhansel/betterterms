@@ -12,7 +12,7 @@
 - the patience budget is spent
 - the counterparty sincerely asks if it is an AI
 - the gate returns needs_approval: an irreversible action, coach mode
-  or autonomy 1 without `--approved`, a `send` offer equal to the
+  or autonomy 1 or 2 without `--approved`, a `send` offer equal to the
   floor, a `send` offer in a period the floor cannot compare (`once`
   versus recurring), or a review-scan hit on the rendered draft (an
   off-allowlist character, any ASCII digit with no small-number or

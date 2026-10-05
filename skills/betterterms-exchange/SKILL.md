@@ -103,7 +103,8 @@ or ask for their offer when it is not. Then gate, send, and log as below.
      nothing added anywhere else in the call. Never send through a
      shell command; use a send tool or hand the text to the user.
    - Exit 3, `needs_approval`: the action is irreversible, or coach
-     mode, autonomy 1, or the review scan flagged the rendered text.
+     mode, autonomy 1 or 2, or the review scan flagged the rendered
+     text.
      The draft is held: `held/<hash>.yaml` in the case folder, `hash`
      in the JSON. The hash binds the whole send tuple (action,
      offer, period, currency, rendered text), so an approval can
@@ -132,8 +133,10 @@ or ask for their offer when it is not. Then gate, send, and log as below.
      The gate may be probed by repeated calls, so this redraft-once
      then-escalate rule is the cap on gate calls per turn.
    - Exit 2: usage or file error. Fix the call.
-6. Send per autonomy: level 1 hands the draft to the user; level 2 asks
-   yes before each send; levels 3 and 4 send inside the approved plan.
+6. Send per autonomy: level 1 hands the draft to the user; level 2
+   sends only after the user's approval, and the gate enforces both
+   by holding every send for a hash-bound marker; levels 3 and 4 send
+   inside the approved plan.
 7. Append the turn to `thread.md`: `in` or `out`, ISO time,
    `approved_by_user`.
 8. Multiple bidders: wait for all bids or the set time before choosing.

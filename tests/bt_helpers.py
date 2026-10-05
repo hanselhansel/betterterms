@@ -98,7 +98,11 @@ BRIEF_PAY = {
     "goals": ["lower bill"],
     "priorities": ["price", "terms"],
     "ranking_check": {"passed": True, "samples": []},
-    "autonomy": 2,
+    # Level 3 sends inside the approved plan: the gate-rule tests get
+    # a clean `pass` verdict to assert on. Levels 1 and 2 need the
+    # user's yes on every send; the autonomy tests set them on
+    # purpose.
+    "autonomy": 3,
     "never_disclose": ["acct-7788"],
     "deadline": None,
 }

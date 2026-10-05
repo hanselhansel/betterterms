@@ -147,11 +147,17 @@ class CaseValidateTest(BtTestCase):
                 proc, out = self.gate(case_id, send_draft(template="hi"))
                 self.assertEqual(proc.returncode, 2, out)
                 self.assertIn("autonomy", out["error"])
-        # Autonomy 1 is valid and means the user approves every send.
-        case_id, _ = self.make_case(brief={"autonomy": 1})
-        proc, out = self.gate(case_id, send_draft(template="hi"))
-        self.assertEqual(proc.returncode, 3, out)
-        self.assertIn("autonomy 1", " ".join(out["reasons"]))
+        # Autonomy 1 and 2 are valid and both mean the user approves
+        # every send: a clean draft still comes back needs_approval.
+        for level in (1, 2):
+            case_id, _ = self.make_case(brief={"autonomy": level})
+            proc, out = self.gate(
+                case_id, send_draft(template="hi")
+            )
+            self.assertEqual(proc.returncode, 3, out)
+            self.assertIn(
+                f"autonomy {level}", " ".join(out["reasons"])
+            )
 
     def test_case_id_traversal_rejected(self):
         for cid in ("../etc", "..", "a b", "UPPER", "x_y",

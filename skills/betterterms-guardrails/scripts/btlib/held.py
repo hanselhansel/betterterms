@@ -313,6 +313,23 @@ def drop(case_dir, hash8):
     return h
 
 
+def supersede(case_dir, new_hash):
+    """Drop the record the last gate verdict held when ``new_hash``
+    replaces it: one draft is current at a time. Quiet like
+    ``drop`` -- the old text was superseded, not refused, so no
+    thread marker. The gate calls this right after ``hold``; the
+    ``gate.json`` it reads still names the previous verdict's hash,
+    and a same-hash or missing record is left alone. Returns the
+    dropped hash or None."""
+    prev = _current_hash(case_dir)
+    if prev is None or prev == new_hash:
+        return None
+    try:
+        return drop(case_dir, prev)
+    except BtError:
+        return None
+
+
 def consume_approval(case_dir, draft, rendered):
     """True once when an approval exists for this exact send tuple:
     the ``.approved`` marker is claimed by renaming it to a unique
