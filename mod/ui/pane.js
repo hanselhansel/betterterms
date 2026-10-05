@@ -10,10 +10,10 @@
 //   3 Savings    the ledger totals and chart (ui/savings.js)
 //
 // Trees only: the hook resolves the element set and hands `view`
-// ({tab, selected, editing, terms, savings, surface}) plus `act` (the
-// press handlers from lib/wiring.js). Arrow keys are never bound:
-// rows and cards are Buttons and Inputs, which both pointer and
-// hotkey press.
+// ({tab, selected, editing, editText, terms, savings, surface}) plus
+// `act` (the press handlers from lib/wiring.js). Arrow keys are never
+// bound: rows and cards are Buttons and Inputs, which both pointer
+// and hotkey press.
 
 import * as C from "../lib/cases.js";
 import { hash8, onceText, savedText } from "../lib/approvals.js";
@@ -149,7 +149,8 @@ function heldCard(el, c, held, view, { keys = false, superseded = false } = {}) 
     rows.push(h(Input, {
       key: `edit-${h8}`,
       label: "edit",
-      value: held.rendered,
+      // A failed save stashes the typed text so a redraw keeps it.
+      value: view.editText ?? held.rendered,
       submitLabel: "save",
       onSubmit: (text) => view.act.saveEdit(c, held, text),
     }));

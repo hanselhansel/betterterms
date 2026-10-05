@@ -103,7 +103,7 @@ def cmd_case_set_terms(args):
             "nothing to set; pass --target, --alternative, "
             "--period or --note"
         )
-    (d / "plan.yaml").write_text(yaml.dump(plan), encoding="utf-8")
+    held.atomic_write(d / "plan.yaml", yaml.dump(plan))
     return 0, {"ok": True, "plan": plan}
 
 

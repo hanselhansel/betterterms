@@ -145,6 +145,14 @@
 - The 12 negotiation metrics, multi-turn simulated counterparties,
   and the 14 pack eval cases; evals stay at 12 cases (decision 0015).
 
+### Known limits
+- Shared Projects threads are single-trust: any member can approve a
+  draft or set the walk-away.
+- `bt.py score` can be probed for the floor like the gate can.
+- `scripts/vendor-into-repo` enables the plugin unpinned.
+- Approvals bind the send tuple, not the recipient.
+- A decimal comma in an amount parses as a thousands separator.
+
 ## [0.1.0] - 2026-10-03
 
 ### Added

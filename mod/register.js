@@ -106,6 +106,7 @@ export function register(on) {
       tab: await W.getTab(host),
       selected: await W.getSelected(host),
       editing: A.getEditing(),
+      editText: A.getEditText(),
       terms: T.getTerms(),
       surface: e.surface,
       savings: undefined,

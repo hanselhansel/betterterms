@@ -111,7 +111,8 @@ COMMIT_WORDS = frozenset(
     "accept acceptance accepted accepting accepts agree agreeable "
     "agreed agreeing agreement agreements agrees cancel cancelling "
     "cancellation charge charged confirm confirmation confirmed "
-    "confirming confirms deal deals paid pay paying sold".split()
+    "confirming confirms deal deals paid pay paying proceed sold "
+    "yes".split()
 )
 
 # Two- or three-token phrases matched on the lowercased token stream;
@@ -125,12 +126,16 @@ COMMIT_PHRASES = frozenset((
     ("happy", "to", "pay"),
     ("i'll", "take"),
     ("let's", "do"),
+    ("let's", "go", "ahead"),
+    ("lets", "do", "that"),
+    ("no", "objections"),
     ("process", "it"),
     ("ready", "to", "pay"),
     ("sign", "me", "up"),
     ("sign", "us", "up"),
     ("sounds", "good"),
     ("take", "it"),
+    ("that's", "fine"),
     ("we'll", "take"),
     ("willing", "to", "pay"),
     ("work", "for", "me"),

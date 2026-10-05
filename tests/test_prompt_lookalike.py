@@ -5,8 +5,8 @@ claims to be one:
 
 - floor: the words ``bt`` and ``floor`` adjacent (any whitespace, any
   case) anywhere in the message -- any line, after any prefix or
-  markdown -- plus any digit in the message. The block reason never
-  repeats the message.
+  markdown -- plus any digit in the message or any non-empty token
+  after a case id. The block reason never repeats the message.
 - approve, reject, terms: the trimmed text starts with ``bt <verb>``
   (one leading backtick or a leading slash allowed) and carries the
   piece the verb needs: a hex token of six or more characters for
@@ -19,7 +19,8 @@ tests/test_prompt_commands.py.
 import unittest
 
 from bt_helpers import REPO, BtTestCase
-from test_prompt_commands import run_hook, hook_json
+from btlib import yaml
+from test_prompt_commands import additional_context, run_hook, hook_json
 
 
 class LookalikeBlockTest(BtTestCase):
@@ -72,6 +73,24 @@ class LookalikeBlockTest(BtTestCase):
                 self.assertNotIn("62", proc.stdout)
                 self.assertTrue((d / ".floor").exists())
 
+    def test_floor_word_amount_after_the_case_id_blocks(self):
+        # The raw rule is not digit-only: any non-empty token after
+        # the case id -- `sixty two`, `later` -- claims to set the
+        # walk-away, so it blocks before the amount can reach the
+        # model. Nothing is written or echoed.
+        d = self.make_case()
+        for prompt in (
+            "bt floor gym-20261005-ab12 sixty two",
+            "bt floor case-1 sixty two",
+            "set it with bt floor acme-20261005-ab12 later",
+        ):
+            with self.subTest(prompt=prompt):
+                proc = run_hook(self.home, prompt)
+                out = hook_json(proc)
+                self.assertEqual(out["decision"], "block")
+                self.assertIn("bt floor", out["reason"])
+                self.assertFalse((d / ".floor").exists())
+
     def test_approve_lookalike_with_hex_blocks(self):
         self.make_case()
         proc = run_hook(
@@ -98,10 +117,12 @@ class EnvelopeBackstopTest(BtTestCase):
     text starts with ``<wake`` and carries a ``<message`` element; a
     ``<wake`` substring anywhere else is plain text. The floor rule
     runs before any command is handled and scans the raw prompt, with
-    only the bodies of well-formed ``from="agent"`` message elements
-    out of scope: a match inside a human body, a malformed element or
-    stray markup still counts. Digits that are part of a case-id
-    token (``name-YYYYMMDD-xxxx``) are not the walk-away.
+    the bodies of well-formed non-triggering ``<message>`` elements
+    out of scope: an agent body is never the user's text, and inside
+    an envelope an earlier human body was already handled when it was
+    sent. A malformed element or stray markup still counts. Digits
+    that are part of a case-id token (``name-YYYYMMDD-xxxx``) are not
+    the walk-away, while any other token after the case id is.
     """
 
     def make_case(self, cid="case-1"):
@@ -109,12 +130,12 @@ class EnvelopeBackstopTest(BtTestCase):
         d.mkdir(parents=True)
         return d
 
-    def test_envelope_human_floor_line_blocks_despite_terms_trigger(self):
-        # The review probe: an earlier human floor line sits in the
-        # envelope beside a triggering `bt terms`. The backstop scans
-        # every human message before any command runs, so the
-        # walk-away number never reaches the model and the terms
-        # write never happens.
+    def test_envelope_prior_human_floor_line_is_ignored(self):
+        # An earlier human floor line was already handled when it was
+        # sent: the backstop scans the triggering body and the text
+        # outside well-formed elements only, so it does not block the
+        # trigger. The triggering `bt terms` runs and lands in
+        # plan.yaml; the floor is never written.
         case_dir = self.make_case()
         envelope = (
             '<wake reason="thread-reply">'
@@ -125,12 +146,30 @@ class EnvelopeBackstopTest(BtTestCase):
             "</wake>"
         )
         proc = run_hook(self.home, envelope)
-        out = hook_json(proc)
-        self.assertEqual(out["decision"], "block")
-        self.assertIn("bt floor", out["reason"])
+        note = additional_context(hook_json(proc))
+        self.assertIn("terms", note)
         self.assertNotIn("62", proc.stdout)
         self.assertFalse((case_dir / ".floor").exists())
-        self.assertFalse((case_dir / "plan.yaml").exists())
+        plan = yaml.load((case_dir / "plan.yaml").read_text())
+        self.assertEqual(plan["target"], 60)
+
+    def test_envelope_prior_human_floor_plain_trigger_passes(self):
+        # The named regression: a prior human `bt floor` line beside
+        # a plain-language trigger -- the envelope passes untouched
+        # and writes no floor.
+        d = self.make_case()
+        envelope = (
+            '<wake reason="thread-reply">'
+            '<message from="human">bt floor gym-20261005-ab12 62'
+            "</message>"
+            '<message from="human" trigger="true">'
+            "what next?</message>"
+            "</wake>"
+        )
+        proc = run_hook(self.home, envelope)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(proc.stdout.strip(), "")
+        self.assertFalse((d / ".floor").exists())
 
     def test_envelope_agent_floor_text_is_ignored(self):
         # The backstop reads human text only: an agent message quoting
@@ -152,11 +191,12 @@ class EnvelopeBackstopTest(BtTestCase):
     def test_case_id_digits_never_trip_the_floor_rule(self):
         # `bt floor <case-id>` alone carries digits only inside the
         # id itself (name-YYYYMMDD-xxxx), not a number the user typed:
-        # the message is prose and passes untouched.
+        # the message is prose and passes untouched. So does prose
+        # that ends on the id -- but any token after it blocks.
         self.make_case()
         for prompt in (
             "bt floor acme-20261005-ab12",
-            "set it with bt floor acme-20261005-ab12 later",
+            "the command is bt floor acme-20261005-ab12",
         ):
             with self.subTest(prompt=prompt):
                 proc = run_hook(self.home, prompt)

@@ -12,7 +12,7 @@ Draft fields:
 - `claims`: empty
 
 ```text
-Thank you. Before I say yes, could you put the details in writing:
+Thank you. Before I answer, could you put the details in writing:
 the new monthly price, the term length, the start date, and any fees,
 contract changes, or conditions attached? Then I can decide.
 ```

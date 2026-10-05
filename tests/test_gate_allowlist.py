@@ -69,7 +69,7 @@ class CharacterSetTest(AllowlistCase):
             case_id,
             send_draft(
                 template="ok, so: (this) is fine; a/b & c - d! "
-                'really? \'yes\' "sure"... right\nsecond line'
+                'really? \'yep\' "sure"... right\nsecond line'
             ),
         )
 

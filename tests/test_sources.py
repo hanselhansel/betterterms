@@ -2,12 +2,15 @@
 stdin and writes ``sources/<n>.yaml``; ``source list`` reads them back
 and ``source stale`` flags records too old to rely on."""
 
+import os
+import threading
 import unittest
 from datetime import date, timedelta
 from pathlib import Path
+from unittest import mock
 
 from bt_helpers import BtTestCase, new_case, run_bt_json
-from btlib import yaml
+from btlib import sources, yaml
 
 
 def record(**kw):
@@ -143,6 +146,67 @@ class SourceAddTest(BtTestCase):
                 )
                 self.assertEqual(proc.returncode, 2, out)
                 self.assertIn("error", out)
+
+    def test_add_retries_on_exclusive_create_collision(self):
+        # The id is reserved by an O_EXCL create, so a loser retries on
+        # the next number instead of overwriting the winner's file.
+        # A forced FileExistsError on the first open proves the retry.
+        case_id, case_dir = new_case(self.home)
+        calls = []
+        real_open = os.open
+
+        def collide(path, flags, *args, **kwargs):
+            if (
+                not calls
+                and flags & os.O_EXCL
+                and str(path).endswith("sources/1.yaml")
+            ):
+                calls.append(path)
+                raise FileExistsError(str(path))
+            return real_open(path, flags, *args, **kwargs)
+
+        with mock.patch.object(os, "open", collide):
+            source_id, path = sources.add(case_dir, record())
+        self.assertEqual(calls, [case_dir / "sources" / "1.yaml"])
+        self.assertEqual(source_id, "2")
+        self.assertEqual(path, case_dir / "sources" / "2.yaml")
+        self.assertTrue(path.is_file())
+        self.assertFalse((case_dir / "sources" / "1.yaml").exists())
+
+    def test_concurrent_adds_get_distinct_ids(self):
+        # Two adds that scan the same next number race the create:
+        # both are fed the same empty listing, then the O_EXCL loser
+        # must land on the next id rather than overwrite the winner.
+        case_id, case_dir = new_case(self.home)
+        real_iterdir = Path.iterdir
+
+        def empty_iterdir(self):
+            if self.name == "sources":
+                return iter(())
+            return real_iterdir(self)
+
+        results = []
+        threads = [
+            threading.Thread(
+                target=lambda: results.append(
+                    sources.add(case_dir, record())
+                )
+            )
+            for _ in range(2)
+        ]
+        with mock.patch.object(Path, "iterdir", empty_iterdir):
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join()
+        self.assertEqual(sorted(r[0] for r in results), ["1", "2"])
+        for n in ("1", "2"):
+            stored = yaml.load(
+                (case_dir / "sources" / f"{n}.yaml").read_text()
+            )
+            self.assertEqual(
+                stored["url"], "https://provider.example/cancel"
+            )
 
     def test_add_rejects_bad_period(self):
         case_id, _ = new_case(self.home)

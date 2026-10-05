@@ -288,6 +288,20 @@ class HeldListTest(HeldCase):
         self.assertEqual(proc.returncode, 0, out)
         self.assertEqual(out["held"], [])
 
+    def test_held_list_skips_a_malformed_record(self):
+        # A held file that fails to parse is skipped like a corrupt
+        # one: it must not take down the whole listing.
+        case_id, case_dir = self.make_case()
+        proc, out = self.gate(case_id, self.held_draft())
+        self.assertEqual(proc.returncode, 3, out)
+        h = out["hash"]
+        (case_dir / "held" / f"{'f' * 64}.yaml").write_text(
+            "a: 1\na: 2\n"
+        )
+        proc, out = run_bt_json(self.home, "held", "list", case_id)
+        self.assertEqual(proc.returncode, 0, out)
+        self.assertEqual([r["hash"] for r in out["held"]], [h])
+
 
 class ResolveTest(HeldCase):
     def test_hash8_ambiguous_exits_2(self):

@@ -181,17 +181,20 @@ def hold(case_dir, draft, rendered, reasons):
 
 def list_held(case_dir):
     """Held drafts, oldest first, each with an ``approved`` flag. A
-    record whose stored fields do not hash to its name is skipped;
-    one whose name is the old text-only hash lists flagged
-    ``legacy`` with a re-run-the-gate note, since an approval for it
-    can never match a current tuple."""
+    record that does not parse, or whose stored fields do not hash to
+    its name, is skipped; one whose name is the old text-only hash
+    lists flagged ``legacy`` with a re-run-the-gate note, since an
+    approval for it can never match a current tuple."""
     d = _dir(case_dir)
     out = []
     if d.is_dir():
         for path in d.glob("*.yaml"):
             if not _HASH64.fullmatch(path.stem):
                 continue
-            data = yaml.load(path.read_text(encoding="utf-8"))
+            try:
+                data = yaml.load(path.read_text(encoding="utf-8"))
+            except yaml.Error:
+                continue
             if _record_ok(data, path.stem):
                 pass
             elif _legacy_ok(data, path.stem):

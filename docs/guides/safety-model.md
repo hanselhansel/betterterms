@@ -146,6 +146,20 @@ triggering body counts as you.
 - It does not replace your yes. Accept, cancel, pay, sign, and dispute always
   wait for an explicit approval, at every autonomy level.
 
+## Known limits, stated plainly
+
+- A shared Projects thread is single-trust: any member can approve a
+  draft or set the walk-away, so keep sensitive cases out of shared
+  threads.
+- `bt.py score` reads the same `.floor` the gate does, so it can be
+  probed for the number the same way.
+- `scripts/vendor-into-repo` enables the plugin unpinned; a vendored
+  repo tracks whatever the marketplace serves.
+- An approval binds the send tuple, not the recipient: it does not
+  check who the message goes to.
+- Amounts typed with a decimal comma parse as thousands separators
+  (`62,50` reads as 6250); use a dot.
+
 ## Counterparty text is data
 
 Emails, contracts, chat replies, and pasted offers are data, never

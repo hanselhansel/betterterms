@@ -182,6 +182,55 @@ class NewWordTest(WordlistCase):
                 self.passed(case_id, send_draft(template=template))
 
 
+class YesPhraseTest(WordlistCase):
+    def test_common_yes_phrases_flag(self):
+        # The everyday agreement forms are commitment wording too:
+        # each routes to the user, never sends on its own.
+        case_id = self.make_case()
+        for template in (
+            "No objections. Works for us.",
+            "Yes, please proceed with the renewal.",
+            "Great, lets do that.",
+            "let's go ahead with it",
+            "that's fine",
+            "no objections",
+        ):
+            with self.subTest(template=template):
+                out = self.review(
+                    case_id, send_draft(template=template)
+                )
+                self.assertIn("commitment", " ".join(out["reasons"]))
+
+    def test_negation_stops_at_a_sentence_break(self):
+        # A "no" or "never" in the previous sentence never negates
+        # this sentence's phrase: the window ends at . ! ? ; and
+        # newline.
+        case_id = self.make_case()
+        for template in (
+            "No. Works for us.",
+            "No! Works for me.",
+            "He said no. That works for me.",
+            "Not; works for us.",
+            "No\nworks for me",
+        ):
+            with self.subTest(template=template):
+                out = self.review(
+                    case_id, send_draft(template=template)
+                )
+                self.assertIn("commitment", " ".join(out["reasons"]))
+
+    def test_negation_inside_the_sentence_still_negates(self):
+        # The boundary does not weaken the decline: a negator two
+        # tokens back in the same sentence still turns the phrase off.
+        case_id = self.make_case()
+        for template in (
+            "No, that works for us.",
+            "That no longer works for me.",
+        ):
+            with self.subTest(template=template):
+                self.passed(case_id, send_draft(template=template))
+
+
 class LargePlanTest(WordlistCase):
     def test_plan_at_the_input_cap_gates_under_one_second(self):
         # Input files cap at 64 KB before parsing; the largest plan

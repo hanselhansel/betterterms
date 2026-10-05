@@ -7,9 +7,10 @@ import assert from "node:assert/strict";
 
 import { paneTree } from "./ui/pane.js";
 import { register } from "./register.js";
+import * as A from "./lib/approvals.js";
 import * as R from "./register.js";
 import {
-  BT, CASE_ID, DIR, RENDERED,
+  BRIEF, BT, CASE_ID, DIR, HOME, RENDERED,
   fakeDollar, fakeOn, fired, heldHash, btRoute,
 } from "./testkit.js";
 import {
@@ -18,12 +19,13 @@ import {
   findNode, byKey,
 } from "./heldkit.js";
 
+const held$ = (opts = {}) => fakeDollar({
+  files: heldFiles(), dirs: heldDirs(), held: heldOpt(), ...opts,
+});
+
 describe("approve press", () => {
   const approvePress = async ($) =>
     findNode(await approvalsCard($), byKey(`approve-${HASH8}`)).props.onPress();
-  const held$ = (opts = {}) => fakeDollar({
-    files: heldFiles(), dirs: heldDirs(), held: heldOpt(), ...opts,
-  });
 
   test("approve runs held approve with hash8", async () => {
     const { $, calls } = held$();
@@ -89,6 +91,35 @@ describe("approve press", () => {
     const runs = calls.run.filter((r) => r.argv[3] === "approve");
     assert.equal(runs.length, 1, "one press arms one approval");
     assert.equal(calls.submit.length, 1);
+  });
+
+  test("an in-flight press does not freeze the same hash in another case", async () => {
+    // Identical send tuples hash alike; the in-flight guard keys on
+    // case id plus hash, so an armed press must not swallow the
+    // other's.
+    const OTHER = "offer-20261005-bbbb";
+    const ODIR = `${HOME}/cases/${OTHER}`;
+    const dirs = heldDirs();
+    dirs[`${HOME}/cases`] = [CASE_ID, OTHER]
+      .map((name) => ({ name, kind: "dir", isLink: false }));
+    dirs[`${ODIR}/held`] = dirs[`${ODIR}/sources`] = [];
+    const { $, calls } = fakeDollar({
+      files: heldFiles({ [`${ODIR}/brief.yaml`]: BRIEF,
+        [`${ODIR}/gate.json`]: GATE_HELD_JSON }),
+      dirs, held: { [CASE_ID]: [REC], [OTHER]: [REC] },
+    });
+    const snap = await R.scanCases($);
+    const byId = Object.fromEntries(snap.cases.map((c) => [c.id, c]));
+    const press = (id) =>
+      R.paneActions($, snap).approve(byId[id], byId[id].held[0]);
+    // The guard arms before the first await, so the second press
+    // meets it while the first run is still resolving.
+    await Promise.all([press(CASE_ID), press(OTHER)]);
+    const ok = calls.run.filter((r) => r.argv[3] === "approve");
+    assert.deepEqual(ok.map((r) => r.argv[4]).sort(), [CASE_ID, OTHER].sort());
+    // The same-case press stays collapsed while its guard holds.
+    await press(CASE_ID);
+    assert.equal(calls.run.filter((r) => r.argv[3] === "approve").length, 2);
   });
 
   test("a press on an already-approved record is skipped", async () => {
@@ -200,18 +231,22 @@ describe("session.start status line", () => {
 });
 
 describe("edit flow", () => {
+  // The Approvals-tab tree with the editor open on the held card.
+  const editTree = async ($) => {
+    const snap = await R.scanCases($);
+    return paneTree(
+      ELS, snap, { tab: 2, selected: null, editing: HASH },
+      R.paneActions($, snap));
+  };
   test("saving an edit drops the held record, writes draft.yaml, re-gates", async () => {
-    const { $, calls } = fakeDollar({
-      files: heldFiles(), dirs: heldDirs(), held: heldOpt(),
+    const { $, calls } = held$({
       gate: {
         result: "needs_approval",
         reasons: ["action 'cancel' requires --approved"],
         rendered: RENDERED, hash: HASH,
       },
     });
-    const snap = await R.scanCases($);
-    const tree = paneTree(ELS, snap, { tab: 2, selected: null, editing: HASH }, R.paneActions($, snap));
-    const input = findNode(tree, (n) => n.tag === "Input");
+    const input = findNode(await editTree($), (n) => n.tag === "Input");
     assert.equal(input.props.value, RENDERED);
     await input.props.onSubmit("I can pay $1,200 a year for this plan.");
     // The old held record is dropped quietly before the re-gate: the
@@ -230,37 +265,56 @@ describe("edit flow", () => {
     assert.match(wrote.text, /action: send/);
   });
 
+  test("a failed draft write keeps the edit text and the held record", async () => {
+    // fsWrite rejecting stops the save right there: no drop, no
+    // re-gate; the toast names the error and the editor stays armed.
+    const { $, calls } = held$();
+    $.fs.write = () => Promise.reject(new Error("ENOSPC"));
+    const tree = await editTree($);
+    await findNode(tree, (n) => n.tag === "Input")
+      .props.onSubmit("edited text");
+    assert.match(calls.toast.join("\n"), /could not save.*ENOSPC/);
+    assert.equal(
+      calls.run.some((r) => r.argv[3] === "drop"), false,
+      "the old held record must not be dropped");
+    assert.equal(
+      calls.run.some((r) => r.argv[2] === "gate"), false,
+      "a failed write must not reach the re-gate");
+    // register.js binds the stashed module state into view, so the
+    // redrawn Input still shows the typed text.
+    const snap2 = await R.scanCases($);
+    const tree2 = paneTree(ELS, snap2,
+      { tab: 2, editing: A.getEditing(), editText: A.getEditText() },
+      R.paneActions($, snap2));
+    assert.equal(findNode(tree2, (n) => n.tag === "Input")?.props.value,
+      "edited text");
+  });
+
   test("saveEdit toasts the gate verdict", async () => {
     // A held verdict names the new hash; a block names its reasons,
     // so the answer the user watches for lands in a toast.
-    const { $, calls } = fakeDollar({
-      files: heldFiles(), dirs: heldDirs(), held: heldOpt(),
+    const { $, calls } = held$({
       gate: {
         result: "needs_approval",
         reasons: ["action 'cancel' requires --approved"],
         rendered: RENDERED, hash: HASH,
       },
     });
-    const snap = await R.scanCases($);
-    const tree = paneTree(
-      ELS, snap, { tab: 2, selected: null, editing: HASH }, R.paneActions($, snap));
-    await findNode(tree, (n) => n.tag === "Input").props.onSubmit("edited text");
+    await findNode(await editTree($), (n) => n.tag === "Input")
+      .props.onSubmit("edited text");
     assert.match(calls.toast.join("\n"), new RegExp(`held as ${HASH8}`));
   });
 
   test("saveEdit toasts block reasons", async () => {
-    const { $, calls } = fakeDollar({
-      files: heldFiles(), dirs: heldDirs(), held: heldOpt(),
+    const { $, calls } = held$({
       gate: {
         result: "block",
         reasons: ["outside your limits; escalate to the user"],
         rendered: null,
       },
     });
-    const snap = await R.scanCases($);
-    const tree = paneTree(
-      ELS, snap, { tab: 2, selected: null, editing: HASH }, R.paneActions($, snap));
-    await findNode(tree, (n) => n.tag === "Input").props.onSubmit("edited text");
+    await findNode(await editTree($), (n) => n.tag === "Input")
+      .props.onSubmit("edited text");
     assert.match(calls.toast.join("\n"), /block: outside your limits/);
   });
 
@@ -289,9 +343,7 @@ describe("edit flow", () => {
       },
     };
     const { $, calls, state } = fakeDollar({ files, dirs: heldDirs(), ...opts });
-    const snap1 = await R.scanCases($);
-    const tree1 = paneTree(
-      ELS, snap1, { tab: 2, selected: null, editing: HASH }, R.paneActions($, snap1));
+    const tree1 = await editTree($);
     await findNode(tree1, (n) => n.tag === "Input").props.onSubmit(EDITED);
     // The old held record was dropped before the re-gate.
     assert.equal(calls.run.some((r) => r.argv[3] === "drop"), true);

@@ -37,12 +37,19 @@ export function onceText(once) {
     .join(" · ");
 }
 
-// The card in edit mode, by held hash. Module scope: it is UI-local
-// state, not approval state; renders read it as view.editing and the
-// Edit/Save handlers change it then invalidate.
+// The card in edit mode, by held hash, plus the text a failed save
+// keeps in the editor: a redraw after a failed write must not drop
+// the user's typing. Module scope: UI-local state, not approval
+// state; renders read them as view.editing / view.editText and the
+// Edit/Save handlers change them then invalidate.
 let editing = null;
+let editText = null;
 export function getEditing() { return editing; }
-export function setEditing(hash) { editing = hash; }
+export function getEditText() { return editText; }
+export function setEditing(hash, text = null) {
+  editing = hash;
+  editText = text;
+}
 
 export function hash8(hash) {
   if (typeof hash !== "string" || hash === "") return null;

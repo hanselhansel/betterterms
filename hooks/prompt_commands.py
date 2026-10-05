@@ -3,9 +3,8 @@
 
 Reads each prompt before the model sees it. Only the user's own text
 counts: inside a Projects wake envelope that is the ``<message>``
-element with ``trigger="true"`` and ``from="human"``; anywhere else
-the whole prompt. A message whose whole trimmed text matches the
-grammar is handled here:
+with ``trigger="true"`` and ``from="human"``; anywhere else the
+whole prompt. A message whose trimmed text matches the grammar:
 
   bt approve <case_id> <hash8>   -> held approve, pass with a note
   bt reject  <case_id> <hash8>   -> held reject, pass with a note
@@ -13,24 +12,26 @@ grammar is handled here:
   bt terms   <case_id> target=<a> and/or alternative=<b> ->
                                   case set-terms, pass with a note
 
-``bt floor`` always blocks, so the walk-away is never forwarded to
-the model; its reason never carries the amount. A message that only
-resembles a command still blocks, under two different rules. Floor
-is default deny and runs first, at the shared layer: before any
-command is handled, the raw prompt is scanned for ``bt`` and
-``floor`` adjacent (any whitespace, any case) plus a digit that is
-not part of a case-id token like ``name-YYYYMMDD-xxxx``. Only the
-bodies of well-formed ``from="agent"`` elements are out of scope.
-A hit always blocks: the floor write runs only when the triggering
-message parses as a valid floor command, and nothing passes through
-with a note. Approve, reject, and terms keep the start-anchored
-rule: the trimmed user text starts with ``bt <verb>`` -- one
-leading backtick or a leading slash allowed -- and carries the
-piece the verb needs, a hex token of six or more characters for
-approve and reject, ``=`` for terms.
-Everything else is prose and passes to the model. The hook fails
-closed: input it cannot read, or a command that raises, blocks
-instead of passing through, because the text may carry a walk-away.
+``bt floor`` always blocks, so the walk-away is never forwarded
+to the model; its reason never carries the amount. A message that
+only resembles a command still blocks, under two different rules.
+Floor is default deny and runs first, at the shared layer: before
+any command is handled, the live text is scanned for ``bt`` and
+``floor`` adjacent (any whitespace, any case) plus a digit outside
+a case-id token like ``name-YYYYMMDD-xxxx``, or any non-empty
+token after a case id, digits or words. Live text is the prompt
+minus the bodies of well-formed non-triggering ``<message>``
+elements: an agent body is never the user's text, and in a wake
+envelope an earlier human body was already handled when it was
+sent. A hit always blocks: the floor write runs only when the
+triggering message parses as a valid floor command, and nothing
+passes through with a note. Approve, reject, and terms keep the
+start-anchored rule: the trimmed user text starts with ``bt
+<verb>`` (one leading backtick or slash allowed) plus the piece
+the verb needs, a hex token of six or more characters for approve
+and reject, ``=`` for terms. Everything else is prose and passes
+to the model. The hook fails closed: unreadable input or a raising
+command blocks, since the text may carry a walk-away.
 """
 
 import json
@@ -68,10 +69,8 @@ _GRAMMAR = (
 _TERMS_KV = re.compile(r"(\w+)=(\S+)")
 _TERMS_KEYS = ("target", "alternative")
 
-# Floor is default deny: the words `bt` and `floor` adjacent, any
-# whitespace and any case, anywhere in the message text. The digit
-# check lives in _floor_hit; `bt floor` talk with no number in it is
-# prose about the command.
+# Floor is default deny: `bt` and `floor` adjacent, any whitespace
+# and case. The payload rule lives in _floor_hit.
 _FLOOR_WORDS = re.compile(r"\bbt\s+floor\b", re.I)
 # A case id (name-YYYYMMDD-xxxx) carries digits that are the id, not
 # a typed number: they never count toward the floor rule's digit.
@@ -103,11 +102,10 @@ def user_text(prompt):
     Projects wake envelope only when its trimmed text starts with
     ``<wake`` and carries a ``<message`` element; then only the body
     of the ``<message>`` carrying both ``trigger="true"`` and
-    ``from="human"`` counts, and an envelope with no human trigger
-    contributes nothing at all, so agent text can never become a
-    command. A ``<wake`` substring anywhere else, or a ``<wake``
-    opener with no ``<message>``, is the user's own words and the
-    whole prompt is used."""
+    ``from="human"`` counts (no human trigger: nothing counts). A
+    ``<wake`` substring anywhere else, or a ``<wake`` opener with no
+    ``<message>``, is the user's own words and the whole prompt is
+    used."""
     t = prompt.lstrip()
     if not (t.startswith("<wake") and "<message" in t):
         return prompt
@@ -122,14 +120,23 @@ def user_text(prompt):
 
 
 def _live_text(prompt):
-    """The prompt minus the bodies of well-formed ``from="agent"``
-    elements: the floor rule's scope; the rest stays in scope."""
+    """Live text for the floor rule: the prompt minus the bodies of
+    well-formed ``<message>`` elements that are not the user's new
+    text. An agent body never is, and inside a wake envelope an
+    earlier human body was handled when it was sent."""
+    env = prompt.lstrip()
+    envelope = env.startswith("<wake") and "<message" in env
     parts, pos = [], 0
     for m in _MESSAGE.finditer(prompt):
         head = m.group(1).rstrip()
         if head.endswith("/"):
             continue
-        if dict(_ATTR.findall(head)).get("from") == "agent":
+        attrs = dict(_ATTR.findall(head))
+        if attrs.get("from") == "agent" or (
+            envelope
+            and attrs.get("from") == "human"
+            and attrs.get("trigger") != "true"
+        ):
             parts.append(prompt[pos : m.start(2)])
             pos = m.end(2)
     parts.append(prompt[pos:])
@@ -138,18 +145,22 @@ def _live_text(prompt):
 
 def _floor_hit(text):
     """The one floor rule: ``bt`` and ``floor`` adjacent, plus a
-    digit in the same text. Digits inside a case-id token do not
-    count."""
-    if _FLOOR_WORDS.search(text) is None:
+    digit outside a case-id token or any non-empty token after one
+    -- a word amount like ``sixty two`` claims the walk-away too."""
+    m = _FLOOR_WORDS.search(text)
+    if m is None:
         return False
+    tail = text[m.end() :]
+    cid = _CASE_ID_TOKEN.search(tail)
+    if cid is not None and tail[cid.end() :].strip():
+        return True
     return bool(re.search(r"\d", _CASE_ID_TOKEN.sub(" ", text)))
 
 
 def _terms_args(pairs_text):
     """The ``key=value`` tail of a ``bt terms`` message: each key at
-    most once, at least one of ``target`` or ``alternative`` present,
-    no other keys. Anything else returns None, which lands the line
-    in the usage block."""
+    most once, at least one of ``target`` or ``alternative``, no
+    other keys. Anything else returns None and lands in usage."""
     pairs = _TERMS_KV.findall(pairs_text)
     keys = [k.lower() for k, _v in pairs]
     if (
@@ -165,9 +176,8 @@ def _terms_args(pairs_text):
 
 
 def parse(text):
-    """The command a whole trimmed message names, or None. Returns a
-    dict with ``verb`` and ``case_id`` plus ``hash8``, ``amount`` or
-    ``target``/``alternative`` depending on the verb."""
+    """The command a whole trimmed message names, or None: ``verb``
+    and ``case_id`` plus ``hash8``, ``amount`` or the terms pair."""
     t = text.strip()
     for verb, rx in _GRAMMAR:
         m = rx.fullmatch(t)
@@ -189,11 +199,10 @@ def parse(text):
 
 def _lookalike_verb(text):
     """The verb a non-command message resembles, or None. Approve,
-    reject, and terms count only at the start of the trimmed text --
-    one leading backtick or a leading slash allowed -- and still need
-    their marker piece: a hash-like token for approve and reject,
-    ``=`` for terms. Floor is not repeated here: ``_floor_hit`` runs
-    on the live text before this point. Anything else is prose."""
+    reject, and terms count only at the start of the trimmed text
+    (one leading backtick or slash allowed) plus their marker piece:
+    a hash-like token for approve and reject, ``=`` for terms.
+    ``_floor_hit`` runs on the live text before this point."""
     t = text.strip()
     m = _LOOKALIKE.match(t)
     if m is None:
@@ -224,9 +233,8 @@ def _pass(note):
 
 
 def _run_bt(args, stdin_text=None):
-    """Run bt.py, returning (exit code, parsed stdout, error text).
-    The error text is stdout's ``error`` field, else the last stderr
-    line, else the exit code."""
+    """Run bt.py, returning (exit code, parsed stdout, error text):
+    stdout's ``error``, else the last stderr line, else the code."""
     proc = subprocess.run(
         [sys.executable, str(_btpath.bt_path()), *args],
         input=stdin_text,
@@ -272,10 +280,8 @@ def _floor(case_id, raw):
 
 
 def approve_command(case_id):
-    """The full gate command the approve note names, runnable as
-    printed: ``python3 <abs bt.py> gate <case> --draft <case
-    dir>/draft.yaml --inbound <case dir>/inbound.yaml --approved``,
-    the inbound flag only when the file exists."""
+    """The gate command the approve note names, runnable as printed:
+    ``--inbound`` when the file exists, ``--approved`` last."""
     from btlib import cases
 
     d = cases.case_dir(case_id)
@@ -304,9 +310,6 @@ def _held(verb, case_id, hash8):
         return
     short = str(out.get("hash") or h)[:8]
     if verb == "approve":
-        # The instruction must run as printed: the resolved absolute
-        # bt.py path and the case's own draft path, --inbound when an
-        # inbound.yaml sits beside it, --approved last.
         gate = approve_command(case_id)
         _pass(
             f"betterterms: the user approved draft {short} for "
@@ -369,11 +372,9 @@ def main():
         raw = str(event.get("prompt") or "")
         text = user_text(raw)
         cmd = parse(text)
-        # Fail-closed backstop at the shared layer, before any
-        # command is handled: the floor rule scans the raw prompt
-        # minus well-formed agent bodies. A hit always blocks -- the
-        # floor write runs only when the triggering message is
-        # itself a floor command.
+        # Fail-closed backstop before any command is handled: the
+        # floor rule scans the live text. A hit always blocks -- the
+        # write runs only when the trigger is itself a floor command.
         if _floor_hit(_live_text(raw)):
             if cmd is not None and cmd["verb"] == "floor":
                 _handle(cmd)

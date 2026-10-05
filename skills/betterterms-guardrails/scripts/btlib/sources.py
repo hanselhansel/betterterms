@@ -13,6 +13,7 @@ claim cannot be shown fresh, so it is flagged for re-check.
 """
 
 import math
+import os
 import re
 from datetime import date, datetime
 from pathlib import Path
@@ -106,14 +107,27 @@ def add(case_dir, data):
     """Validate ``data`` and write ``sources/<n>.yaml`` with the next
     free number (max existing + 1, so an id is never reused and a plan
     fact's ``source`` cannot silently point at a different finding).
-    Returns ``(source_id, path)``."""
+    The number is reserved by an exclusive create, so two adds that
+    read the same next number never overwrite each other: the loser
+    retries on the following id. Returns ``(source_id, path)``."""
     record = validate_record(data)
     d = _sources_dir(case_dir)
     d.mkdir(parents=True, exist_ok=True)
     n = max((_number(p) for p in d.iterdir() if _number(p)), default=0) + 1
-    path = d / f"{n}.yaml"
-    path.write_text(yaml.dump(record), encoding="utf-8")
-    return str(n), path
+    text = yaml.dump(record)
+    for _ in range(100):
+        path = d / f"{n}.yaml"
+        try:
+            fd = os.open(
+                path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600
+            )
+        except FileExistsError:
+            n += 1
+            continue
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(text)
+        return str(n), path
+    raise BtError("could not reserve a source id")
 
 
 def _load(path):

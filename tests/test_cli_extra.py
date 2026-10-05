@@ -3,6 +3,7 @@ path, ``case set-terms`` writes target and best_alternative into
 plan.yaml without ever touching the floor file."""
 
 import os
+import stat
 import unittest
 
 from bt_helpers import (
@@ -50,6 +51,24 @@ class SetTermsTest(BtTestCase):
                 "note": "Verizon quote, 2026-10-01",
             },
         )
+
+    def test_set_terms_replaces_plan_atomically(self):
+        # plan.yaml lands through the same 0600 temp-plus-rename the
+        # held records use: the inode moves on every write, so a
+        # reader can never see a torn plan.
+        case_id, case_dir = new_case(self.home)
+        plan_path = case_dir / "plan.yaml"
+        before_ino = plan_path.stat().st_ino
+        proc, out = run_bt_json(
+            self.home, "case", "set-terms", case_id, "--target", "900"
+        )
+        self.assertEqual(proc.returncode, 0, out)
+        self.assertNotEqual(plan_path.stat().st_ino, before_ino)
+        self.assertEqual(
+            stat.S_IMODE(os.stat(plan_path).st_mode), 0o600
+        )
+        plan = yaml.load(plan_path.read_text())
+        self.assertEqual(plan["target"], 900)
 
     def test_set_terms_never_touches_floor(self):
         case_id, case_dir = new_case(self.home)

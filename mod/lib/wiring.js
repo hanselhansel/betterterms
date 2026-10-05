@@ -19,8 +19,9 @@ const POLL_MS = 3000;
 // reply, and the last print/status so redraws fire only on change.
 const seen = new Map();
 const replied = new Set();
-// Hashes with an approval press armed: one press per hash, so a
-// second press on a stale snapshot cannot arm or submit twice. The
+// Armed approval presses keyed "caseId:hash": one press per record,
+// so a second press on a stale snapshot cannot arm or submit twice
+// and two cases holding an identical tuple do not collide. The
 // guard stays set after a successful press (a rescan marks the
 // record approved and takes over); a failure or a reject/drop
 // releases it.
@@ -102,8 +103,9 @@ export function paneActions(host, snap) {
   // Release armed presses whose record left the snapshot (spent,
   // rejected or dropped): a same-tuple re-hold may approve again.
   const alive = new Set(
-    (snap?.cases ?? []).flatMap((c) => (c.held ?? []).map((h) => h.hash)));
-  for (const h of approving) if (!alive.has(h)) approving.delete(h);
+    (snap?.cases ?? []).flatMap((c) =>
+      (c.held ?? []).map((h) => `${c.id}:${h.hash}`)));
+  for (const k of approving) if (!alive.has(k)) approving.delete(k);
   return {
     openTab: async (n) => {
       await host.setTab(n === 2 || n === 3 ? n : 1);
@@ -127,22 +129,24 @@ export function paneActions(host, snap) {
         return host.toast(
           `betterterms: draft ${A.hash8(held.hash)} is already approved`);
       }
-      // One press per hash while an approval is armed; a second press
-      // on the same card before the rescan lands is ignored quietly.
-      if (approving.has(held.hash)) return;
-      approving.add(held.hash);
+      // One press per case and hash while an approval is armed; a
+      // second press on the same card before the rescan lands is
+      // ignored quietly.
+      const key = `${c.id}:${held.hash}`;
+      if (approving.has(key)) return;
+      approving.add(key);
       // `held approve` writes the hash-bound marker (and refuses a
       // non-current hash itself); the submitted prompt tells the
       // agent to spend it once through `bt.py gate --approved`, as
       // the full argv the mod itself would run.
       const res = await runHeld(host, snap, "approve", c.id, held.hash);
       if (!res.ok) {
-        approving.delete(held.hash);
+        approving.delete(key);
         return host.toast(`betterterms: approve failed: ${res.error}`);
       }
       const argv = await approveArgv(host, snap, c);
       if (argv === null) {
-        approving.delete(held.hash);
+        approving.delete(key);
         return host.toast(
           "betterterms: approve failed: bt.py not found beside the mod");
       }
@@ -154,7 +158,7 @@ export function paneActions(host, snap) {
       host.invalidate("ui.render");
     },
     reject: async (c, held) => {
-      approving.delete(held.hash);
+      approving.delete(`${c.id}:${held.hash}`);
       const res = await runHeld(host, snap, "reject", c.id, held.hash);
       if (!res.ok) return host.toast(`betterterms: reject failed: ${res.error}`);
       host.toast(`betterterms: draft ${A.hash8(held.hash)} rejected`);
@@ -165,8 +169,21 @@ export function paneActions(host, snap) {
       host.invalidate("ui.render");
     },
     saveEdit: async (c, held, text) => {
+      // The write lands first: a failed save stops here, keeps the
+      // old held record and the typed text in the editor, and never
+      // reaches the drop or the re-gate.
+      try {
+        await host.fsWrite(`${snap.root}/${c.id}/draft.yaml`, A.draftYaml(c, held, text));
+      } catch (err) {
+        A.setEditing(held.hash, text);
+        host.toast(
+          `betterterms: could not save the edit: ` +
+          `${String(err?.message ?? err).slice(0, 200)}`);
+        host.invalidate("ui.render");
+        return;
+      }
       A.setEditing(null);
-      approving.delete(held.hash);
+      approving.delete(`${c.id}:${held.hash}`);
       // The edited text is a new send tuple: the old held record is
       // dropped quietly (no thread marker) before the re-gate re-lists
       // the draft under its new hash.
@@ -174,7 +191,6 @@ export function paneActions(host, snap) {
       if (!drop.ok) {
         host.toast(`betterterms: could not drop the old held draft: ${drop.error}`);
       }
-      await host.fsWrite(`${snap.root}/${c.id}/draft.yaml`, A.draftYaml(c, held, text)).catch(() => {});
       const verdict = await runGate(host, snap, c);
       // The verdict is the answer the user watches for: block reasons
       // to redraft against, or the new held hash to approve.

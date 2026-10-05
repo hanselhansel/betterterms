@@ -153,6 +153,34 @@ describe("scan cache", () => {
     );
   });
 
+  test("a ledger close recomputes stage, next and pending", async () => {
+    // Ledger membership is part of the case fingerprint: a case that
+    // gains a closed entry must re-derive, not ride the cached row
+    // with a patched flag.
+    const files = caseFiles({
+      [`${DIR}/draft.yaml`]: DRAFT,
+      [`${DIR}/gate.json`]: GATE,
+    });
+    const { $ } = fakeDollar({ files, dirs: caseDirs() });
+    // A fresh draft write (newer than the thread, gated at or after
+    // it) makes the case pending before the close lands.
+    await $.fs.write(`${DIR}/draft.yaml`, DRAFT);
+    await $.fs.write(`${DIR}/gate.json`, GATE);
+    const before = (await R.scanCases($)).cases[0];
+    assert.equal(before.pending, true);
+    assert.equal(before.stage, "waiting");
+    assert.equal(before.next, "await their reply");
+    await $.fs.write(
+      "/bt/ledger.jsonl",
+      `${files["/bt/ledger.jsonl"]}\n` +
+        `{"case_id":"${CASE_ID}","saved_per_year":240,"currency":"USD"}`,
+    );
+    const after = (await R.scanCases($)).cases[0];
+    assert.equal(after.stage, "closed");
+    assert.equal(after.next, "closed");
+    assert.equal(after.pending, false);
+  });
+
   test("an inode move re-reads with mtime and size pinned", async () => {
     // gate.json and draft.yaml are replaced atomically, so inode is
     // part of the fingerprint: pinning mtime and size must not stop a

@@ -84,10 +84,12 @@ async function scanCase(host, home, bt, dir, name, ledger) {
     namesFp(host, `${dir}/held`),
     namesFp(host, `${dir}/sources`),
   ]);
-  const full = `${fp};held:${heldFp};src:${sourcesFp}`;
+  // The ledger's closed bit rides inside the key: a close entry must
+  // re-derive stage/next/pending, not patch the cached row.
+  const full = `${fp};held:${heldFp};src:${sourcesFp};closed:${ledger.closed.has(name)}`;
   const hit = caseCache.get(dir);
   if (hit?.fp === full) {
-    return { ...hit.c, closed: ledger.closed.has(name) };
+    return { ...hit.c };
   }
   const read = (n) => IO.readIf(host, `${dir}/${n}`);
   const [briefText, planText, draftText, gateText, threadText] =

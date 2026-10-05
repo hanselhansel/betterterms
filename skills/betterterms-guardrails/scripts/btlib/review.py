@@ -176,13 +176,23 @@ _NEGATORS = frozenset(
     "no not never without cannot".split()
 )
 
+# A sentence break ends the negation window: a "no" or "never" in
+# the previous sentence never negates this sentence's phrase.
+_BOUNDARY = re.compile(r"[.!?;\n]")
 
-def _negated(lower, i):
-    """True when a negator sits within the two tokens before ``i``."""
-    return any(
-        t in _NEGATORS or t.endswith("n't")
-        for t in lower[max(0, i - 2):i]
-    )
+
+def _negated(masked, toks, lower, i):
+    """True when a negator sits within the two tokens before ``i`` in
+    the same sentence: the walk back stops at a sentence break
+    (``.`` ``!`` ``?`` ``;`` or a newline), so a decline in the
+    previous sentence never reaches this phrase."""
+    start = toks[i][0]
+    for j in range(i - 1, max(0, i - 2) - 1, -1):
+        if _BOUNDARY.search(masked[toks[j][1] : start]):
+            break
+        if lower[j] in _NEGATORS or lower[j].endswith("n't"):
+            return True
+    return False
 
 
 def review(find, never_items):
@@ -228,10 +238,10 @@ def review(find, never_items):
         reasons.append("a number word in the message")
     # A phrase whose first word is absent cannot match, so most
     # phrases cost one set lookup on the token set, not a scan. A
-    # match directly negated within the two tokens before it is a
-    # decline, not a commitment: "no longer works for me" does not
-    # promise anything (spec 4.3's template self-check relies on
-    # this).
+    # match directly negated within the two tokens before it in the
+    # same sentence is a decline, not a commitment: "no longer works
+    # for me" does not promise anything (spec 4.3's template
+    # self-check relies on this).
     present = set(lower)
     for phrase in wordlists.COMMIT_PHRASES:
         if phrase[0] not in present:
@@ -239,7 +249,7 @@ def review(find, never_items):
         width = len(phrase)
         if any(
             lower[i:i + width] == list(phrase)
-            and not _negated(lower, i)
+            and not _negated(masked, toks, lower, i)
             for i in range(len(toks) - width + 1)
         ):
             reasons.append("agreement or commitment wording in the message")

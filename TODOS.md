@@ -19,6 +19,14 @@ Deferred from the step 1 ship (owner approved 2026-10-03), to fix first in step 
 ## Gate probing (accepted limit, pre-landing review decision D)
 
 - **Priority:** P1. The gate has no probe counter: an agent could binary-search the floor through repeated `gate` calls until a block flips to pass. Standing mitigations are the skills' per-turn gate-call cap and the redraft-once rule; add a per-case probe counter in bt.py that escalates after N floor-related verdicts in a window. (btlib/gate.py)
+- **Priority:** P1. `bt.py score` reads the same `.floor` the gate does, so repeated score calls can be probed the same way; the per-case probe counter above must cover score calls too. (btlib/score.py)
+
+## Accepted limits (pre-landing review)
+
+- **Priority:** P1. Shared Projects threads are single-trust: any member's `bt approve` or `bt floor` counts as the user. Scope approvals and floor writes to the case owner (for example a member allowlist) before sensitive cases run in shared threads. (hooks/prompt_commands.py)
+- **Priority:** P2. `scripts/vendor-into-repo` enables the plugin unpinned, so a vendored repo tracks whatever the marketplace serves; pin or hash the installed build.
+- **Priority:** P2. The approval hash binds the send tuple only, not the recipient; an approved text sent to a different counterparty still spends the marker. Fold the channel or recipient into the tuple when sends carry one. (btlib/held.py)
+- **Priority:** P2. `case set-floor` and the typed `bt floor` parse a comma as a thousands separator, so a decimal comma (`62,50`) reads as 6250; document the dot or accept locale forms. (btlib/cli_extra.py)
 
 ## Completed
 
