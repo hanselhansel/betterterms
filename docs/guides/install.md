@@ -55,7 +55,8 @@ Enter to send it. See the display modes table in
 
 Cloud case folders are temporary. A case in a cloud session's home
 folder vanishes when the VM ends; the session-start hook prints a
-one-line warning when the betterterms home sits somewhere ephemeral.
+one-line warning when the betterterms home sits somewhere ephemeral
+and already holds a case.
 Treat a cloud case as short-lived: export anything you want to keep
 before the session ends.
 

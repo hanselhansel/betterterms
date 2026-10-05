@@ -8,9 +8,10 @@ claude plugin install betterterms-mod@betterterms
 ```
 
 It assumes the core `betterterms` plugin is installed too: the cockpit
-shells out to `betterterms-guardrails/scripts/bt.py`, resolved as a
-sibling plugin dir first and as the repo `skills/` dir when the mod
-runs in place from the repository.
+shells out to `betterterms-guardrails/scripts/bt.py`, resolved in the
+marketplace cache layout first (newest installed version), then as a
+sibling plugin dir, and as the repo `skills/` dir when the mod runs in
+place from the repository.
 
 The mod is a cockpit only (decision 0020): it registers no `tool.call`
 or `prompt.submit` hook and never inspects outgoing tool calls or
