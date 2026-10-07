@@ -77,8 +77,11 @@ drafted: misreading them is the biggest source of lost value.
      Without the marker the hook is not active in this session:
      never suggest a typed `bt floor` and post no terms widget;
      give the terminal command above, or in a Projects thread tell
-     the user to add betterterms under Project settings > Plugins
-     (marketplace hanselhansel/betterterms) and start a new thread.
+     the user to install the plugin through the cloud environment's
+     Setup script --
+     `claude plugin marketplace add 'hanselhansel/betterterms'` and
+     `claude plugin install betterterms@betterterms` -- and start a
+     new thread.
      A plugin installed mid-session activates the hook at the next
      session start, or after `/reload-plugins` locally.
    - With the marker present in a session that posts interactive
@@ -107,8 +110,8 @@ drafted: misreading them is the biggest source of lost value.
      never to read, print, or write the walk-away. If the user
      has no terminal and the marker is absent, there is
      no safe way to set the number in this chat: in a Projects
-     thread the fix is Project settings > Plugins plus a new thread;
-     anywhere else they need a terminal.
+     thread the fix is the environment Setup script install above
+     plus a new thread; anywhere else they need a terminal.
 
    While you are on the limit, ask which period it is per: `once`,
    `month`, or `year`. Write the answer to `brief.yaml` as `period`;

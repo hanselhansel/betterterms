@@ -73,7 +73,10 @@ installs plugins declared in a repo's `.claude/settings.json`, so
 chat typed commands count on a live prompt hook, confirmed by the
 session-start marker "betterterms: typed bt commands are active in
 this session." in context, which prints even with no cases. Projects
-threads load the plugin from Project settings > Plugins into each
-new thread; other cloud sessions vendor skills and hooks into the
+threads load the plugin installed through the cloud environment
+Setup script (`claude plugin marketplace add
+'hanselhansel/betterterms'`, `claude plugin install
+betterterms@betterterms`) into each new thread; other cloud sessions
+vendor skills and hooks into the
 repo, and those hooks apply only when the session has exactly one
 repository.
