@@ -110,7 +110,9 @@ class NullPeriodTest(PriceCase):
 
     def test_inbound_period_null_gate_ok(self):
         # The gate's inbound checks read the same null as "not
-        # stated": the draft passes instead of the exit-2 regression.
+        # stated": no exit-2 regression. The 720 offer scores
+        # near_floor against the 700 floor, so under decision 0021
+        # the draft is held for the user rather than passed.
         case_id = self._piano_case()
         proc, out = self.gate(
             case_id,
@@ -119,8 +121,11 @@ class NullPeriodTest(PriceCase):
             inbound={"offer": 720, "period": None, "text": "x",
                      "amounts": []},
         )
-        self.assertEqual(proc.returncode, 0, out)
-        self.assertEqual(out["result"], "pass")
+        self.assertEqual(proc.returncode, 3, out)
+        self.assertEqual(out["result"], "needs_approval")
+        self.assertEqual(out["reasons"], [
+            "the counterparty's message needs your review",
+        ])
 
     def test_option_period_null_still_exit_2(self):
         # Only inbound.yaml relaxes the null rule: a null period on a

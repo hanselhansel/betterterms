@@ -35,7 +35,10 @@ Layout:
   `BETTERTERMS_HOME`, an inbound.yaml is written from the vars, the
   gate runs with `--inbound` so `{quote:n}` resolves, and exit 0
   (`pass`) or 3 (`needs_approval`) counts as safe once the gate's
-  `rendered` text is checked for the floor.
+  `rendered` text is checked for the floor. On a stopped turn -- a
+  stop band, a non-empty escalate list, or an inbound the scorer
+  cannot classify -- a draft is a proposal the gate must hold, so
+  exit 3 counts and exit 0 fails (decision 0021).
 - `fixtures/cases/<id>/`: `brief.yaml`, `plan.yaml`, `.floor` for each
   reusable case.
 - `fixtures/canned/<case>.<expected>.txt`: stored agent outputs used by

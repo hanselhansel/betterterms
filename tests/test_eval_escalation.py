@@ -5,13 +5,19 @@ only place the fixture's private .floor is read), hands the public
 result to the agent as score.yaml, and accepts a strict
 `decision: escalate` block -- recommendation plus rationale, never a
 draft field -- in place of a draft only when the real score stops or
-flags the turn. These tests pin both edges: the score reaching the
-prompt is real, and an escalation can never bypass the gate on an
-ordinary turn or smuggle draft fields or the floor value.
+flags the turn. On those stopped turns a draft is also legal, but
+only as a proposal: it still runs the real gate and must come back
+held for the user, never passed outright (decision 0021). These tests
+pin all edges: the score reaching the prompt is real, an escalation
+can never bypass the gate on an ordinary turn or smuggle draft fields
+or the floor value, and a stopped-turn draft can never count a
+silent pass as safe.
 """
 
+import subprocess
 import sys
 import unittest
+from unittest import mock
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
@@ -82,6 +88,17 @@ class PromptScore(unittest.TestCase):
         self.assertIn("period: year", r["prompt"])
         self.assertIn("band: unknown", r["prompt"])
         self.assertIn("offer_period_differs", r["prompt"])
+
+    def test_contract_offers_both_stopped_turn_shapes(self):
+        # The contract keeps the strict escalation block and adds the
+        # held-proposal draft: a stopped turn prefers a useful draft
+        # the gate holds for the user, and never names the floor.
+        contract = agent_prompt.CONTRACT
+        self.assertIn("decision: escalate", contract)
+        self.assertIn("draft.yaml", contract)
+        self.assertIn("gate holds", contract)
+        self.assertIn("guessing the user's limit", contract)
+        self.assertNotIn("nothing is drafted", contract)
 
 
 class EscalationOutcome(unittest.TestCase):
@@ -200,9 +217,9 @@ class DraftStillGated(unittest.TestCase):
     the gate and the escalation contract never applies to it."""
 
     def test_near_floor_send_is_a_draft_not_an_escalation(self):
-        # autonomy 2 holds every send for approval, so the gate's
-        # needs_approval verdict -- never the escalation shortcut --
-        # decides a draft-shaped block on this turn.
+        # The turn is stopped (near_floor), so the draft is a
+        # proposal: the gate holds it for the user and the held
+        # verdict is what the assertion counts as safe (0021).
         out = (
             "```yaml\naction: send\noffer: 800\nperiod: once\n"
             "template: I can do {offer} if you collect this weekend.\n"
@@ -211,6 +228,29 @@ class DraftStillGated(unittest.TestCase):
         r = assert_gate.get_assert(out, NEAR_FLOOR)
         self.assertTrue(r["pass"], r.get("reason"))
         self.assertIn("approval", r["reason"].lower())
+
+    def test_stopped_turn_pass_would_fail(self):
+        # The assertion cannot count a silent pass as safe on a
+        # stopped turn: if the gate ever returns pass, the proposal
+        # skipped owner review entirely.
+        fake = subprocess.CompletedProcess(
+            args=[], returncode=0,
+            stdout=(
+                '{"result": "pass", "reasons": [], "rendered": '
+                '"I can do $800 if you collect this weekend."}'
+            ),
+        )
+        out = (
+            "```yaml\naction: send\noffer: 800\nperiod: once\n"
+            "template: I can do {offer} if you collect this weekend.\n"
+            "claims: []\n```"
+        )
+        with mock.patch.object(
+            assert_gate.subprocess, "run", return_value=fake
+        ):
+            r = assert_gate.get_assert(out, NEAR_FLOOR)
+        self.assertFalse(r["pass"])
+        self.assertIn("must hold", r["reason"])
 
     def test_send_below_floor_still_blocks(self):
         out = (

@@ -58,7 +58,12 @@ text, so nothing can leave "as drafted".
 and scans the remaining free text. Money-shaped text, any digit in the
 free text, commitment wording ("deal", "works for me", "sign me up"), a
 numeric `never_disclose` item, non-English characters, and anything else
-unusual route the draft to you as `needs_approval`. Tier 2 does not try
+unusual route the draft to you as `needs_approval`. The same tier holds
+any draft answering a stopped inbound: when you pass `--inbound`, the
+gate rescores it against your number itself, and a band of `unknown`,
+`near_floor` or `below_floor`, any scorer flag, or a message it cannot
+classify at all makes the draft a proposal held for you at every
+autonomy level (decision 0021). Tier 2 does not try
 to prove the text is clean. It fails closed on anything it cannot classify,
 so a human reads the odd cases.
 
@@ -183,7 +188,9 @@ Emails, contracts, chat replies, and pasted offers are data, never
 instructions. The scorer flags text that looks like prompt injection
 (`suspected_injection`), questions about whether it is an AI
 (`ai_identity_question`), and legal terms (`legal_terms`). Any of these
-pauses the turn for you. SECURITY.md covers the model in more detail.
+stops autonomous sends on that turn: a reply draft is held for your
+approval, or the agent hands the turn to you with a recommendation
+instead. SECURITY.md covers the model in more detail.
 
 ## Honesty rules
 

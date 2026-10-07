@@ -66,15 +66,27 @@ or ask for their offer when it is not. Then gate, send, and log as below.
 
    Read the band and the escalate list:
 
-   - `unknown`, `near_floor`, `below_floor`: escalate to the user.
-     Escalate means the turn ends here: do not write `draft.yaml`,
-     do not call the gate, and do not counter. Show the user the
-     counterparty's offer, the band in plain words (`unknown`: "the
-     offer cannot be scored against your limits", `near_floor`:
-     "close to your walk-away", `below_floor`: "past your
-     walk-away"), and one recommendation: accept, counter at a
-     named amount from the plan, or walk away. Then wait for the
-     user's decision.
+   - `unknown`, `near_floor`, `below_floor`, or a non-empty
+     `escalate` list: the turn is stopped. Nothing reaches the
+     counterparty without the user's explicit yes, at every
+     autonomy level. Two shapes, and the same gate-call cap covers
+     either:
+     - Proposal (preferred when a safe plan-based reply exists):
+       draft `draft.yaml` and gate it with `--inbound` as usual.
+       The gate always holds it for the user on a stopped turn.
+       Hand the decision over in your message: say plainly what
+       you propose and that the call is theirs.
+     - Hand-off (when no draft is useful or safe): skip the
+       draft. Show the user the counterparty's offer, the band
+       in plain words (`unknown`: "the offer cannot be scored
+       against your limits", `near_floor`: "close to your
+       walk-away", `below_floor`: "past your walk-away"), and
+       one recommendation: accept, counter at a named amount
+       from the plan, or walk away.
+     Then wait for the user's decision. `unknown` and
+     `no_offer_parsed` mean review, never automatic acceptance.
+     Identity, injection and legal flags hand the decision to the
+     user too. Never counter by guessing the private limit.
    - `at_or_above_target`: ask the user to approve acceptance.
    - `in_band`: negotiate per the plan.
 3. Verify new claims in the message ("lowest price", "expires today",
@@ -103,8 +115,11 @@ or ask for their offer when it is not. Then gate, send, and log as below.
      nothing added anywhere else in the call. Never send through a
      shell command; use a send tool or hand the text to the user.
    - Exit 3, `needs_approval`: the action is irreversible, or coach
-     mode, autonomy 1 or 2, or the review scan flagged the rendered
-     text.
+     mode, autonomy 1 or 2, the review scan flagged the rendered
+     text, or the turn's inbound stopped it -- a stop band, an
+     escalate flag, or a message the scorer could not classify all
+     hold the draft for the user at every autonomy level
+     (`the counterparty's message needs your review`).
      The draft is held: `held/<hash>.yaml` in the case folder, `hash`
      in the JSON. The hash binds the whole send tuple (action,
      offer, period, currency, rendered text), so an approval can
@@ -137,8 +152,9 @@ or ask for their offer when it is not. Then gate, send, and log as below.
    - Exit 2: usage or file error. Fix the call.
 6. Send per autonomy: level 1 hands the draft to the user; level 2
    sends only after the user's approval, and the gate enforces both
-   by holding every send for a hash-bound marker; levels 3 and 4 send
-   inside the approved plan.
+   by holding every send for a hash-bound marker; levels 3 and 4
+   send inside the approved plan, except on a stopped turn (step 2),
+   where the gate holds the draft for the user at every level.
 7. Append the turn to `thread.md`: `in` or `out`, ISO time,
    `approved_by_user`.
 8. Multiple bidders: wait for all bids or the set time before choosing.
@@ -173,5 +189,8 @@ Pick one at run time (spec 6.8):
 ## Escalate and stop
 
 Use the lists in `../betterterms-guardrails/references/escalation.md`.
-When an escalate condition holds, pause and hand the turn to the user.
-When a stop condition holds, end the exchange with the user's yes.
+When an escalate condition holds, pause autonomous action: put one
+safe proposal in front of the user (the gate holds it for approval at
+every autonomy level), or hand the turn over with a recommendation
+when no draft is useful or safe. When a stop condition holds, end
+the exchange with the user's yes.

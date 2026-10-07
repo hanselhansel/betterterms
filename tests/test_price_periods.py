@@ -144,7 +144,13 @@ class UnconvertiblePriceTest(PriceCase):
                        template="you said {quote:1}"),
             inbound=inbound_msg(text="x", amounts=[50]),
         )
-        self.assertEqual(proc.returncode, 0, out)
+        # No inbound offer: the real score is unknown, so the draft is
+        # held for the user (decision 0021); the quote exemption still
+        # shows in the rendered text and adds no finding of its own.
+        self.assertEqual(proc.returncode, 3, out)
+        self.assertEqual(out["reasons"], [
+            "the counterparty's message needs your review",
+        ])
         self.assertIn("$50", out["rendered"])
 
     def test_bonus_fee_unconvertible_period_still_renders(self):

@@ -218,7 +218,13 @@ class GateTest(BtTestCase):
             inbound=inbound_msg(text="we can do $89",
                                 amounts=[89]),
         )
-        self.assertEqual(proc.returncode, 0, out)
+        # The inbound states no offer, so the real score is unknown
+        # and the draft is held for the user as a proposal (decision
+        # 0021); the rendered text still proves the quote resolved.
+        self.assertEqual(proc.returncode, 3, out)
+        self.assertEqual(out["reasons"], [
+            "the counterparty's message needs your review",
+        ])
         self.assertEqual(out["rendered"], "you quoted $89 last week")
 
     def test_quote_equal_to_floor_blocks_even_on_send(self):

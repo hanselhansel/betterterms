@@ -79,6 +79,13 @@ matches your limit's digits``): the converted value clears the band
 but the digits still restate the walk-away number. Irreversible
 actions, coach mode, autonomy 1 or 2 and a ``send`` offer at the
 floor also need approval.
+The review tier also fires on the inbound itself: a draft answering
+a message whose real score -- recomputed inside the gate by
+``btlib.escalate``, never taken from the caller -- bands
+``unknown``, ``near_floor`` or ``below_floor``, carries any
+escalate flag, or cannot be scored at all, is a proposal held for
+the owner at every autonomy level (``the counterparty's message
+needs your review``, decision 0021).
 
 ``block`` dominates ``needs_approval``, which dominates ``pass``, and
 every floor-related block reports the same generic reason so no
@@ -98,7 +105,8 @@ reason ``no approval recorded for this exact text``.
 """
 
 from . import (
-    BtError, LIMITS, PERIODS, cases, held, quotes, render, review,
+    BtError, LIMITS, PERIODS, cases, escalate, held, quotes, render,
+    review,
 )
 
 IRREVERSIBLE = {"accept", "cancel", "pay", "sign", "dispute"}
@@ -223,6 +231,13 @@ def check(case_dir, draft, approved=False, inbound=None):
                     cases.period_error("inbound.yaml period", raw_in)
                 )
             in_period = raw_in.lower()
+
+    # A draft answering a stopped inbound -- or one the scorer cannot
+    # classify at all -- is a proposal only: held for the owner's
+    # approval at every autonomy level, and the reason carries no
+    # number, band or flag (decision 0021).
+    if escalate.holds(case_dir, inbound):
+        findings.append(("approval", escalate.REASON))
 
     find = render.render(
         template, offer, period, plan, plan_period, in_amounts, currency
