@@ -302,6 +302,7 @@ class SessionStartHookTest(ScriptTestCase):
     def hook(self, extra_env):
         env = dict(os.environ, HOME=str(self.home))
         env.pop("BETTERTERMS_HOME", None)
+        env.pop("CLAUDE_CODE_REMOTE", None)
         env.update(extra_env)
         return subprocess.run(
             ["sh", str(self.repo / "hooks" / "session-start.sh")],
