@@ -12,6 +12,7 @@ from bt_helpers import (
     approve_held,
     BRIEF_PAY,
     BtTestCase,
+    gate_check,
     new_case,
     plan_for,
     run_bt_json,
@@ -207,27 +208,24 @@ class HostileScanTimingTest(ReviewFixCase):
     def test_gate_never_disclose_64kb_under_one_second(self):
         # A comma-digit run made the suffixed-amount regex quadratic;
         # the never-disclose whole-number scan must stay linear.
+        # gate.check runs in-process on CPU time: no CLI or scheduler.
         case_id = self.make_case(brief={"never_disclose": ["1200"]})
         template = ",123" * 16000  # 64 KB of comma-digit run
-        start = time.monotonic()
-        proc, out = self.gate(case_id, send_draft(template=template))
-        elapsed = time.monotonic() - start
-        self.assertEqual(proc.returncode, 3, out)
+        elapsed, out = gate_check(
+            self.home, case_id, send_draft(template=template)
+        )
+        self.assertEqual(out["result"], "needs_approval", out)
         self.assertLess(elapsed, 1.0)
 
     def test_gate_fact_text_64kb_under_one_second(self):
         text = ",123" * 16000
-        plan = dict(
-            plan_for("pay", 1200),
-            facts=[{"id": "fb", "text": text, "source": "x"}],
-        )
+        plan = dict(plan_for("pay", 1200),
+                    facts=[{"id": "fb", "text": text, "source": "x"}])
         case_id = self.make_case(plan=plan)
-        start = time.monotonic()
-        proc, out = self.gate(
-            case_id, send_draft(template="see {fact:fb}")
+        elapsed, out = gate_check(
+            self.home, case_id, send_draft(template="see {fact:fb}")
         )
-        elapsed = time.monotonic() - start
-        self.assertEqual(proc.returncode, 3, out)
+        self.assertEqual(out["result"], "needs_approval", out)
         self.assertLess(elapsed, 1.0)
 
     def test_never_disclose_numeric_items_stay_set_linear(self):

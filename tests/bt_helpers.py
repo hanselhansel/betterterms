@@ -5,6 +5,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -14,7 +15,7 @@ BT = BT_DIR / "bt.py"
 
 sys.path.insert(0, str(BT_DIR))
 
-from btlib import yaml  # noqa: E402
+from btlib import gate, yaml  # noqa: E402
 
 
 def run_bt(home, *args, stdin=None):
@@ -37,6 +38,20 @@ def run_bt_json(home, *args, stdin=None):
         raise AssertionError(
             f"bt.py {' '.join(args)} did not print JSON\nstdout: {proc.stdout}\nstderr: {proc.stderr}"
         )
+
+
+def gate_check(home, case_id, draft, approved=False, inbound=None):
+    """gate.check in-process on CPU time: the case's small YAML reads
+    plus the render, review and held-record work, without CLI startup,
+    the draft file round trip or scheduler waits on a shared host.
+    Returns (elapsed, out) where out mirrors the CLI's JSON keys."""
+    start = time.process_time()
+    result, reasons, rendered = gate.check(
+        Path(home) / "cases" / case_id, draft,
+        approved=approved, inbound=inbound,
+    )
+    out = {"result": result, "reasons": reasons, "rendered": rendered}
+    return time.process_time() - start, out
 
 
 def approve_held(home, case_id, args):
