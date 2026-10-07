@@ -14,7 +14,13 @@ For each inbound message:
    recommendation when no draft is useful or safe.
    `at_or_above_target`: ask the user to approve acceptance.
 3. **Verify** new claims ("lowest price", "expires today", rival quotes)
-   against public pricing or a written confirmation request.
+   against the fact list, public pricing, or a written confirmation
+   request. When no check supports a claim, name it unverified in the
+   reply or to the owner, and ask for evidence in writing or a public
+   source when that is useful. A request for confirmation is not a
+   completed check: never accept the assertion as fact, never imply a
+   source was consulted that was not, and still make the turn's one
+   move from the plan.
 4. **Pick one move.** Ask for missing information; counter with a package
    or options, each concession smaller than the last, with a reason; trade
    low-priority items for high-priority ones; or pause.

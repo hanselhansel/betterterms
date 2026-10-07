@@ -90,7 +90,14 @@ or ask for their offer when it is not. Then gate, send, and log as below.
    - `at_or_above_target`: ask the user to approve acceptance.
    - `in_band`: negotiate per the plan.
 3. Verify new claims in the message ("lowest price", "expires today",
-   rival quotes) against the fact list or a fresh source check.
+   rival quotes) against the fact list or a fresh source check. When
+   neither supports a claim, it stays unverified: say so plainly in
+   the reply or in your note to the user, and ask for written or
+   public evidence when that helps the move. Asking for confirmation
+   is not verification, so never treat the assertion as established
+   or imply a source was consulted that was not. The reply still
+   makes its one move from the plan; only the claim's status is
+   named.
 4. Pick one move per the turn procedure. Draft `draft.yaml`. Every id
    in `claims` must exist in `plan.yaml` facts. Cite every plan fact
    the message relies on: put `{fact:<id>}` in `template` and the id
