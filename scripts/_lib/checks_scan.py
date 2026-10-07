@@ -286,7 +286,14 @@ def string_values(value):
 
 
 def tail(result, n=5):
-    text = (result.stderr or "") + (result.stdout or "")
+    """The last ``n`` lines of a failed command's output for the FAIL
+    detail. stderr wins: diagnostics (a unittest failure report, a
+    validator's error) live there, while stdout may hold pages of
+    ordinary output that would push them out of the window. stdout is
+    the fallback for commands that print errors there."""
+    text = result.stderr or ""
+    if not text.strip():
+        text = result.stdout or ""
     return " | ".join(text.strip().splitlines()[-n:])
 
 
