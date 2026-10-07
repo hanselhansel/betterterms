@@ -294,6 +294,77 @@ class VendorSettingsTest(unittest.TestCase):
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         self.assertEqual(self.commands("UserPromptSubmit"), [PROMPT_CMD])
 
+    def test_suffixed_owned_names_are_not_ours(self):
+        # prompt_commands.py-custom and prompt-guard.sh-custom are
+        # different files: the old-suffix hook must survive and must
+        # not stop a fresh guarded registration, and the new-suffix
+        # hook must not count as the guarded one already present.
+        old_custom = (
+            'python3 "$CLAUDE_PROJECT_DIR/.claude/betterterms/hooks/'
+            'prompt_commands.py-custom"'
+        )
+        new_custom = (
+            'bash "$CLAUDE_PROJECT_DIR/.claude/betterterms/hooks/'
+            'prompt-guard.sh-custom"'
+        )
+        for custom in (old_custom, new_custom):
+            with self.subTest(custom=custom):
+                self.settings.parent.mkdir(parents=True, exist_ok=True)
+                self.settings.write_text(
+                    json.dumps(
+                        {
+                            "hooks": {
+                                "UserPromptSubmit": [
+                                    {
+                                        "hooks": [
+                                            {
+                                                "type": "command",
+                                                "command": custom,
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        }
+                    ),
+                    encoding="utf-8",
+                )
+                proc = self.vendor()
+                self.assertEqual(
+                    proc.returncode, 0, proc.stdout + proc.stderr
+                )
+                self.assertEqual(
+                    sorted(self.commands("UserPromptSubmit")),
+                    sorted([custom, PROMPT_CMD]),
+                )
+                self.settings.unlink()
+
+    def test_path_as_data_is_never_rewritten(self):
+        # A command that merely mentions the owned path as an
+        # argument is not the hook launch and must not be edited.
+        data = (
+            'cp "$CLAUDE_PROJECT_DIR/.claude/betterterms/hooks/'
+            'prompt_commands.py" /tmp/x'
+        )
+        self.settings.parent.mkdir(parents=True)
+        self.settings.write_text(
+            json.dumps(
+                {
+                    "hooks": {
+                        "UserPromptSubmit": [
+                            {"hooks": [{"type": "command", "command": data}]}
+                        ]
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+        proc = self.vendor()
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        commands = self.commands("UserPromptSubmit")
+        self.assertIn(data, commands)
+        self.assertIn(PROMPT_CMD, commands)
+
     def test_hooks_key_wrong_shape_exits_2_without_writing(self):
         for bad in ({"hooks": []}, {"hooks": {"SessionStart": "x"}}):
             with self.subTest(bad=bad):

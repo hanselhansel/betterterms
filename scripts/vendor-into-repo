@@ -31,6 +31,7 @@ cannot keep (nothing is written in that case).
 """
 
 import json
+import re
 import shutil
 import sys
 from pathlib import Path
@@ -65,10 +66,39 @@ HOOK_COMMANDS = {
 # under the same directory is left untouched.
 _PROMPT_OLD = ".claude/betterterms/hooks/prompt_commands.py"
 _PROMPT_NEW = ".claude/betterterms/hooks/prompt-guard.sh"
-HOOK_NEEDLES = {
+HOOK_PATHS = {
     "UserPromptSubmit": _PROMPT_NEW,
     "SessionStart": ".claude/betterterms/hooks/session-start.sh",
 }
+
+
+def _call_re(path):
+    """Match an *invocation* of the owned script ``path``: at a
+    command start or after ``;`` ``&`` ``|``, an optional ``env``
+    assignment and/or interpreter, then a token whose final path
+    segment is exactly the owned path -- a prefix like
+    ``$CLAUDE_PROJECT_DIR/`` or any directory is allowed. A
+    ``-custom`` suffix, an ``x.claude`` directory, or a mention as
+    data (``cp <path> dest``) never matches."""
+    return re.compile(
+        r"(?:(?<=^)|(?<=[;&|]))\s*"
+        r"(?:env\s+[^\s;|&()=]+=[^\s;|&()]+\s+)*"
+        r"(?:(?:python3?|bash|sh|exec)\s+)?"
+        r"[\"']?(?:[^\"'\s;|&()]*?/)?"
+        + re.escape(path)
+        + r"[\"']?(?=\s|$|[;&|])"
+    )
+
+
+_CALL_RES = {
+    path: _call_re(path) for path in HOOK_PATHS.values()
+}
+_CALL_RES[_PROMPT_OLD] = _call_re(_PROMPT_OLD)
+
+
+def _owns(command, path):
+    """True when ``command`` invokes exactly the owned script."""
+    return _CALL_RES[path].search(command) is not None
 
 
 def _skills():
@@ -100,9 +130,9 @@ def _hook_entry(event):
     return entry
 
 
-def _has_hook(entries, needle):
-    """Whether any entry's hooks already carry a command naming the
-    vendored script, whatever the entry's other fields."""
+def _has_hook(entries, path):
+    """Whether any entry's hooks already invoke the vendored script
+    at ``path``, whatever the entry's other fields."""
     for entry in entries:
         if not isinstance(entry, dict):
             continue
@@ -110,7 +140,8 @@ def _has_hook(entries, needle):
         if not isinstance(hooks, list):
             continue
         if any(
-            isinstance(h, dict) and needle in str(h.get("command", ""))
+            isinstance(h, dict)
+            and _owns(str(h.get("command", "")), path)
             for h in hooks
         ):
             return True
@@ -164,12 +195,13 @@ def _load_settings(repo):
 
 def _migrate_prompt(entries):
     """Rewire this plugin's owned unguarded prompt hook in place.
-    An old prompt_commands.py command becomes the guarded command;
-    when the guarded command is already registered the old copy is
-    dropped so it cannot keep running unguarded. Other commands and
-    fields are kept. Returns True when anything changed."""
+    The old prompt_commands.py invocation becomes the guarded
+    command, preserving any command around it; when the guarded
+    command is already registered the old copy is dropped so it
+    cannot keep running unguarded. Other commands and fields are
+    kept. Returns True when anything changed."""
     have_new = any(
-        _PROMPT_NEW in str(h.get("command", ""))
+        _owns(str(h.get("command", "")), _PROMPT_NEW)
         for entry in entries
         if isinstance(entry, dict)
         for h in entry.get("hooks") or []
@@ -186,12 +218,17 @@ def _migrate_prompt(entries):
         kept = []
         for h in hooks:
             cmd = str(h.get("command", "")) if isinstance(h, dict) else ""
-            if _PROMPT_OLD not in cmd:
+            m = _CALL_RES[_PROMPT_OLD].search(cmd)
+            if m is None:
                 kept.append(h)
                 continue
             changed = True
             if not (have_new or migrated):
-                h["command"] = HOOK_COMMANDS["UserPromptSubmit"]
+                h["command"] = (
+                    cmd[: m.start()]
+                    + HOOK_COMMANDS["UserPromptSubmit"]
+                    + cmd[m.end() :]
+                )
                 migrated = True
                 kept.append(h)
         hooks[:] = kept
@@ -205,7 +242,7 @@ def _merge_hooks(settings):
     hooks = settings["hooks"]
     changed = _migrate_prompt(hooks["UserPromptSubmit"])
     for event in HOOK_EVENTS:
-        if not _has_hook(hooks[event], HOOK_NEEDLES[event]):
+        if not _has_hook(hooks[event], HOOK_PATHS[event]):
             hooks[event].append(_hook_entry(event))
             changed = True
     return changed

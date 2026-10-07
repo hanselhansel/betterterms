@@ -31,7 +31,15 @@ _FLOOR_WORD_AMOUNT = re.compile(
     re.I,
 )
 
-_ATTR = re.compile(r'([\w-]+)="([^"]*)"')
+# Attribute extraction never uses a `[\w-]+` regex: on a run of
+# word/dash characters with no `="` inside, it would backtrack once
+# per candidate position. ``_attrs`` anchors on `="` instead, walks
+# the key back over the key-character run, and finds the closing
+# quote with str.find -- one pass per pair, no rescanning.
+_KEY_CHARS = frozenset(
+    "abcdefghijklmnopqrstuvwxyz"
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-"
+)
 _ENTITIES = (
     ("&lt;", "<"),
     ("&gt;", ">"),
@@ -52,6 +60,33 @@ def _unescape(text):
     for src, dst in _ENTITIES:
         text = text.replace(src, dst)
     return text
+
+
+def _attrs(text):
+    """The ``key="value"`` pairs of a tag's attribute run, same
+    result as ``_ATTR.findall`` but linear: each ``="`` is found
+    once, its key is the ``[\\w-]`` run that ends exactly at the
+    ``=`` (an empty run is no pair and the scan continues), and the
+    value ends at the next ``"``. An ``="`` whose value never closes
+    ends the scan -- no pair can start inside a region with no quote.
+    """
+    pairs = []
+    pos = 0
+    while True:
+        eq = text.find('="', pos)
+        if eq < 0:
+            return pairs
+        k = eq
+        while k > 0 and text[k - 1] in _KEY_CHARS:
+            k -= 1
+        if k == eq:
+            pos = eq + 1
+            continue
+        v_end = text.find('"', eq + 2)
+        if v_end < 0:
+            return pairs
+        pairs.append((text[k:eq], text[eq + 2 : v_end]))
+        pos = v_end + 1
 
 
 def _messages(prompt):
@@ -102,7 +137,7 @@ def user_text(prompt):
     if not (t.startswith("<wake") and "<message" in t):
         return prompt
     for attrs, _start, _end, body in _messages(prompt):
-        values = dict(_ATTR.findall(attrs))
+        values = dict(_attrs(attrs))
         if (
             values.get("from") == "human"
             and values.get("trigger") == "true"
@@ -121,7 +156,7 @@ def live_text(prompt):
         head = attrs.rstrip()
         if head.endswith("/"):
             continue
-        if dict(_ATTR.findall(head)).get("from") == "agent":
+        if dict(_attrs(head)).get("from") == "agent":
             parts.append(prompt[pos:body_start])
             pos = end
     parts.append(prompt[pos:])

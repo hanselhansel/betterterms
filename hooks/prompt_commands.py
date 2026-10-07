@@ -83,7 +83,9 @@ _LOOKALIKE = re.compile(r"[`/]?bt\s+(approve|reject|terms)\b", re.I)
 _HEX_TOKEN = re.compile(r"\b[0-9a-f]{6,}\b", re.I)
 
 # The envelope readers and the default-deny floor scan live in
-# _scan.py: pure regex, linear time, no runtime dependency.
+# _scan.py: single-pass str.find message parsing, `="-anchored
+# attribute reads and one-pass token matching, no runtime
+# dependency.
 user_text = _scan.user_text
 _live_text = _scan.live_text
 _floor_hit = _scan.floor_hit
