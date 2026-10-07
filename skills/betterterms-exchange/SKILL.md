@@ -110,8 +110,8 @@ or ask for their offer when it is not. Then gate, send, and log as below.
    the plan approves: name the one amount, not the whole posted range
    or numbers the move does not use. Never paraphrase a fact to slip
    it past the scan; if a fact the move truly needs trips a block,
-   step 5's redraft-once rule applies. Write money only through
-   placeholders: `{offer}` for
+   follow step 5's block handling and gate-call cap. Write money only
+   through placeholders: `{offer}` for
    your offer with its period, `{target}`, `{option:<label>}`,
    `{ladder:<n>}` for plan values, `{fact:<id>}` for a fact's text
    (this claims the id too), and
