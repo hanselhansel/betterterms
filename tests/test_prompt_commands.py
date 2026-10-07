@@ -16,6 +16,7 @@ import sys
 import unittest
 
 from bt_helpers import REPO, BtTestCase
+from btlib import context as context_mod
 from btlib import held as held_mod, yaml
 
 sys.path.insert(0, str(REPO / "hooks"))
@@ -81,7 +82,8 @@ class HookCase(BtTestCase):
         # gate verdict wrote one, and held approve refuses a hash
         # gate.json does not name.
         record = held_mod.make_record(
-            "cancel", None, "once", "USD", rendered
+            "cancel", None, "once", "USD", rendered,
+            context_mod.digest(None),
         )
         h = held_mod.draft_hash(record)
         held = case_dir / "held"

@@ -37,8 +37,9 @@ class UnconvertiblePriceTest(PriceCase):
         )
         self.assertEqual(proc.returncode, 1, out)
         self.assertEqual(out["result"], "block")
-        self.assertIn(
-            "period differs from your limit", out["reasons"]
+        self.assertIn(LIMITS, out["reasons"])
+        self.assertNotIn(
+            "period differs", " ".join(out["reasons"])
         )
         self.assertIsNone(out["rendered"])
 
@@ -59,8 +60,9 @@ class UnconvertiblePriceTest(PriceCase):
                                 template="a {option:flat} plan")
         )
         self.assertEqual(proc.returncode, 1, out)
-        self.assertIn(
-            "period differs from your limit", out["reasons"]
+        self.assertIn(LIMITS, out["reasons"])
+        self.assertNotIn(
+            "period differs", " ".join(out["reasons"])
         )
 
     def test_ladder_value_unconvertible_blocks(self):
@@ -73,8 +75,9 @@ class UnconvertiblePriceTest(PriceCase):
             case_id, send_draft(offer=None, template="pushed: {ladder:1}")
         )
         self.assertEqual(proc.returncode, 1, out)
-        self.assertIn(
-            "period differs from your limit", out["reasons"]
+        self.assertIn(LIMITS, out["reasons"])
+        self.assertNotIn(
+            "period differs", " ".join(out["reasons"])
         )
 
     def test_unconvertible_price_blocks_on_agreeing_actions(self):
@@ -99,9 +102,7 @@ class UnconvertiblePriceTest(PriceCase):
                     **kw,
                 )
                 self.assertEqual(proc.returncode, 1, out)
-                self.assertIn(
-                    "period differs", " ".join(out["reasons"])
-                )
+                self.assertIn(LIMITS, out["reasons"])
 
     def test_fact_unconvertible_blocks_off_send(self):
         # A fact keeps its send exemption, but on agreeing actions an
@@ -122,7 +123,7 @@ class UnconvertiblePriceTest(PriceCase):
             approved=True,
         )
         self.assertEqual(proc.returncode, 1, out)
-        self.assertIn("period differs", " ".join(out["reasons"]))
+        self.assertIn(LIMITS, out["reasons"])
         proc, out = self.gate(
             case_id,
             send_draft(action="pay", offer=90, period="month",

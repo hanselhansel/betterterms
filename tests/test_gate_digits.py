@@ -1,10 +1,10 @@
 """0010 amendment review probes: any ASCII digit in the free text or
 in a rendered fact's text routes to the user ("numbers in the
 message"), number words match as substrings of letter runs, a
-rendered offer whose digits equal the floor's digits routes as
-"amount matches your limit's digits", and numeric ``never_disclose``
-items compare against rendered placeholder values. Every probe here
-must end needs_approval or block, never a pass."""
+rendered offer whose digits equal the floor's digits routes to the
+generic review reason, and numeric ``never_disclose`` items compare
+against rendered placeholder values. Every probe here must end
+needs_approval or block, never a pass."""
 
 import time
 import unittest
@@ -24,6 +24,7 @@ from bt_helpers import (
 from btlib import yaml
 
 LIMITS = "outside your limits; escalate to the user"
+REVIEW = "a value in this draft needs your review"
 
 
 class AmendmentCase(BtTestCase):
@@ -244,7 +245,8 @@ class FloorDigitsTest(AmendmentCase):
             send_draft(offer=1200, period="year",
                        template="I can do {offer} prepaid"),
         )
-        self.assertIn("limit's digits", " ".join(out["reasons"]))
+        self.assertIn(REVIEW, out["reasons"])
+        self.assertNotIn("digits", " ".join(out["reasons"]))
         proc, out = self.gate(
             case_id,
             send_draft(offer=1200, period="year",
@@ -261,8 +263,9 @@ class FloorDigitsTest(AmendmentCase):
             send_draft(offer=1200, period="month",
                        template="my best is {offer}"),
         )
-        self.assertIn("offer is at your limit", out["reasons"])
-        self.assertNotIn("limit's digits", " ".join(out["reasons"]))
+        self.assertIn(REVIEW, out["reasons"])
+        self.assertNotIn("limit", " ".join(out["reasons"]))
+        self.assertNotIn("digits", " ".join(out["reasons"]))
 
     def test_offer_without_floor_digits_passes(self):
         case_id = self.month_case()

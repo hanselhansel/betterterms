@@ -67,8 +67,9 @@ class CurrentHashTest(HeldCase):
         )
 
     def test_approve_refuses_after_a_block_verdict(self):
-        # A block verdict rewrites gate.json without a hash, so a held
-        # draft from before the block is no longer current.
+        # A block verdict retires the earlier held record outright,
+        # so the old hash cannot be approved and the draft would
+        # have to be held and approved again.
         case_id, case_dir = self.make_case()
         proc, out = self.gate(case_id, self.held_draft())
         h = out["hash"]
@@ -79,7 +80,8 @@ class CurrentHashTest(HeldCase):
             self.home, "held", "approve", case_id, h[:8]
         )
         self.assertEqual(proc.returncode, 2, out)
-        self.assertIn(STALE, out["error"])
+        self.assertIn("no held draft", out["error"])
+        self.assertFalse((case_dir / "held" / f"{h}.yaml").exists())
 
     def test_a_new_hold_drops_the_previous_current_record(self):
         # Holding a new hash for a case drops the old current record

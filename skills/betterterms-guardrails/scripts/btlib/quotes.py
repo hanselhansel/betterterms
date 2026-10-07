@@ -71,7 +71,7 @@ def check_values(find, action, floor, direction, plan_period, findings):
         if priced and v.period != plan_period and "once" in (
             v.period, plan_period
         ):
-            findings.append(("block", "period differs from your limit"))
+            findings.append(("block", LIMITS))
             continue
         nv = in_floor_period(v.value, v.period, plan_period)
         if v.kind != "offer" and (
@@ -103,9 +103,9 @@ def floor_digits(find, floor, plan_period, action):
     """True when the rendered offer repeats the floor's digits in a
     period that is not the floor's: "$1,200/year" next to a
     1,200/month floor is a coincidence the user must judge, not a
-    clean pass. A match in the floor's own period already routes as
-    "offer is at your limit" and a non-offer value equal to the floor
-    blocks outright, so only the offer needs this check. ``accept``,
+    clean pass. A match in the floor's own period already routes to
+    the review tier and a non-offer value equal to the floor blocks
+    outright, so only the offer needs this check. ``accept``,
     ``sign`` and ``pay`` are exempt: they may restate a price the
     counterparty already named."""
     if action in OFFERED:

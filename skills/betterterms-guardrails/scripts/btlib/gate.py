@@ -26,33 +26,30 @@ guarantees and fail closed:
    offer inside the band equal to the draft offer, both read in the
    floor's period. ``once`` has no conversion factor, so a period
    mismatch where either side is ``once`` can never be verified:
-   ``send`` routes to the user (``period differs from your limit``),
-   the agreeing actions block, and the same rule covers the inbound
-   offer's period on ``accept``
+   ``send`` routes to the user, the agreeing actions block, and the
+   same rule covers the inbound offer's period on ``accept``
 7. any rendered placeholder value equal to the floor -> block,
    except the in-band offer itself; a value equal only to the
-   floor's x12 or /12 conversion is a review hit (``amount matches
-   a converted limit``, no numbers). A ``send`` offer equal to the
-   floor after conversion is a review hit too (``offer is at your
-   limit``): inside the band, but it reveals the walk-away number;
-   ``accept``, ``sign`` and ``pay`` may sit exactly on it. A price
-   value (target, ladder, price option, or fact amount not on
-   ``send``) worse than the floor blocks too, and a price value
-   whose period cannot convert to the floor's fails closed like an
-   unconvertible offer; fact values read the structured ``amount``
-   field only, never the text (decision 0010). A ``send`` may
-   render a fact worse than the floor: restating a price the
-   counterparty named is not the agent's offer. A quote never meets
-   the worse-than or unconvertible-period check on any action
-   (spec 4.4): the counterparty's own words or numbers are never
-   the agent's offer, and a string ``amounts`` entry renders
-   verbatim. Bonus and fee options are not offers, so only the
-   equal-to-floor rule reaches them. The final rendered text is
-   scanned too: any amount the money parser reads out of it equal
-   to the floor, as written or in the floor's declared period,
-   blocks with ``the message contains your walk-away amount``; the
-   draft's own ``{offer}`` output is exempt when the offer itself
-   sits at the floor
+   floor's x12 or /12 conversion is a review hit, as is a ``send``
+   offer equal to the floor after conversion (inside the band, but
+   it reveals the walk-away number; ``accept``, ``sign`` and ``pay``
+   may sit exactly on it). A price value (target, ladder, price
+   option, or fact amount not on ``send``) worse than the floor
+   blocks too, and a price value whose period cannot convert to the
+   floor's fails closed like an unconvertible offer; fact values
+   read the structured ``amount`` field only, never the text
+   (decision 0010). A ``send`` may render a fact worse than the
+   floor: restating a price the counterparty named is not the
+   agent's offer. A quote never meets the worse-than or
+   unconvertible-period check on any action (spec 4.4): the
+   counterparty's own words or numbers are never the agent's offer,
+   and a string ``amounts`` entry renders verbatim. Bonus and fee
+   options are not offers, so only the equal-to-floor rule reaches
+   them. The final rendered text is scanned too: any amount the
+   money parser reads out of it equal to the floor, as written or in
+   the floor's declared period, blocks with ``the message contains
+   your walk-away amount``; the draft's own ``{offer}`` output is
+   exempt when the offer itself sits at the floor
 8. rendered message over 64 KB, checked after fact expansion and
    before any text scanning, or a claim id (draft or auto-claimed
    by ``{fact:id}``) not in ``plan.facts`` -> block
@@ -74,14 +71,15 @@ phrases, sentinel glue and every ``never_disclose`` term all route
 to the user; numeric ``never_disclose`` items also compare against
 the rendered placeholder values.
 A ``send`` offer whose digits equal
-the floor's digits in a different period routes too (``amount
-matches your limit's digits``): the converted value clears the band
-but the digits still restate the walk-away number. Irreversible
-actions, coach mode, autonomy 1 or 2 and a ``send`` offer at the
-floor also need approval.
-The review tier also fires on the inbound itself: a draft answering
-a message whose real score -- recomputed inside the gate by
-``btlib.escalate``, never taken from the caller -- bands
+the floor's digits in a different period routes too: the converted
+value clears the band but the digits still restate the walk-away
+number. Every floor-relative review hit reports one generic reason
+(REVIEW_VALUE): naming the relationship would hand a probing agent
+one bit of the private floor per call. Irreversible actions, coach
+mode, autonomy 1 or 2 and a ``send`` offer at the floor also need
+approval. The review tier also fires on the inbound itself: a draft
+answering a message whose real score -- recomputed inside the gate
+by ``btlib.escalate``, never taken from the caller -- bands
 ``unknown``, ``near_floor`` or ``below_floor``, carries any
 escalate flag, or cannot be scored at all, is a proposal held for
 the owner at every autonomy level (``the counterparty's message
@@ -97,16 +95,17 @@ redrafting toward a guessed limit (TODOS.md tracks a probe counter).
 
 A ``needs_approval`` draft is held on disk (``held/<sha256>.yaml``,
 ``btlib.held``) so a user approval can bind to the exact send tuple:
-the draft's action, offer, period and currency plus the rendered
-text. ``approved=True`` no longer skips the review tier by itself: it
-only passes when a matching ``held/<sha256>.approved`` file exists,
-and consumes it once. Without one the draft is held again with the
-reason ``no approval recorded for this exact text``.
+action, offer, period and currency plus the rendered text and the
+reviewed inbound's context digest. ``approved=True`` no longer
+skips the review tier by itself: it only passes when a matching
+``held/<sha256>.approved`` file exists, and consumes it once.
+Without one the draft is held again, reason ``no approval recorded
+for this exact text``.
 """
 
 from . import (
-    BtError, LIMITS, PERIODS, cases, escalate, held, quotes, render,
-    review,
+    BtError, LIMITS, PERIODS, cases, context, escalate, held, quotes,
+    render, review,
 )
 
 IRREVERSIBLE = {"accept", "cancel", "pay", "sign", "dispute"}
@@ -114,10 +113,13 @@ OFFERED = {"accept", "pay", "sign"}
 ACTIONS = IRREVERSIBLE | {"send"}
 DRAFT_KEYS = {"action", "offer", "period", "template", "claims"}
 
-# A block reports only the block findings: the at-limit,
-# converted-limit or same-digits review hits would each leak one bit
-# about the floor, and any other approval finding is noise on a draft
-# that cannot be sent at all.
+# The one reason a floor-relative review hit reports: plain words,
+# no number and no hint of which relationship fired.
+REVIEW_VALUE = "a value in this draft needs your review"
+
+# A block reports only the block findings: every floor-relative
+# review hit would leak one bit about the floor, and any other
+# approval finding is noise on a draft that cannot be sent at all.
 
 
 def _safe_str(value):
@@ -141,8 +143,9 @@ def _shown(value):
 def check(case_dir, draft, approved=False, inbound=None):
     if not isinstance(draft, dict):
         raise BtError("draft must be a mapping")
-    if inbound is not None and not isinstance(inbound, dict):
-        raise BtError("inbound must be a mapping")
+    # The inbound this call answers: a supplied mapping, else the
+    # case's persisted inbound.yaml, else an opening turn.
+    inbound, ctx = context.resolve(case_dir, inbound)
     brief = cases.load_brief(case_dir)
     plan = cases.load_plan(case_dir)
     direction = cases.direction_of(brief)
@@ -205,17 +208,13 @@ def check(case_dir, draft, approved=False, inbound=None):
     in_offer = cases.num(inbound.get("offer")) if inbound else None
     if inbound is not None:
         if in_offer is not None and in_offer <= 0:
-            findings.append(
-                ("block", "inbound offer must be a positive number")
-            )
+            findings.append(("block", "inbound offer must be a positive number"))
             in_offer = None
         if any(
             (n := cases.num(a)) is not None and n <= 0
             for a in in_amounts
         ):
-            findings.append(
-                ("block", "inbound amounts must be positive numbers")
-            )
+            findings.append(("block", "inbound amounts must be positive numbers"))
     # An inbound offer is read in its own period when the inbound
     # declares one, else in the floor's period; either way it is
     # converted to the floor's period before any comparison.
@@ -265,9 +264,7 @@ def check(case_dir, draft, approved=False, inbound=None):
                 if in_period != plan_period and "once" in (
                     in_period, plan_period
                 ):
-                    findings.append(
-                        ("block", "period differs from your limit")
-                    )
+                    findings.append(("block", LIMITS))
                 in_floor = quotes.in_floor_period(
                     in_offer, in_period, plan_period
                 )
@@ -293,13 +290,9 @@ def check(case_dir, draft, approved=False, inbound=None):
             )
             if unconvertible:
                 if action == "send":
-                    findings.append(
-                        ("approval", "period differs from your limit")
-                    )
+                    findings.append(("approval", REVIEW_VALUE))
                 else:
-                    findings.append(
-                        ("block", "period differs from your limit")
-                    )
+                    findings.append(("block", LIMITS))
             elif quotes.worse(offer_floor, floor, direction):
                 findings.append(("block", LIMITS))
             elif (
@@ -310,7 +303,7 @@ def check(case_dir, draft, approved=False, inbound=None):
                 # hands the counterparty the user's walk-away number.
                 # accept, sign and pay may sit on it: they take a price
                 # already on the table.
-                findings.append(("approval", "offer is at your limit"))
+                findings.append(("approval", REVIEW_VALUE))
         if clean:
             quotes.check_values(
                 find, action, floor, direction, plan_period, findings
@@ -351,23 +344,26 @@ def check(case_dir, draft, approved=False, inbound=None):
     if mode == "coach":
         findings.append(("approval", "coach mode: the user approves every send"))
     if autonomy in (1, 2):
-        findings.append((
-            "approval",
-            f"autonomy {autonomy}: the user approves every send",
-        ))
+        findings.append(("approval", f"autonomy {autonomy}: the user approves every send"))
     if clean:
         for reason in review.review(find, never_items):
             findings.append(("approval", reason))
         if floor is not None:
             if quotes.converted_match(find, floor, plan_period):
-                findings.append(
-                    ("approval", "amount matches a converted limit")
-                )
+                findings.append(("approval", REVIEW_VALUE))
             if quotes.floor_digits(find, floor, plan_period, action):
-                findings.append(
-                    ("approval", "amount matches your limit's digits")
-                )
+                findings.append(("approval", REVIEW_VALUE))
 
+    rendered = find.text if find else None
+    return _finish(case_dir, draft, rendered, ctx, findings, approved)
+
+
+def _finish(case_dir, draft, rendered, ctx, findings, approved):
+    """Findings to verdict, with the held bookkeeping every verdict
+    shares: pass or block retires any earlier record, needs_approval
+    holds the new tuple and retires every other, and an approved
+    pass spends the marker only when ``consume_approval`` finds it
+    current."""
     blocked = any(kind == "block" for kind, _ in findings)
     reasons = []
     seen = set()
@@ -377,22 +373,24 @@ def check(case_dir, draft, approved=False, inbound=None):
         if msg not in seen:
             seen.add(msg)
             reasons.append(msg)
-    if blocked:
-        return "block", reasons, None
-    rendered = find.text if find else None
-    if not findings:
-        if approved and rendered is not None:
-            held.consume_approval(case_dir, draft, rendered)
-        return "pass", reasons, rendered
+    if blocked or not findings:
+        if not blocked and approved and rendered is not None:
+            held.consume_approval(case_dir, draft, rendered, ctx)
+        held.supersede(case_dir, None)
+        return "block" if blocked else "pass", reasons, (
+            None if blocked else rendered
+        )
     if (
         approved
         and rendered is not None
-        and held.consume_approval(case_dir, draft, rendered)
+        and held.consume_approval(case_dir, draft, rendered, ctx)
     ):
+        held.supersede(case_dir, None)
         return "pass", [], rendered
     if rendered is not None:
-        h = held.hold(case_dir, draft, rendered, reasons)
-        held.supersede(case_dir, h)
+        held.supersede(
+            case_dir, held.hold(case_dir, draft, rendered, reasons, ctx)
+        )
     if approved:
         reasons.append(held.NO_APPROVAL)
     return "needs_approval", reasons, rendered

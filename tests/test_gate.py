@@ -16,6 +16,7 @@ from bt_helpers import (
 from btlib import yaml
 
 LIMITS = "outside your limits; escalate to the user"
+REVIEW = "a value in this draft needs your review"
 
 
 class GateTest(BtTestCase):
@@ -68,7 +69,8 @@ class GateTest(BtTestCase):
             case_id, send_draft(offer=1200, template="my best is {offer}")
         )
         self.assertEqual(proc.returncode, 3, out)
-        self.assertIn("offer is at your limit", out["reasons"])
+        self.assertIn(REVIEW, out["reasons"])
+        self.assertNotIn("limit", " ".join(out["reasons"]))
         self.assertEqual(out["rendered"], "my best is $1,200")
         proc, out = self.gate(
             case_id,
@@ -88,7 +90,8 @@ class GateTest(BtTestCase):
         )
         proc, out = self.gate(case_id, draft)
         self.assertEqual(proc.returncode, 3, out)
-        self.assertIn("period differs", " ".join(out["reasons"]))
+        self.assertIn(REVIEW, out["reasons"])
+        self.assertNotIn("period differs", " ".join(out["reasons"]))
         self.assertEqual(
             out["rendered"], "I can do $85/month on the new plan"
         )
@@ -323,7 +326,7 @@ class GateTest(BtTestCase):
                 proc, out = self.gate(case_id, draft)
                 self.assertEqual(proc.returncode, 3, out)
                 self.assertEqual(out["result"], "needs_approval")
-                self.assertIn("offer is at your limit", out["reasons"])
+                self.assertIn(REVIEW, out["reasons"])
                 self.assertFalse(
                     any(any(c.isdigit() for c in r)
                         for r in out["reasons"])
@@ -343,7 +346,10 @@ class GateTest(BtTestCase):
                                template="counter"),
                 )
                 self.assertEqual(proc.returncode, 3, out)
-                self.assertIn("offer is at your limit", out["reasons"])
+                self.assertIn(REVIEW, out["reasons"])
+                self.assertNotIn(
+                    "limit", " ".join(out["reasons"])
+                )
 
     def test_send_offer_within_floor_tolerance_needs_approval(self):
         case_id, _ = self.make_case(floor=1200)
@@ -351,7 +357,7 @@ class GateTest(BtTestCase):
             case_id, send_draft(offer=1200.004, template="counter")
         )
         self.assertEqual(proc.returncode, 3, out)
-        self.assertIn("offer is at your limit", out["reasons"])
+        self.assertIn(REVIEW, out["reasons"])
 
     def test_accept_sign_pay_at_floor_stay_allowed(self):
         # Agreeing actions take a tabled price, so an offer on the

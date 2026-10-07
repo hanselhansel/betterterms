@@ -34,8 +34,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from btlib import (
-    BtError, cases, cli_extra, floorio, gate, held, inputs, ledger,
-    score, sources, worse_than_floor, yaml,
+    BtError, cases, cli_extra, context, floorio, gate, held, inputs,
+    ledger, score, sources, worse_than_floor, yaml,
 )
 
 
@@ -96,15 +96,35 @@ def cmd_gate(args):
         )
     except inputs.UnsafeInput as e:
         result, reasons, rendered = _blocked_input(e)
+        held.supersede(d, None)
+    except BtError:
+        # A malformed input that intervenes between a hold and a send
+        # still retires consent before the error exits.
+        held.supersede(d, None)
+        raise
     else:
-        result, reasons, rendered = gate.check(d, draft, approved=args.approved, inbound=inbound)
+        try:
+            result, reasons, rendered = gate.check(
+                d, draft, approved=args.approved, inbound=inbound
+            )
+        except BtError:
+            # An error raised inside the check (a broken case file, a
+            # persisted inbound.yaml the reader refuses) still retires
+            # consent before the error exits.
+            held.supersede(d, None)
+            raise
     out = {
         "result": result,
         "reasons": reasons,
         "rendered": rendered,
     }
     if result == "needs_approval" and rendered is not None:
-        out["hash"] = held.draft_hash(held.draft_record(d, draft, rendered))
+        # Same context digest the check bound: a supplied inbound, or
+        # the persisted inbound.yaml when --inbound was omitted.
+        ctx = context.resolve(d, inbound)[1]
+        out["hash"] = held.draft_hash(
+            held.draft_record(d, draft, rendered, ctx)
+        )
     # The verdict is recorded in the case folder itself so the pane
     # and widgets read the same answer the agent got, on every call
     # including refused inputs; the write is best-effort because

@@ -25,6 +25,7 @@ from bt_helpers import (
 FLOOR_MSG = "floor must be a single plain number like 1200 or 1200.50"
 FLOOR_MIN = "floor must be at least 0.01"
 LIMITS = "outside your limits; escalate to the user"
+REVIEW = "a value in this draft needs your review"
 
 
 class FloorFileCase(BtTestCase):
@@ -149,7 +150,8 @@ class SetFloorAtomicTest(FloorFileCase):
             self.home, "gate", case_id, "--draft", str(path)
         )
         self.assertEqual(proc.returncode, 3, out)
-        self.assertIn("offer is at your limit", out["reasons"])
+        self.assertIn(REVIEW, out["reasons"])
+        self.assertNotIn("limit", " ".join(out["reasons"]))
 
 
 class ReadFloorHardeningTest(FloorFileCase):
