@@ -59,8 +59,14 @@ Exit codes and results:
 - 2: usage or file error. Fix the call.
 - 3, `needs_approval`: the action is irreversible, coach mode,
   autonomy level 1 or 2, a `send` offer at the user's limit, a `send`
-  offer in a period the floor cannot compare, or the review scan
-  flagged the rendered text. The draft is held: the gate writes
+  offer in a period the floor cannot compare, the review scan
+  flagged the rendered text, or the supplied inbound stops the turn:
+  a real score band of `unknown`, `near_floor` or `below_floor`, a
+  non-empty escalate list, or a message the scorer cannot classify.
+  A draft on a stopped turn is a proposal only -- it is held at
+  every autonomy level, 3 and 4 included, and reports
+  `the counterparty's message needs your review` with no numbers.
+  The draft is held: the gate writes
   `held/<hash>.yaml` in the case folder (the rendered text and the
   reasons) and returns `hash` in the JSON. Show the `rendered` text
   and the reasons per the display mode below. A held draft waits as
@@ -302,11 +308,22 @@ so fullwidth text and hidden joiners cannot hide a match. It returns
 `suggested_amounts`: the inbound `amounts` list, or amounts parsed
 from the counterparty's text when the list is absent.
 
+When `gate` is called with `--inbound`, it rescores that inbound
+itself against the real floor. A score band of `unknown`,
+`near_floor` or `below_floor`, a non-empty escalate list, or an
+inbound the scorer cannot classify stops autonomous action: any
+draft on that turn is held for approval at every autonomy level, so
+a band or flag written into `inbound.yaml` is never consulted and
+no proposal reaches the counterparty silently.
+
 ## Escalate and stop
 
 The full lists are in `references/escalation.md`. When a turn trips an
-escalate condition, pause and hand it to the user. When a stop condition
-holds, end the exchange with the user's yes.
+escalate condition, pause autonomous action: one safe proposal may go
+to the user for approval (the gate holds it at every autonomy level),
+or the turn hands over with a recommendation when no draft is useful
+or safe. When a stop condition holds, end the exchange with the
+user's yes.
 
 ## Honesty rules
 

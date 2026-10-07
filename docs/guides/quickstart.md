@@ -160,4 +160,8 @@ your target and floor. The agent picks one move, writes `draft.yaml`
 with a template and placeholders instead of typed prices, and runs
 `bt.py gate`. On `pass` the rendered text is what goes out, verbatim.
 On `block` it redrafts once or escalates. On `needs_approval` the draft
-is held for your decision, per the modes above.
+is held for your decision, per the modes above. When the inbound
+itself needs you -- no readable offer, a number near or past your
+walk-away, or a flagged message -- a draft is held for your approval
+whatever your autonomy level, or the agent hands the turn over with a
+recommendation instead.
