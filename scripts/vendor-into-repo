@@ -12,8 +12,9 @@ UserPromptSubmit and SessionStart entries merged into
 REPO/.claude/settings.json with "$CLAUDE_PROJECT_DIR"-relative
 commands. Every existing key is kept and an entry is never
 duplicated. Repo hooks apply only in a session with one
-repository; a multi-repo project needs the plugin added under
-Project settings > Plugins instead.
+repository; a multi-repo project needs the plugin installed
+through a cloud environment setup script instead (see
+docs/guides/install.md).
 
 --no-hooks: copy the skills only. No prompt hook runs then, so a
 typed bt command reaches the model as ordinary chat text and the

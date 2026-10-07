@@ -29,8 +29,9 @@ plugin installed mid-session turns it on at the next session start
 (`/reload-plugins` locally). Where no hook runs, a typed `bt floor`
 reaches the model, so the skills point at the terminal
 `case set-floor` command instead, and in a Projects thread without
-the plugin they say to add betterterms under Project settings >
-Plugins and start a new thread.
+the plugin they point at the cloud environment setup in
+[install.md](install.md#claude-code-cloud-sessions), then a new
+thread.
 
 State the boundary plainly: the agent runs as your user, so nothing
 technical stops it from reading `.floor` if it
@@ -125,7 +126,7 @@ through with a note.
 | Mode | Where | What approval means |
 |---|---|---|
 | Mod | Claude Code terminal or Desktop with `betterterms-mod` | A keypress or click runs `bt.py held approve` for the displayed hash and submits the prompt that sends the agent through `bt.py gate --approved` once. The mod is a cockpit only: it never inspects outgoing tool calls (decision 0020). |
-| Widget | A session with a widget-posting tool and the prompt hook active (a Projects thread needs betterterms added in Project settings > Plugins, then a new thread) | A `held/<hash>.approved` file written by the prompt hook after your typed `bt approve` (the widget button only fills the message box; you press Enter). |
+| Widget | A session with a widget-posting tool and the prompt hook active (a Projects thread needs the plugin installed through a cloud environment setup script, then a new thread) | A `held/<hash>.approved` file written by the prompt hook after your typed `bt approve` (the widget button only fills the message box; you press Enter). |
 | Chat | Codex, plain cloud sessions, `claude -p` | The same typed commands and the same approval file; with no prompt hook the agent runs `bt.py held approve` after you type `bt approve`. |
 
 All three modes share one enforcement: the gate's hash-bound one-use

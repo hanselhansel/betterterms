@@ -28,14 +28,33 @@ directly (`subscriptions`, `cancel`, `refunds`, `bills`, `ai-api`, `salary`,
 A cloud session never installs the plugins a repo's
 `.claude/settings.json` declares under `enabledPlugins`, including
 marketplaces listed under `extraKnownMarketplaces`. What a cloud
-session does read: skills under `.claude/skills/` in every case, and
-a repo's `hooks` and permission rules when the session has exactly
-one repository. Two paths cover cloud sessions:
+session does read: skills under `.claude/skills/` in every case, a
+repo's `hooks` and permission rules when the session has exactly
+one repository, and whatever the cloud environment's setup script
+installs. Two paths cover cloud sessions:
 
-- **Projects threads**: add betterterms under Project settings >
-  Plugins from the `hanselhansel/betterterms` marketplace, then
-  start a new thread. Changes to project plugins reach new threads,
-  never a running one.
+- **Projects threads**: install the plugin through a cloud
+  environment. Open the cloud environment selector, edit the
+  environment, and put this in its Setup script field:
+
+  ```bash
+  #!/bin/bash
+  set -euo pipefail
+  claude plugin marketplace add 'hanselhansel/betterterms'
+  claude plugin install betterterms@betterterms
+  ```
+
+  Then select that environment for the project and start a new
+  thread. Environment changes reach new threads, never a running
+  one. A multi-repo project uses this path too: the
+  environment-installed plugin covers every repo in the session.
+
+  Keep setup errors visible: no `|| true`, and no redirect that
+  sends output to a logfile alone. Until the release PR lands, a
+  pre-launch validation replaces the marketplace source with
+  `hanselhansel/betterterms#feat/release-v1`; remove the branch
+  suffix once PR #2 merges.
+
 - **A plain cloud session or a single-repo project**: run
   `python3 scripts/vendor-into-repo <repo>` and commit the result.
   It vendors the skills into `<repo>/.claude/skills/` (with a
@@ -45,7 +64,7 @@ one repository. Two paths cover cloud sessions:
   `<repo>/.claude/settings.json` with `$CLAUDE_PROJECT_DIR` paths.
   Existing keys are kept and entries are never duplicated. The
   vendored hooks apply only in a session with one repository, so a
-  multi-repo project must use Project settings > Plugins instead.
+  multi-repo project needs the environment-installed plugin above.
 - `python3 scripts/vendor-into-repo --no-hooks <repo>` vendors only
   the skills. No prompt hook runs then, so a typed `bt` command
   reaches the model as ordinary chat text; the terminal

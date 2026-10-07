@@ -27,9 +27,10 @@ walk-away number you set yourself.
    - A Projects cloud thread: the terms widget's walk-away field
      types `bt floor <case_id> <amount>` into your message box; you
      press Enter and the prompt hook writes it. The thread needs the
-     plugin: add betterterms under Project settings > Plugins
-     (marketplace `hanselhansel/betterterms`) and start a new
-     thread. Without it a typed `bt floor` reaches the model, so
+     plugin installed through a cloud environment setup script, then
+     a new thread on that environment
+     ([install.md](install.md#claude-code-cloud-sessions) has the
+     steps). Without it a typed `bt floor` reaches the model, so
      the skill falls back to the terminal command. The value stays
      visible in the thread either way, so the terminal is the better
      path when you have one.
@@ -139,7 +140,7 @@ plainly:
 | Mode | When | What it guarantees |
 |---|---|---|
 | Mod | Claude Code terminal or Desktop with `betterterms-mod` installed | The cockpit: a pane with Cases, Approvals, and Savings tabs, a band over the prompt when a draft waits, toasts on replies, and one-line gate rows. Approval is your keypress or click: it runs `bt.py held approve` for the displayed hash and submits the prompt that sends the agent through `bt.py gate --approved` once. The mod never inspects outgoing tool calls (decision 0020). Typing "yes" in chat approves nothing. |
-| Widget | A session with a tool that posts interactive widgets and the prompt hook active (a Projects thread needs betterterms added in Project settings > Plugins, then a new thread) | The same views as posted widgets. A button fills your message box with the typed command; you still press Enter, so every action is yours. Approval lands as a `held/<hash>.approved` file the prompt hook writes. |
+| Widget | A session with a tool that posts interactive widgets and the prompt hook active (a Projects thread needs the plugin installed through a cloud environment setup script, then a new thread; see [install.md](install.md#claude-code-cloud-sessions)) | The same views as posted widgets. A button fills your message box with the typed command; you still press Enter, so every action is yours. Approval lands as a `held/<hash>.approved` file the prompt hook writes. |
 | Chat | Codex, plain cloud sessions, `claude -p` | Text summaries and the same typed commands. Where the session has no prompt hook, the agent runs `bt.py held approve` itself after you reply `bt approve`. |
 
 The honest line on strength: every mode enforces approval the same way,
