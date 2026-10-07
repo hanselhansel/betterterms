@@ -348,6 +348,8 @@ user's yes.
   the exact wording. When the session-start marker is absent the
   hook is not active, so a typed `bt floor` would reach you: point
   the user to the terminal command instead, or in a Projects thread
-  to Project settings > Plugins and a new thread.
+  to the cloud environment Setup script install (`claude plugin
+  marketplace add 'hanselhansel/betterterms'`, `claude plugin
+  install betterterms@betterterms`) and a new thread.
 - Nothing personal goes into the repo. Case files live in the user's
   betterterms home.
