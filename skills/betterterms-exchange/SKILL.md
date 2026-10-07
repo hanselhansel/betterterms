@@ -75,7 +75,8 @@ or ask for their offer when it is not. Then gate, send, and log as below.
        draft `draft.yaml` and gate it with `--inbound` as usual.
        The gate always holds it for the user on a stopped turn.
        Hand the decision over in your message: say plainly what
-       you propose and that the call is theirs.
+       you propose, that the draft is only for their review, and
+       that nothing sends without their explicit yes.
      - Hand-off (when no draft is useful or safe): skip the
        draft. Show the user the counterparty's offer, the band
        in plain words (`unknown`: "the offer cannot be scored
@@ -98,7 +99,21 @@ or ask for their offer when it is not. Then gate, send, and log as below.
    or imply a source was consulted that was not. The reply still
    makes its one move from the plan; only the claim's status is
    named.
-4. Pick one move per the turn procedure. Draft `draft.yaml`. Every id
+4. Pick one move per the turn procedure. Anchor a first counter on
+   the plan's target and its package: a later ladder step needs
+   thread or plan evidence that the earlier step already failed,
+   and a low, near-limit or pressured inbound earns no concession
+   by itself. Check plan facts for pending alternatives or
+   competing bids; with another bid outstanding, wait or stay
+   tentative rather than accept terms early. A price counter pairs
+   the amount with plan-backed terms or options when the plan
+   offers them, citing the competitive-price fact that supports it;
+   a naked number alone is weaker. On a hostile message the counter
+   stays calm and target-based: cite the relevant competitor
+   evidence, never threaten or commit to switching providers. In
+   your note to the user, relate the tentative offer to the target
+   or current ladder step and name the plan-backed conditions so
+   the choice can be assessed. Draft `draft.yaml`. Every id
    in `claims` must exist in `plan.yaml` facts. Cite every plan fact
    the message relies on: put `{fact:<id>}` in `template` and the id
    in `claims`, never one without the other, and rely on no fact the
