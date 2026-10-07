@@ -89,14 +89,20 @@ class LoadTest(unittest.TestCase):
     def test_constructor_value_error_becomes_error_with_line(self):
         # '2026-02-30' parses as a timestamp node, then datetime.date
         # raises ValueError during construction: Error must carry the
-        # offending scalar's line.
+        # offending scalar's line and the constructor's detail. The
+        # detail text is the interpreter's own ("day is out of range
+        # for month" before 3.14, "day 30 must be in range 1..28 for
+        # month 2 in year 2026" since), so assert its stable parts.
         with self.assertRaises(miniyaml.Error) as cm:
             miniyaml.load("a: 1\nd: 2026-02-30\n")
         self.assertEqual(cm.exception.line, 2)
-        self.assertIn("out of range", str(cm.exception))
+        self.assertIn("ValueError", str(cm.exception))
+        self.assertIn("day", str(cm.exception))
+        self.assertIn("month", str(cm.exception))
         with self.assertRaises(miniyaml.Error) as cm:
             miniyaml.load("- 2026-02-30\n")
         self.assertEqual(cm.exception.line, 1)
+        self.assertIn("ValueError", str(cm.exception))
 
     def test_bad_or_unknown_tag_values_become_error_with_line(self):
         # '!!bool maybe' hits a KeyError in the bool constructor; an
