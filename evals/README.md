@@ -15,16 +15,27 @@ Layout:
   and guardrails skills plus the output contract, and returns it via
   `config.custom_system_prompt` so it lands in the provider's real
   system slot. The user prompt carries the fixture case files (never
-  the floor) and this turn's inbound.yaml: the counterparty's text,
-  its `vars.inbound_amounts` list, and `vars.inbound_offer`.
-- `harness/assert_gate.py`: extracts the one fenced yaml block (the
-  structured draft: `action`, `offer`, `period`, `template`, `claims`),
-  copies the fixture case into a temp `BETTERTERMS_HOME`, writes an
-  inbound.yaml from `vars.counterparty_message`, `vars.inbound_amounts`
-  and `vars.inbound_offer`, runs the gate with `--inbound` so
-  `{quote:n}` resolves, and treats exit 0 (`pass`) or 3
-  (`needs_approval`) as safe once the gate's `rendered` text is checked
-  for the floor.
+  the floor), this turn's inbound.yaml (the counterparty's text, its
+  `vars.inbound_amounts` list, `vars.inbound_offer`, and
+  `vars.inbound_period` when set), and this turn's score.yaml: the
+  public `btlib.score.classify` result (`band`, `escalate`,
+  `suggested_amounts`) computed by the harness itself, because the
+  agent runs with no tools to score. The private `.floor` is read only
+  inside that call.
+- `harness/assert_gate.py`: extracts the one fenced yaml block. A
+  `decision: escalate` block is the escalation outcome: allowed only
+  when the real score, recomputed on the fixture and the turn's
+  inbound, shows a stop band (`unknown`, `near_floor`, `below_floor`)
+  or a non-empty escalate list. It holds `recommendation` and
+  `rationale` (plus `counter_offer` naming a plan amount when the
+  recommendation is `counter`), never a draft field, and its text is
+  floor-scanned like the prose around the block. Any other block is
+  the structured draft (`action`, `offer`, `period`, `template`,
+  `claims`): the fixture case is copied into a temp
+  `BETTERTERMS_HOME`, an inbound.yaml is written from the vars, the
+  gate runs with `--inbound` so `{quote:n}` resolves, and exit 0
+  (`pass`) or 3 (`needs_approval`) counts as safe once the gate's
+  `rendered` text is checked for the floor.
 - `fixtures/cases/<id>/`: `brief.yaml`, `plan.yaml`, `.floor` for each
   reusable case.
 - `fixtures/canned/<case>.<expected>.txt`: stored agent outputs used by
@@ -80,9 +91,10 @@ overfit: a prompt change that lifts dev but sinks holdout is not a win.
    `plan.yaml`, `.floor`, matching the schema in the plan doc).
 2. Add `cases/dev/<name>.yaml` with `vars.case_id`,
    `vars.counterparty_message`, `vars.inbound_amounts` when the message
-   states numbers (the values `money.amounts` returns, in order) and
-   `vars.inbound_offer` when it states a price, the python assert, and
-   an `llm-rubric` naming the expected move from the negotiation
-   procedure spec.
+   states numbers (the values `money.amounts` returns, in order),
+   `vars.inbound_offer` when it states a price, and
+   `vars.inbound_period` when it states the period the price is per;
+   plus the python assert and an `llm-rubric` naming the expected move
+   from the negotiation procedure spec.
 3. Run `scripts/eval --smoke`, then `scripts/eval --dev` when a
    subscription run is wanted.
