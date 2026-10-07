@@ -107,17 +107,22 @@ class RecordStrictnessTest(SecurityCase):
         case_id, case_dir = self.make_case()
         _proc, out = self.gate(case_id, self.held_draft())
         h = out["hash"]
+        path = case_dir / "held" / f"{h}.yaml"
+        original = path.read_text()
+        self.assertIn("offer: null", original)
         for bad in (".nan", ".inf"):
-            path = case_dir / "held" / f"{h}.yaml"
-            text = path.read_text().replace(
-                "offer: null", f"offer: {bad}"
-            )
-            path.write_text(text)
-            proc, out = run_bt_json(
-                self.home, "held", "approve", case_id, h[:8]
-            )
-            self.assertEqual(proc.returncode, 2, out)
-            self.assertIn("corrupt", out["error"])
+            with self.subTest(bad=bad):
+                # Restore the fixture each round so every value is
+                # exercised, then confirm the write landed.
+                path.write_text(
+                    original.replace("offer: null", f"offer: {bad}")
+                )
+                self.assertIn(f"offer: {bad}", path.read_text())
+                proc, out = run_bt_json(
+                    self.home, "held", "approve", case_id, h[:8]
+                )
+                self.assertEqual(proc.returncode, 2, out)
+                self.assertIn("corrupt", out["error"])
 
     def test_nonpositive_offer_is_corrupt(self):
         case_id, case_dir = self.make_case()

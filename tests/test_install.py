@@ -171,8 +171,8 @@ class VendorIntoRepoTest(ScriptTestCase):
                 / ".claude/skills/betterterms-guardrails/scripts/bt.py"
             ).is_file()
         )
-        for name in ("prompt_commands.py", "_btpath.py",
-                     "session-start.sh"):
+        for name in ("prompt_commands.py", "prompt-guard.sh",
+                     "_btpath.py", "_scan.py", "session-start.sh"):
             self.assertTrue(
                 (
                     target / ".claude/betterterms/hooks" / name
@@ -188,8 +188,8 @@ class VendorIntoRepoTest(ScriptTestCase):
             [h["command"] for e in events["UserPromptSubmit"]
              for h in e["hooks"]],
             [
-                'python3 "$CLAUDE_PROJECT_DIR/.claude/betterterms/'
-                'hooks/prompt_commands.py"'
+                'bash "$CLAUDE_PROJECT_DIR/.claude/betterterms/'
+                'hooks/prompt-guard.sh"'
             ],
         )
         self.assertEqual(

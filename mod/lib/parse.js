@@ -140,7 +140,8 @@ function itemValue(item) {
 // wraps over several lines. Returns {value, next}.
 function inlineValue(lines, i, rest) {
   const trimmed = rest.trim();
-  if (/^[|>][+-]?$/.test(trimmed)) {
+  const block = /^[|>]([+-]?)([1-9])?$/.exec(trimmed);
+  if (block) {
     const style = trimmed[0];
     const base = indentOf(lines[i]);
     const body = [];
@@ -149,11 +150,18 @@ function inlineValue(lines, i, rest) {
       body.push(lines[j]);
       j++;
     }
+    // An explicit digit pins the content indent at base + n; without
+    // one the first non-empty line names it.
     let cut = 0;
-    for (const line of body) if (line.trim() !== "") { cut = indentOf(line); break; }
+    if (block[2]) {
+      cut = base + Number(block[2]);
+    } else {
+      for (const line of body) if (line.trim() !== "") { cut = indentOf(line); break; }
+    }
     const stripped = body.map((l) => (l.trim() === "" ? "" : l.slice(Math.min(cut, l.length))));
     while (stripped.length && stripped[0] === "") stripped.shift();
     const text = style === "|" ? stripped.join("\n") : foldLines(stripped.join("\n"));
+    // `+` keeps the body verbatim, last line terminator included.
     if (trimmed[1] === "+") return { value: stripped.join("\n") + "\n", next: j };
     return { value: trimmed[1] === "-" ? text.replace(/\n+$/, "") : text.replace(/\n*$/, "\n"), next: j };
   }
@@ -192,6 +200,9 @@ export function parseFlatYaml(text) {
   const out = {};
   try {
     const lines = String(text ?? "").split(/\r?\n/);
+    // A file's last newline terminates the last line: it is not a
+    // content line, so a `|+` body must not read it as one.
+    if (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();
     let i = 0;
     while (i < lines.length) {
       const line = lines[i];

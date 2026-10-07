@@ -22,6 +22,33 @@ export function money(currency, v) {
   return currency === "USD" ? `$${n}` : `${currency} ${n}`;
 }
 
+// The exact approved amount on an approval surface: cents always,
+// so a $14.65 draft can never read as $15 the way money() rounds.
+export function moneyExact(currency, v) {
+  const n = Number(v);
+  const s = Number.isFinite(n) ? n.toFixed(2) : "0.00";
+  return currency === "USD" ? `$${s}` : `${currency} ${s}`;
+}
+
+// The held send tuple on one line for the approval card: `send ·
+// $1,200.00/year`, or the action alone when the draft carries no
+// offer. The owner approves what the card shows.
+export function tupleText(held) {
+  const bits = [];
+  if (typeof held?.action === "string" && held.action !== "") {
+    bits.push(held.action);
+  }
+  const offer = held?.offer;
+  if (typeof offer === "number" && Number.isFinite(offer) && offer > 0) {
+    let s = moneyExact(held.currency ?? "USD", offer);
+    if (held.period === "month" || held.period === "year") {
+      s += `/${held.period}`;
+    }
+    bits.push(s);
+  }
+  return bits.join(" · ");
+}
+
 // The per-currency savings figure, "$486/yr · EUR 200/yr" or "$0/yr".
 export function savedText(saved) {
   const keys = Object.keys(saved ?? {});
@@ -76,8 +103,10 @@ const shJoin = (argv) => argv.map(shQuote).join(" ");
 // draft path, so the instruction runs as printed.
 export function approvePromptText(hash, caseId, argv) {
   return `betterterms: the user approved draft ${hash8(hash)} for ${caseId}. ` +
-    `Run \`${shJoin(argv)}\` exactly once, then send the ` +
-    "returned rendered text verbatim as its own argument, nothing added.";
+    `Run \`${shJoin(argv)}\` exactly once, then send only on a pass ` +
+    "verdict: the returned rendered text goes verbatim as its own " +
+    "argument, nothing added. A needs_approval or block verdict " +
+    "sends nothing and shows the user the reasons.";
 }
 
 // The toast when the prompt could not be submitted: the marker is
@@ -86,7 +115,9 @@ export function approvePromptText(hash, caseId, argv) {
 export function approveFallbackText(hash, caseId, argv) {
   return `betterterms: approved ${hash8(hash)} for ${caseId}, but the ` +
     `prompt did not send. Run \`${shJoin(argv)}\` once, then send ` +
-    "the returned rendered text verbatim as its own argument.";
+    "only on a pass verdict: the returned rendered text goes " +
+    "verbatim as its own argument; any other verdict sends nothing " +
+    "and shows the user the reasons.";
 }
 
 export function statusText(nCases, saved, once) {
@@ -96,20 +127,44 @@ export function statusText(nCases, saved, once) {
 }
 
 // draft.yaml rewritten with the edited message as the template. The
-// draft's own keys (action, offer, period, claims) are kept so the
-// gate sees the same draft shape; the template goes out as a literal
-// block so the text is byte-exact.
-export function draftYaml(c, held, text) {
-  const d = c.draft && typeof c.draft === "object" ? { ...c.draft } : {};
-  d.template = null;
+// send tuple comes from the held record the card names -- never from
+// a draft.yaml that may hold newer unreviewed text -- so a stale
+// card cannot borrow a different draft's action, offer or claims.
+// A held record missing a field writes no key for it, and the gate
+// refuses the shape rather than guessing. The template goes out as
+// a literal block with the right chomping marker and an explicit
+// indent when the first line leads with spaces, so the text round-
+// trips byte-exact.
+export function draftYaml(held, text) {
   const lines = [];
-  for (const [k, v] of Object.entries(d)) {
-    if (k === "template" || v === undefined) continue;
-    lines.push(`${k}: ${yamlScalar(v)}`);
+  if (typeof held?.action === "string" && held.action !== "") {
+    lines.push(`action: ${yamlScalar(held.action)}`);
   }
-  lines.push("template: |-");
-  for (const l of String(text ?? "").split("\n")) lines.push(`  ${l}`);
+  const offer = held?.offer;
+  if (typeof offer === "number" && Number.isFinite(offer) && offer > 0) {
+    lines.push(`offer: ${offer}`);
+  }
+  if (typeof held?.period === "string" && held.period !== "") {
+    lines.push(`period: ${yamlScalar(held.period)}`);
+  }
+  lines.push(templateBlock(text));
   return lines.join("\n") + "\n";
+}
+
+// `text` as a `template:` literal block: `-` strips, no marker clips
+// to one trailing newline, `+` keeps every blank line; the digit
+// pins the content indent at two spaces so a first line that leads
+// with spaces is never eaten by inference. The body's last line
+// supplies its own terminator, so the text loses one trailing
+// newline before it splits into lines.
+function templateBlock(text) {
+  const t = String(text ?? "");
+  const chomp = t.endsWith("\n\n") ? "+" : t.endsWith("\n") ? "" : "-";
+  const indent = /^[ \t]/.test(t) ? "2" : "";
+  const body = t.endsWith("\n") ? t.slice(0, -1) : t;
+  const lines = [`template: |${chomp}${indent}`];
+  for (const l of body.split("\n")) lines.push(`  ${l}`);
+  return lines.join("\n");
 }
 
 function yamlScalar(v) {

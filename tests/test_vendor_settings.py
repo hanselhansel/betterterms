@@ -16,6 +16,12 @@ from pathlib import Path
 from test_install import make_repo, run
 
 PROMPT_CMD = (
+    'bash "$CLAUDE_PROJECT_DIR/.claude/betterterms/hooks/'
+    'prompt-guard.sh"'
+)
+# The command the pre-guard vendor run registered; re-vendoring must
+# rewire it to the guarded launcher, not leave it running unguarded.
+OLD_PROMPT_CMD = (
     'python3 "$CLAUDE_PROJECT_DIR/.claude/betterterms/hooks/'
     'prompt_commands.py"'
 )
@@ -62,7 +68,9 @@ class VendorSettingsTest(unittest.TestCase):
             "skills/betterterms-guardrails/scripts/bt.py",
             "skills/.betterterms-version",
             "betterterms/hooks/prompt_commands.py",
+            "betterterms/hooks/prompt-guard.sh",
             "betterterms/hooks/_btpath.py",
+            "betterterms/hooks/_scan.py",
             "betterterms/hooks/session-start.sh",
             "betterterms/.betterterms-version",
         ):
@@ -100,7 +108,7 @@ class VendorSettingsTest(unittest.TestCase):
         self.assertEqual(settings["model"], "sonnet")
         self.assertEqual(
             sorted(self.commands("UserPromptSubmit")),
-            ["echo mine", PROMPT_CMD],
+            sorted(["echo mine", PROMPT_CMD]),
         )
         self.assertEqual(self.commands("SessionStart"), [SESSION_CMD])
 
@@ -149,6 +157,142 @@ class VendorSettingsTest(unittest.TestCase):
         self.assertEqual(len(entries), 1)
         self.assertEqual(entries[0]["matcher"], "custom")
         self.assertEqual(entries[0]["hooks"][0]["timeout"], 30)
+
+    def test_old_owned_prompt_hook_migrates_to_the_guard(self):
+        # A settings file from the pre-guard vendor run: the owned
+        # prompt_commands.py command is rewired to the guarded
+        # launcher in place, with the entry's other fields kept and
+        # no duplicate entry added.
+        self.settings.parent.mkdir(parents=True)
+        self.settings.write_text(
+            json.dumps(
+                {
+                    "hooks": {
+                        "UserPromptSubmit": [
+                            {
+                                "matcher": "kept",
+                                "hooks": [
+                                    {
+                                        "type": "command",
+                                        "command": OLD_PROMPT_CMD,
+                                        "timeout": 30,
+                                    }
+                                ],
+                            }
+                        ]
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+        proc = self.vendor()
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        settings = self.read()
+        entries = settings["hooks"]["UserPromptSubmit"]
+        self.assertEqual(len(entries), 1)
+        self.assertEqual(entries[0]["matcher"], "kept")
+        hooks = entries[0]["hooks"]
+        self.assertEqual(len(hooks), 1)
+        self.assertEqual(hooks[0]["command"], PROMPT_CMD)
+        self.assertEqual(hooks[0]["timeout"], 30)
+
+    def test_migration_is_idempotent(self):
+        self.settings.parent.mkdir(parents=True)
+        self.settings.write_text(
+            json.dumps(
+                {
+                    "hooks": {
+                        "UserPromptSubmit": [
+                            {
+                                "hooks": [
+                                    {
+                                        "type": "command",
+                                        "command": OLD_PROMPT_CMD,
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+        for _ in range(2):
+            proc = self.vendor()
+            self.assertEqual(
+                proc.returncode, 0, proc.stdout + proc.stderr
+            )
+        self.assertEqual(self.commands("UserPromptSubmit"), [PROMPT_CMD])
+
+    def test_similarly_named_custom_hook_is_untouched(self):
+        # A hook whose name merely shares the prompt_ prefix is not
+        # ours: it must not be migrated or silently suppress the
+        # real registration.
+        custom = (
+            'bash "$CLAUDE_PROJECT_DIR/.claude/betterterms/hooks/'
+            'prompt-linter.sh"'
+        )
+        self.settings.parent.mkdir(parents=True)
+        self.settings.write_text(
+            json.dumps(
+                {
+                    "hooks": {
+                        "UserPromptSubmit": [
+                            {
+                                "hooks": [
+                                    {
+                                        "type": "command",
+                                        "command": custom,
+                                    },
+                                    {
+                                        "type": "command",
+                                        "command": OLD_PROMPT_CMD,
+                                    },
+                                ]
+                            }
+                        ]
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+        proc = self.vendor()
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        commands = self.commands("UserPromptSubmit")
+        self.assertEqual(
+            sorted(commands), sorted([custom, PROMPT_CMD])
+        )
+
+    def test_guarded_hook_present_drops_old_owned_copy(self):
+        # Both shapes registered: the unguarded copy must not keep
+        # running, and the guarded one stays exactly once.
+        self.settings.parent.mkdir(parents=True)
+        self.settings.write_text(
+            json.dumps(
+                {
+                    "hooks": {
+                        "UserPromptSubmit": [
+                            {
+                                "hooks": [
+                                    {
+                                        "type": "command",
+                                        "command": OLD_PROMPT_CMD,
+                                    },
+                                    {
+                                        "type": "command",
+                                        "command": PROMPT_CMD,
+                                    },
+                                ]
+                            }
+                        ]
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+        proc = self.vendor()
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertEqual(self.commands("UserPromptSubmit"), [PROMPT_CMD])
 
     def test_hooks_key_wrong_shape_exits_2_without_writing(self):
         for bad in ({"hooks": []}, {"hooks": {"SessionStart": "x"}}):

@@ -40,21 +40,33 @@ SKILLS_DIR = ROOT / "skills"
 HOOKS_DIR = ROOT / "hooks"
 VERSION_FILE = ROOT / "VERSION"
 
-HOOK_NAMES = ("prompt_commands.py", "_btpath.py", "session-start.sh")
+HOOK_NAMES = (
+    "prompt_commands.py",
+    "prompt-guard.sh",
+    "_btpath.py",
+    "_scan.py",
+    "session-start.sh",
+)
 
 HOOK_EVENTS = ("UserPromptSubmit", "SessionStart")
 HOOK_COMMANDS = {
     "UserPromptSubmit": (
-        'python3 "$CLAUDE_PROJECT_DIR/.claude/betterterms/'
-        'hooks/prompt_commands.py"'
+        'bash "$CLAUDE_PROJECT_DIR/.claude/betterterms/'
+        'hooks/prompt-guard.sh"'
     ),
     "SessionStart": (
         'bash "$CLAUDE_PROJECT_DIR/.claude/betterterms/hooks/'
         'session-start.sh"'
     ),
 }
+# Exact owned paths only, never a shared prefix: an old vendored
+# prompt_commands.py command is this plugin's hook and is migrated
+# to the guarded launcher, while a similarly named custom hook
+# under the same directory is left untouched.
+_PROMPT_OLD = ".claude/betterterms/hooks/prompt_commands.py"
+_PROMPT_NEW = ".claude/betterterms/hooks/prompt-guard.sh"
 HOOK_NEEDLES = {
-    "UserPromptSubmit": ".claude/betterterms/hooks/prompt_commands.py",
+    "UserPromptSubmit": _PROMPT_NEW,
     "SessionStart": ".claude/betterterms/hooks/session-start.sh",
 }
 
@@ -150,12 +162,48 @@ def _load_settings(repo):
     return settings, path, existed
 
 
+def _migrate_prompt(entries):
+    """Rewire this plugin's owned unguarded prompt hook in place.
+    An old prompt_commands.py command becomes the guarded command;
+    when the guarded command is already registered the old copy is
+    dropped so it cannot keep running unguarded. Other commands and
+    fields are kept. Returns True when anything changed."""
+    have_new = any(
+        _PROMPT_NEW in str(h.get("command", ""))
+        for entry in entries
+        if isinstance(entry, dict)
+        for h in entry.get("hooks") or []
+        if isinstance(h, dict)
+    )
+    migrated = False
+    changed = False
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        hooks = entry.get("hooks")
+        if not isinstance(hooks, list):
+            continue
+        kept = []
+        for h in hooks:
+            cmd = str(h.get("command", "")) if isinstance(h, dict) else ""
+            if _PROMPT_OLD not in cmd:
+                kept.append(h)
+                continue
+            changed = True
+            if not (have_new or migrated):
+                h["command"] = HOOK_COMMANDS["UserPromptSubmit"]
+                migrated = True
+                kept.append(h)
+        hooks[:] = kept
+    return changed
+
+
 def _merge_hooks(settings):
     """Append each missing hook entry under settings['hooks']; an
     entry whose command already names the vendored script counts as
-    present. Returns True when anything was added."""
+    present. Returns True when anything changed."""
     hooks = settings["hooks"]
-    changed = False
+    changed = _migrate_prompt(hooks["UserPromptSubmit"])
     for event in HOOK_EVENTS:
         if not _has_hook(hooks[event], HOOK_NEEDLES[event]):
             hooks[event].append(_hook_entry(event))

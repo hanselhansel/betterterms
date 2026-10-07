@@ -100,6 +100,22 @@ class ApprovalWidgetTest(WidgetCase):
         self.assertIn("please end my plan", html)
         self.assertIn(PRESS_ENTER, html)
 
+    def test_approval_widget_shows_the_tuple_with_cents(self):
+        # The owner approves the amount they see: the action and the
+        # exact offer land on the card in two-decimal form, never
+        # rounded up to whole units like a summary figure.
+        case_id, _ = self.make_case()
+        draft = send_draft(
+            action="send", offer=14.65, period="month",
+            template="I can pay 14.65 a month",
+        )
+        h = self.hold_draft(case_id, draft)
+        proc, out = self.widget("approval", case_id, h[:8])
+        self.assertEqual(proc.returncode, 0, out)
+        html = out["html"]
+        self.assertIn("send · $14.65/month", html)
+        self.assertNotIn("$15", html)
+
     def test_widget_escapes_text(self):
         case_id, _ = self.make_case()
         draft = send_draft(

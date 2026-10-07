@@ -163,10 +163,32 @@ def cases_widget():
     return _fill("cases", {"rows": body})
 
 
+def _approval_tuple(record):
+    """The send tuple on one line: the action plus the exact offer
+    with cents (a 14.65 approval can never read as 15) and period,
+    so the owner approves the amount they see."""
+    action = record.get("action")
+    bits = [action] if isinstance(action, str) and action else []
+    offer = cases.num(record.get("offer"))
+    if offer is not None:
+        currency = record.get("currency") or "USD"
+        mark = render._SYMBOLS.get(currency)
+        body = (
+            f"{mark}{offer:,.2f}"
+            if mark
+            else f"{currency} {offer:,.2f}"
+        )
+        period = record.get("period")
+        if period in ("month", "year"):
+            body += f"/{period}"
+        bits.append(body)
+    return " · ".join(bits)
+
+
 def approval_widget(d, case_id, hash8):
-    """One held draft as an approval card: the rendered text, the
-    gate's reasons, and Approve/Reject buttons that fill the user's
-    message box with the typed command."""
+    """One held draft as an approval card: the send tuple, the
+    rendered text, the gate's reasons, and Approve/Reject buttons
+    that fill the user's message box with the typed command."""
     h = held.resolve(d, hash8)
     record = next(
         (e for e in held.list_held(d) if str(e.get("hash")) == h), None
@@ -187,6 +209,7 @@ def approval_widget(d, case_id, hash8):
             "case_id": _esc(case_id),
             "hash8": _esc(h[:8]),
             "held_at": _esc(record.get("held_at") or ""),
+            "tuple": _esc(_approval_tuple(record)),
             "rendered": _esc(record.get("rendered") or ""),
             "reasons": items,
             "status": status,

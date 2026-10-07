@@ -72,6 +72,14 @@ async function heldForCase(host, home, bt, id) {
       reasons: Array.isArray(h?.reasons) ? h.reasons.map(String) : [],
       heldAt: typeof h?.held_at === "string" ? h.held_at : "",
       approved: h?.approved === true,
+      // The send tuple rides with the record so the card shows the
+      // exact action/amount/period and an edit rebuilds draft.yaml
+      // from what the owner approved, never a stale draft file.
+      action: typeof h?.action === "string" ? h.action : null,
+      offer: typeof h?.offer === "number" ? h.offer : null,
+      period: typeof h?.period === "string" ? h.period : null,
+      currency: typeof h?.currency === "string" ? h.currency : null,
+      inbound: typeof h?.inbound === "string" ? h.inbound : null,
     }))
     .filter((h) => h.hash !== "");
 }
