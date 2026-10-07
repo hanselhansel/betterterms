@@ -9,6 +9,7 @@ byte (vendor-sync) walk the disk directly instead.
 import codecs
 import functools
 import os
+import re
 import subprocess
 from pathlib import Path
 
@@ -285,16 +286,34 @@ def string_values(value):
             yield from string_values(v)
 
 
+# A unittest report names its failing tests in "FAIL:"/"ERROR:"
+# headers and ends each traceback with the exception line; both sit
+# above the tail window when the run summary pushes them out of it.
+_UNITTEST_FAIL = re.compile(r"^(FAIL|ERROR): ")
+_EXCEPTION = re.compile(
+    r"^[\w.]+(Error|Exception|Exit|Interrupt|Timeout\w*)\b"
+)
+
+
 def tail(result, n=5):
     """The last ``n`` lines of a failed command's output for the FAIL
-    detail. stderr wins: diagnostics (a unittest failure report, a
-    validator's error) live there, while stdout may hold pages of
-    ordinary output that would push them out of the window. stdout is
-    the fallback for commands that print errors there."""
+    detail, plus up to ``n`` failure lines from earlier in the output:
+    a long unittest report's headers and exception lines never reach
+    the window ("FAILED (failures=1)" alone names nothing), so they
+    are pulled forward. stderr wins: diagnostics live there, while
+    stdout may hold pages of ordinary output that would push them out;
+    stdout is the fallback for commands that print errors there."""
     text = result.stderr or ""
     if not text.strip():
         text = result.stdout or ""
-    return " | ".join(text.strip().splitlines()[-n:])
+    lines = text.strip().splitlines()
+    hits = [
+        line.strip()
+        for line in lines[:-n]
+        if _UNITTEST_FAIL.match(line.strip())
+        or _EXCEPTION.match(line.strip())
+    ]
+    return " | ".join(hits[-n:] + lines[-n:])
 
 
 def join(items, n=8):
