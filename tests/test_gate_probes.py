@@ -110,7 +110,13 @@ class QuoteAndPeriodTest(ProbeTest):
             case_id, send_draft(template="your {quote:1} is too high"),
             inbound=inbound,
         )
-        self.assertEqual(proc.returncode, 0, out)
+        # The inbound offer sits in the near_floor band, so the turn
+        # is stopped and the draft held as a proposal (decision 0021);
+        # the quote still never meets the worse-than-floor check.
+        self.assertEqual(proc.returncode, 3, out)
+        self.assertEqual(out["reasons"], [
+            "the counterparty's message needs your review",
+        ])
         self.assertEqual(out["rendered"], "your $1,300 is too high")
         for action in ("accept", "pay", "sign", "cancel", "dispute"):
             with self.subTest(action=action):

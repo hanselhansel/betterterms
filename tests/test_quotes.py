@@ -106,7 +106,13 @@ class VerbatimQuoteTest(QuoteRuleCase):
             inbound=inbound_msg(text="as discussed",
                                 amounts=["as discussed"]),
         )
-        self.assertEqual(proc.returncode, 0, out)
+        # The inbound names no offer, so the turn is stopped and the
+        # draft held for the user (decision 0021); the verbatim string
+        # still renders untouched in the held text.
+        self.assertEqual(proc.returncode, 3, out)
+        self.assertEqual(out["reasons"], [
+            "the counterparty's message needs your review",
+        ])
         self.assertIn("as discussed", out["rendered"])
         proc, out = self.gate(
             case_id,
@@ -167,13 +173,18 @@ class VerbatimQuoteTest(QuoteRuleCase):
 
     def test_numeric_quote_still_formats_as_price(self):
         # A numeric entry keeps the old rendering (money_text output).
+        # The offer-free inbound scores unknown, so the draft is held
+        # for the user (decision 0021) with that rendering inside.
         case_id = self.quote_case()
         proc, out = self.gate(
             case_id,
             send_draft(offer=50, template="you said {quote:1}"),
             inbound=inbound_msg(text="we bill 89", amounts=[89]),
         )
-        self.assertEqual(proc.returncode, 0, out)
+        self.assertEqual(proc.returncode, 3, out)
+        self.assertEqual(out["reasons"], [
+            "the counterparty's message needs your review",
+        ])
         self.assertIn("$89", out["rendered"])
 
 
