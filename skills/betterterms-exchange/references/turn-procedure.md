@@ -10,8 +10,10 @@ For each inbound message:
    `near_floor`, or `below_floor`, or a non-empty escalate list:
    the turn is stopped -- no autonomous send at any autonomy level.
    Draft one safe proposal for the user to approve (the gate always
-   holds it on a stopped turn), or hand the decision over with a
-   recommendation when no draft is useful or safe.
+   holds it on a stopped turn; say plainly it is only proposed for
+   review and nothing sends without their yes), or hand the
+   decision over with a recommendation when no draft is useful or
+   safe.
    `at_or_above_target`: ask the user to approve acceptance.
 3. **Verify** new claims ("lowest price", "expires today", rival quotes)
    against the fact list, public pricing, or a written confirmation
@@ -23,7 +25,16 @@ For each inbound message:
    move from the plan.
 4. **Pick one move.** Ask for missing information; counter with a package
    or options, each concession smaller than the last, with a reason; trade
-   low-priority items for high-priority ones; or pause. Disclose only
+   low-priority items for high-priority ones; or pause. Anchor a first
+   counter on the plan's target and package: a later ladder step needs
+   evidence the earlier step failed, and a low or pressured inbound
+   earns no concession by itself. Check plan facts for pending
+   alternatives or competing bids; with another bid outstanding, wait
+   or stay tentative rather than commit. A price counter pairs the
+   amount with plan-backed terms or options and the competitive-price
+   fact that supports it. On a hostile message keep the counter calm:
+   cite competitor evidence, never threaten to switch providers.
+   Disclose only
    what the move needs: on a request for current compensation, employer
    identity or other protected information, decline politely and
    redirect to the offer or package the plan approves -- one amount,
