@@ -29,6 +29,17 @@ class ScoreTest(BtTestCase):
         path.write_text(yaml.dump(inbound))
         return run_bt_json(self.home, "score", case_id, "--inbound", str(path))
 
+    def classify(self, case_id, inbound):
+        """score.classify in-process on CPU time: the text scan plus
+        reading the case's small YAML files, without CLI startup, the
+        inbound file round trip or scheduler waits on a shared host."""
+        import time
+        from btlib import score
+
+        start = time.process_time()
+        out = score.classify(self.home / "cases" / case_id, inbound)
+        return time.process_time() - start, out
+
     def test_score_direction_pay(self):
         case_id = self.make_case(direction="pay", floor=100, target=70)
         proc, out = self.score(case_id, {"offer": 65, "text": "best we can do"})
@@ -261,27 +272,21 @@ class ScoreTest(BtTestCase):
         self.assertIn("64 KB", " ".join(out["reasons"]))
 
     def test_score_at_cap_under_one_second(self):
-        import time
-
         case_id = self.make_case()
         text = "we can do " + "a1 " * 21000  # ~63 KB, mixed tokens
-        start = time.monotonic()
-        proc, out = self.score(case_id, {"offer": 80, "text": text})
-        elapsed = time.monotonic() - start
-        self.assertEqual(proc.returncode, 0, out)
+        elapsed, out = self.classify(case_id, {"offer": 80, "text": text})
+        self.assertEqual(out["band"], "in_band")
+        self.assertEqual(out["escalate"], [])
         self.assertLess(elapsed, 1.0)
 
     def test_score_comma_digit_run_under_one_second(self):
         # 64 KB of ",123" made the suffixed-amount lookbehind scan
         # quadratically; the inbound amount scan must stay linear.
-        import time
-
         case_id = self.make_case()
         text = ",123" * 16000
-        start = time.monotonic()
-        proc, out = self.score(case_id, {"offer": 80, "text": text})
-        elapsed = time.monotonic() - start
-        self.assertEqual(proc.returncode, 0, out)
+        elapsed, out = self.classify(case_id, {"offer": 80, "text": text})
+        self.assertEqual(out["band"], "in_band")
+        self.assertEqual(out["escalate"], [])
         self.assertLess(elapsed, 1.0)
 
     def test_huge_inbound_offer_scores_unknown(self):
