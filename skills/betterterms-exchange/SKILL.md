@@ -101,9 +101,17 @@ or ask for their offer when it is not. Then gate, send, and log as below.
 4. Pick one move per the turn procedure. Draft `draft.yaml`. Every id
    in `claims` must exist in `plan.yaml` facts. Cite every plan fact
    the message relies on: put `{fact:<id>}` in `template` and the id
-   in `claims`, never one without the other. When the counterparty
-   sets a deadline or makes a claim the plan has a fact about, cite
-   that fact. Write money only through placeholders: `{offer}` for
+   in `claims`, never one without the other, and rely on no fact the
+   move does not need -- a citation repeats the fact's text verbatim.
+   When the counterparty sets a deadline or makes a claim the plan has
+   a fact about, cite that fact. On a request for current
+   compensation, employer identity or other `never_disclose`
+   information, decline politely and redirect to the offer or package
+   the plan approves: name the one amount, not the whole posted range
+   or numbers the move does not use. Never paraphrase a fact to slip
+   it past the scan; if a fact the move truly needs trips a block,
+   follow step 5's block handling and gate-call cap. Write money only
+   through placeholders: `{offer}` for
    your offer with its period, `{target}`, `{option:<label>}`,
    `{ladder:<n>}` for plan values, `{fact:<id>}` for a fact's text
    (this claims the id too), and
