@@ -61,9 +61,8 @@ class GateTest(BtTestCase):
         self.assertEqual(out["rendered"], "could you do better on price")
 
     def test_offer_at_floor_needs_approval_and_renders(self):
-        # An offer exactly at the floor is inside the band, but on
-        # send it reveals the walk-away number, so it routes to the
-        # user; an explicit yes still renders it.
+        # An offer at the floor reveals the walk-away on send, so it
+        # routes to the user; an explicit yes still renders it.
         case_id, _ = self.make_case(floor=1200)
         proc, out = self.gate(
             case_id, send_draft(offer=1200, template="my best is {offer}")
@@ -80,8 +79,8 @@ class GateTest(BtTestCase):
         self.assertEqual(out["rendered"], "my best is $1,200")
 
     def test_offer_with_month_period_renders(self):
-        # A monthly offer against a once floor cannot convert, so the
-        # send routes to the user; the rendered text is still exact.
+        # A monthly offer on a once floor cannot convert: held for
+        # the user, and the rendered text is still exact.
         case_id, _ = self.make_case(floor=1200)
         draft = send_draft(
             offer=85, period="month",
@@ -184,9 +183,8 @@ class GateTest(BtTestCase):
         self.assertIn("f9", " ".join(out["reasons"]))
 
     def test_free_text_money_needs_approval(self):
-        # Money-shaped literal text is review tier: the gate cannot
-        # prove intent, so the user sees it, but it never passes
-        # silently. Amounts still go through placeholders.
+        # Money-shaped literal text is review tier: never a silent
+        # pass. Amounts still go through placeholders.
         case_id, _ = self.make_case(floor=1200)
         for template in ("I can pay $89", "call it USD 100",
                          "the fee is 500"):
@@ -218,9 +216,8 @@ class GateTest(BtTestCase):
             inbound=inbound_msg(text="we can do $89",
                                 amounts=[89]),
         )
-        # The inbound states no offer, so the real score is unknown
-        # and the draft is held for the user as a proposal (decision
-        # 0021); the rendered text still proves the quote resolved.
+        # No inbound offer means the real score is unknown: held for
+        # the user (decision 0021), and the quote still rendered.
         self.assertEqual(proc.returncode, 3, out)
         self.assertEqual(out["reasons"], [
             "the counterparty's message needs your review",
@@ -256,8 +253,8 @@ class GateTest(BtTestCase):
         self.assertIn(LIMITS, out["reasons"])
 
     def test_never_disclose_blocks(self):
-        # An item with letters is a hard block, not a review item:
-        # a listed term is never a coincidence.
+        # A listed term with letters is a hard block, never a
+        # review item or a coincidence.
         case_id, _ = self.make_case(floor=1200)
         proc, out = self.gate(
             case_id, send_draft(template="my account is ACCT-7788")
@@ -267,8 +264,8 @@ class GateTest(BtTestCase):
         self.assertIn("never-disclose", " ".join(out["reasons"]))
 
     def test_offer_restated_in_free_text_needs_approval(self):
-        # Bypass probe: the offer written bare in free text instead of
-        # through {offer}. Commitment wording routes it to the user.
+        # Bypass probe: a bare offer in free text, not {offer}.
+        # Commitment wording routes it to the user.
         case_id, _ = self.make_case(floor=1200)
         proc, out = self.gate(
             case_id, send_draft(offer=90, template="I will pay 90")
@@ -316,8 +313,7 @@ class GateTest(BtTestCase):
 
     def test_send_offer_at_floor_needs_approval_both_directions(self):
         # A send offer equal to the floor hands the counterparty the
-        # user's walk-away number: needs_approval in both directions,
-        # with a number-free reason, and an explicit yes sends it.
+        # walk-away: needs_approval both ways, number-free reason.
         for direction, floor in (("pay", 1200), ("receive", 150000)):
             with self.subTest(direction=direction):
                 case_id, _ = self.make_case(
@@ -336,8 +332,7 @@ class GateTest(BtTestCase):
                 self.assertEqual(proc.returncode, 0, out)
 
     def test_send_offer_at_floor_after_period_conversion(self):
-        # floor 1200/month: a yearly or monthly offer landing on it
-        # after conversion routes to the user too.
+        # floor 1200/month: converted offers on it hold too.
         plan = dict(plan_for("pay", 1200), period="month")
         case_id, _ = self.make_case(floor=1200, plan=plan)
         for offer, period in ((14400, "year"), (1200, "month")):
@@ -359,9 +354,8 @@ class GateTest(BtTestCase):
         self.assertIn("offer is at your limit", out["reasons"])
 
     def test_accept_sign_pay_at_floor_stay_allowed(self):
-        # Agreeing actions take a price already on the table, so an
-        # offer exactly on the floor stays in band: no at-limit hit,
-        # and an approved draft passes.
+        # Agreeing actions take a tabled price, so an offer on the
+        # floor stays in band: an approved draft passes.
         case_id, _ = self.make_case(floor=1200)
         for action in ("accept", "sign", "pay"):
             with self.subTest(action=action):
