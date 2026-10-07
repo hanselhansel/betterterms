@@ -10,7 +10,10 @@ unparseable) fails closed rather than becoming an absent opening
 turn or a shared prefix digest.
 """
 
+import argparse
+import os
 import unittest
+from unittest import mock
 
 from bt_helpers import (
     BRIEF_PAY,
@@ -23,6 +26,8 @@ from bt_helpers import (
     write_draft,
 )
 from btlib import BtError, context, yaml
+
+import bt  # noqa: E402 -- bt_helpers sets sys.path first
 
 NO_APPROVAL = "no approval recorded for this exact text"
 
@@ -203,6 +208,11 @@ class ContextBindingTest(ContextCase):
         run_bt_json(self.home, "held", "approve", case_id, h[:8])
         proc, out = self.gate(case_id, draft, approved=True)
         self.assertEqual(proc.returncode, 0, out)
+        # One use: the spent marker cannot fund a second pass on
+        # the identical draft and context.
+        proc, out = self.gate(case_id, draft, approved=True)
+        self.assertEqual(proc.returncode, 3, out)
+        self.assertIn(NO_APPROVAL, out["reasons"])
 
     def test_newly_flagged_inbound_needs_fresh_approval(self):
         # The owner approved the reply to a benign message; the same
@@ -300,7 +310,41 @@ class ConsentLifecycleTest(ContextCase):
         self.assertEqual(proc.returncode, 3, out)
         self.assertIn(NO_APPROVAL, out["reasons"])
 
+    def test_unexpected_gate_error_still_retires_consent(self):
+        # An intervening failure that is not a BtError -- here an
+        # injected RuntimeError inside gate.check -- is still an
+        # unsuccessful gate attempt: consent retires, the original
+        # exception escapes unchanged, and the old marker cannot
+        # spend afterward.
+        case_id, case_dir = self.make_case()
+        draft = send_draft(template="a plain question")
+        proc, out = self.gate(case_id, draft)
+        h = out["hash"]
+        run_bt_json(self.home, "held", "approve", case_id, h[:8])
+        args = argparse.Namespace(
+            case_id=case_id,
+            draft=str(write_draft(self.tmp, draft)),
+            inbound=None,
+            approved=True,
+        )
+        with mock.patch.dict(
+            os.environ, {"BETTERTERMS_HOME": str(self.home)}
+        ), mock.patch.object(
+            bt.gate, "check", side_effect=RuntimeError("boom")
+        ):
+            with self.assertRaises(RuntimeError):
+                bt.cmd_gate(args)
+        self.assertFalse(
+            (case_dir / "held" / f"{h}.approved").exists()
+        )
+        proc, out = self.gate(case_id, draft, approved=True)
+        self.assertEqual(proc.returncode, 3, out)
+        self.assertIn(NO_APPROVAL, out["reasons"])
+
     def test_pass_retires_consent(self):
+        # hold A, approve A, an unrelated draft B passing still
+        # retires A's consent, and a third held draft C in between
+        # cannot resurrect it: replaying A's approval fails.
         case_id, case_dir = self.make_case(mode="act")
         held_draft = send_draft(
             action="cancel", offer=None, template="please end my plan"
@@ -314,6 +358,13 @@ class ConsentLifecycleTest(ContextCase):
         self.assertFalse(
             (case_dir / "held" / f"{h}.approved").exists()
         )
+        third = send_draft(
+            action="cancel",
+            offer=None,
+            template="a different cancellation",
+        )
+        proc, out = self.gate(case_id, third)
+        self.assertEqual(proc.returncode, 3, out)
         proc, out = self.gate(case_id, held_draft, approved=True)
         self.assertEqual(proc.returncode, 3, out)
         self.assertIn(NO_APPROVAL, out["reasons"])

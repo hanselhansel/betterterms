@@ -116,6 +116,20 @@ class ApprovalWidgetTest(WidgetCase):
         self.assertIn("send · $14.65/month", html)
         self.assertNotIn("$15", html)
 
+    def test_approval_widget_marks_a_once_offer(self):
+        # A one-time offer has no rate period: the card says "once"
+        # so the bare amount cannot read as recurring.
+        case_id, _ = self.make_case()
+        draft = send_draft(
+            action="send", offer=50, period="once",
+            template="I can pay 50 once",
+        )
+        h = self.hold_draft(case_id, draft)
+        proc, out = self.widget("approval", case_id, h[:8])
+        self.assertEqual(proc.returncode, 0, out)
+        self.assertIn("send · $50.00 once", out["html"])
+        self.assertNotIn("$50.00/", out["html"])
+
     def test_widget_escapes_text(self):
         case_id, _ = self.make_case()
         draft = send_draft(

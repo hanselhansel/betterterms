@@ -11,7 +11,7 @@ For each inbound message:
    the turn is stopped -- no autonomous send at any autonomy level.
    Draft one safe proposal for the user to approve (the gate always
    holds it on a stopped turn; say plainly it is only proposed for
-   review and nothing sends without their yes), or hand the
+   review and nothing sends without their approval), or hand the
    decision over with a recommendation when no draft is useful or
    safe.
    `at_or_above_target`: ask the user to approve acceptance.
@@ -78,4 +78,4 @@ When an escalate condition holds, pause autonomous action: put one
 safe proposal in front of the user (the gate holds it for approval at
 every autonomy level), or hand the turn over with a recommendation
 when no draft is useful or safe. When a stop condition holds, end
-the exchange with the user's yes.
+the exchange with the user's approval.

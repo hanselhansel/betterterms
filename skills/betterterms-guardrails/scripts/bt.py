@@ -97,9 +97,11 @@ def cmd_gate(args):
     except inputs.UnsafeInput as e:
         result, reasons, rendered = _blocked_input(e)
         held.supersede(d, None)
-    except BtError:
-        # A malformed input that intervenes between a hold and a send
-        # still retires consent before the error exits.
+    except Exception:
+        # Any failure loading the input -- malformed file, unreadable
+        # case, or an unexpected exception -- is still an intervening
+        # attempt: consent retires before the error exits, and the
+        # original exception propagates unchanged.
         held.supersede(d, None)
         raise
     else:
@@ -107,10 +109,11 @@ def cmd_gate(args):
             result, reasons, rendered = gate.check(
                 d, draft, approved=args.approved, inbound=inbound
             )
-        except BtError:
-            # An error raised inside the check (a broken case file, a
-            # persisted inbound.yaml the reader refuses) still retires
-            # consent before the error exits.
+        except Exception:
+            # An error inside the check -- a broken case file, a
+            # persisted inbound.yaml the reader refuses, or any
+            # unexpected failure -- still retires consent before the
+            # error exits. The verdict itself never changes.
             held.supersede(d, None)
             raise
     out = {

@@ -35,4 +35,4 @@ Notes:
 - If the manager stated no figure, drop the `{quote:n}` sentence
   rather than guessing one.
 - This email records; it does not accept. Acceptance is the
-  `accept` action and always needs the user's explicit yes.
+  `accept` action and always needs the user's explicit approval.

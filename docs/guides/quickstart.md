@@ -103,8 +103,12 @@ When the gate returns `needs_approval`, nothing has left: the draft is
 held on disk as `held/<hash>.yaml` in the case folder, and the gate's
 answer carries the `hash`. You approve the exact send, not a
 draft in general: your approval is a file named after the SHA-256 of
-the send tuple (action, offer, period, currency, rendered text), and
-the gate consumes it after one send. Edit the draft and
+the send tuple (action, offer, period, currency, rendered text, and
+the reviewed inbound's context digest), and the gate consumes it
+after one send. The hash8 you approve must be the one the last gate
+call printed; `held approve` refuses a stale card or a hand-written
+held record, so approval always lands on the current held record.
+Edit the draft and
 the old approval no longer matches, so the new text is held again.
 Held drafts survive restarts, so the same list is waiting in a later
 session.

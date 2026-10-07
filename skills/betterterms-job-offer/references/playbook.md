@@ -146,7 +146,7 @@ order):
 Nothing counts until it is written. The script closes by asking for
 the revised offer in writing, and the debrief captures the stated
 amounts for the follow-up email. Accepting or signing is the user's
-decision and always needs an explicit yes.
+decision and always needs an explicit approval.
 
 ## Escalate
 

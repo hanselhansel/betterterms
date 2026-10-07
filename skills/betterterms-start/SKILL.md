@@ -32,7 +32,7 @@ and the core skills do the work.
    | Level | Behavior |
    |---|---|
    | 1. Draft only | You draft; the user sends. Default for Coach. |
-   | 2. Approve each send | Default for Act. Nothing leaves without an explicit yes. |
+   | 2. Approve each send | Default for Act. Nothing leaves without an explicit approval. |
    | 3. Approve the plan | You send inside the approved plan; pause on anything new. |
    | 4. Auto inside the band | You run the exchange and report; still gated by code. |
 

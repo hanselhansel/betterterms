@@ -37,13 +37,17 @@ exact rendered text to send.
   wording, a numeric `never_disclose` item, or unusual characters routes to you as
   `needs_approval`. Unusual text gets a human read instead of a silent
   pass.
-- `accept`, `cancel`, `pay`, `sign`, and `dispute` need your explicit yes at
-  every autonomy level. A `held/<hash>.approved` file binds the yes to the
-  SHA-256 of the send tuple (action, offer, period, currency, rendered text)
-  and is consumed after one use; only a user action writes it: a pane press
-  in the mod, a `bt approve` you type, or `bt.py held approve` run by hand.
-  The mod does not inspect outgoing tool calls; `bt.py gate --approved` is
-  the approval enforcement in every mode (decision 0020).
+- `accept`, `cancel`, `pay`, `sign`, and `dispute` need your explicit approval at
+  every autonomy level. A `held/<hash>.approved` file binds the approval to the
+  SHA-256 of the send tuple (action, offer, period, currency, rendered text,
+  and the reviewed inbound's context digest), and it is consumed after one
+  use. The hash must be the one the last gate call printed: `held approve`
+  refuses a stale or hand-written held record, so approval always matches the
+  current held record the gate produced. Only a user action writes it: a pane
+  press in the mod, a `bt approve` you type, or `bt.py held approve` run by
+  hand. Typing "yes" in chat approves nothing. The mod does not inspect
+  outgoing tool calls; `bt.py gate --approved` is the approval enforcement in
+  every mode (decision 0020).
 
 ## What the gate does not guarantee
 

@@ -36,7 +36,7 @@ was read.
    start date, and any contract changes in writing. Then hand the
    accept decision to the user.
 8. Two rounds at the top of the ladder with no movement: propose the
-   exit path (switch or cancel), with the user's yes.
+   exit path (switch or cancel), with the user's approval.
 
 Evidence that asking works: about 70 to 80 percent of people who
 asked for a better deal on a cable or internet bill got something,

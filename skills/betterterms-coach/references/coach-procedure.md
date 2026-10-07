@@ -17,4 +17,4 @@
    follow-up email. The email goes through `bt.py gate` like any
    outbound message (see betterterms-guardrails): hard rule breaks
    block, and anything the review scan flags comes back for the user's
-   explicit yes before it sends.
+   explicit approval before it sends.

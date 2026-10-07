@@ -8,7 +8,7 @@ Agent notes:
 
 - This message announces the next step; it does not take it. Filing the
   dispute is a separate `dispute` draft that always needs the user's
-  explicit yes.
+  explicit approval.
 - Before the user decides on the dispute, brief them on the
   account-restriction risk in `../playbook.md` step 6.
 - State the next step calmly. A calm statement is pressure; a threat is

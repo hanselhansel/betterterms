@@ -20,7 +20,7 @@ if echo '{}' | "${PYTHON:-python3}" "$root/hooks/prompt_commands.py" >/dev/null 
 >/dev/null 2>&1; then
     echo "betterterms: typed bt commands are active in this session."
 else
-    echo "betterterms: the prompt check failed to run; typed bt commands are off. Approve or reject held drafts with bt.py held directly."
+    echo "betterterms: the prompt check failed to run; typed bt commands are off and held drafts stay held. Repair or reinstall the plugin before approving them."
 fi
 
 home="${BETTERTERMS_HOME:-$HOME/.betterterms}"

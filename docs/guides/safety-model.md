@@ -163,7 +163,7 @@ triggering body counts as you.
   redraft at most once before escalating, which is the standing mitigation
   for probing: enough guesses against the floor comparison could triangulate
   the number, so a dedicated probe counter is on the TODO list.
-- It does not replace your yes. Accept, cancel, pay, sign, and dispute always
+- It does not replace your approval. Accept, cancel, pay, sign, and dispute always
   wait for an explicit approval, at every autonomy level.
 
 ## Known limits, stated plainly

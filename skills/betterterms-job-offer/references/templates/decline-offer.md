@@ -2,7 +2,7 @@
 
 Use when: the user has decided to decline. Short, warm, and final;
 no negotiation detail needed. Declining is the user's decision and
-needs an explicit yes before any draft.
+needs an explicit approval before any draft.
 
 Draft fields:
 

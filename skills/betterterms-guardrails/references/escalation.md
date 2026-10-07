@@ -26,11 +26,14 @@
   `offer_period_differs`, `suspected_injection`,
   `ai_identity_question`, `legal_terms`), or a message it could not
   classify. On a stopped turn the held draft is a proposal only:
-  it always waits for the user's yes, whatever the autonomy level,
+  it always waits for the user's approval, whatever the autonomy level,
   and `unknown` or `no_offer_parsed` is a review, never an
   automatic acceptance. Show the
-  user the rendered text and the plain-word reasons; only an
-  explicit yes in this conversation earns `--approved`.
+  user the rendered text and the plain-word reasons; only a typed
+  `bt approve` command or a pane/widget approval writes the marker,
+  and the re-run `gate --approved` must still return `pass` before
+  anything sends. A "yes" typed in chat is a decision, never a
+  marker.
 
 ## Stop when
 

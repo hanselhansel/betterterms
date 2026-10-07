@@ -13,10 +13,10 @@ import { gateRow } from "./ui/rows.js";
 import * as R from "./register.js";
 import {
   BT, CASE_ID, DIR, RENDERED,
-  caseDirs, fakeDollar,
+  caseDirs, fakeDollar, heldHash,
 } from "./testkit.js";
 import {
-  ELS, HASH, HASH8,
+  ELS, HASH, HASH8, REC,
   heldFiles, heldDirs, heldOpt,
   findNode, byKey, isButton,
 } from "./heldkit.js";
@@ -180,5 +180,34 @@ describe("tabs and rows", () => {
     assert.match(JSON.stringify(tree), /Comcast replied, 1 draft waiting/);
     assert.equal(findNode(tree, byKey("review")).props.hotkey, "2");
     assert.equal(bandTree(el, { held: 0, pending: 0, repliers: [] }, () => {}), null);
+  });
+});
+
+describe("stale held drafts", () => {
+  // gate.json carries the hash of the draft the last gate verdict
+  // held; a held record whose hash does not match it is stale (the
+  // draft was edited, the card belongs to old text) and must never
+  // approve.
+  const staleFiles = () => heldFiles({
+    [`${DIR}/gate.json`]: JSON.stringify({
+      result: "needs_approval",
+      reasons: ["action 'cancel' requires --approved"],
+      rendered: "a different held text",
+      hash: heldHash({ ...REC, rendered: "a different held text" }),
+    }),
+  });
+
+  test("a press refuses a held hash that is not the gate.json hash", async () => {
+    const { $, calls, state } = fakeDollar({
+      files: staleFiles(), dirs: heldDirs(), held: heldOpt(),
+    });
+    const snap = await R.scanCases($);
+    const tree = paneTree(
+      ELS, snap, { tab: 2, selected: null, editing: null }, R.paneActions($, snap));
+    await findNode(tree, byKey(`approve-${HASH8}`)).props.onPress();
+    assert.equal(calls.run.every((r) => r.argv[3] !== "approve"), true);
+    assert.equal(calls.submit.length, 0);
+    assert.equal(state.size, 0);
+    assert.match(calls.toast.join("\n"), /not the current held draft/);
   });
 });

@@ -43,6 +43,10 @@ export function tupleText(held) {
     let s = moneyExact(held.currency ?? "USD", offer);
     if (held.period === "month" || held.period === "year") {
       s += `/${held.period}`;
+    } else if (held.period === "once") {
+      // A one-time offer has no rate period; say so rather than
+      // letting the bare amount read as recurring.
+      s += " once";
     }
     bits.push(s);
   }
@@ -152,17 +156,18 @@ export function draftYaml(held, text) {
 }
 
 // `text` as a `template:` literal block: `-` strips, no marker clips
-// to one trailing newline, `+` keeps every blank line; the digit
-// pins the content indent at two spaces so a first line that leads
-// with spaces is never eaten by inference. The body's last line
-// supplies its own terminator, so the text loses one trailing
-// newline before it splits into lines.
+// to one trailing newline, `+` keeps every blank line. The explicit
+// `2` indent indicator pins the content indent unconditionally:
+// inferred indent is set by the first non-empty line, so a blank
+// first line followed by an indented one (or an all-blank text)
+// would lose that line's leading spaces under inference. The
+// body's last line supplies its own terminator, so the text loses
+// one trailing newline before it splits into lines.
 function templateBlock(text) {
   const t = String(text ?? "");
   const chomp = t.endsWith("\n\n") ? "+" : t.endsWith("\n") ? "" : "-";
-  const indent = /^[ \t]/.test(t) ? "2" : "";
   const body = t.endsWith("\n") ? t.slice(0, -1) : t;
-  const lines = [`template: |${chomp}${indent}`];
+  const lines = [`template: |${chomp}2`];
   for (const l of body.split("\n")) lines.push(`  ${l}`);
   return lines.join("\n");
 }

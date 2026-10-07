@@ -11,7 +11,7 @@ else is procedure, not a claim about the world.
   discount eligibility (student, annual, nonprofit).
 - Decide the real goal. Barely used in 90 days points to cancelling,
   not haggling; say so and let the user choose. A cancel is a separate
-  case and always needs an explicit yes.
+  case and always needs an explicit approval.
 - Know the renewal date. Start renewal talks about 90 days out. Early
   starts leave time to compare options and push back on price.
   Source: https://help.vendr.com/en/articles/9268378-step-4-manage-contract-renewals (undated, read 2026-10-03)

@@ -181,6 +181,10 @@ def _approval_tuple(record):
         period = record.get("period")
         if period in ("month", "year"):
             body += f"/{period}"
+        elif period == "once":
+            # A one-time offer is not a rate; the card says so
+            # instead of showing a bare amount.
+            body += " once"
         bits.append(body)
     return " · ".join(bits)
 

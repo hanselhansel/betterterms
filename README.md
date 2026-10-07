@@ -72,12 +72,12 @@ Step by step: [docs/guides/quickstart.md](docs/guides/quickstart.md).
 | Level | Behavior |
 |---|---|
 | 1. Draft only | The agent drafts; you send. Default for Coach. |
-| 2. Approve each send | Default for Act. Nothing leaves without your explicit yes. |
+| 2. Approve each send | Default for Act. Nothing leaves without your explicit approval. |
 | 3. Approve the plan | The agent sends inside the approved plan and pauses on anything new. |
 | 4. Auto inside the band | The agent runs the exchange and reports. The gate still applies. |
 
 At every level, accept, cancel, pay, sign, and dispute always need your
-explicit yes.
+explicit approval.
 
 ## Safety model
 
@@ -85,7 +85,7 @@ explicit yes.
   `.floor` file the gate and the scorer read; the skills instruct the
   model never to read it, and the chat never repeats it.
 - Every message passes a coded pre-send gate. Offers worse than your number
-  block. Irreversible actions need your explicit yes.
+  block. Irreversible actions need your explicit approval.
 - Message text that looks risky (money typed outside the price placeholders,
   agreement wording, unusual characters) comes back to you for approval
   instead of sending.

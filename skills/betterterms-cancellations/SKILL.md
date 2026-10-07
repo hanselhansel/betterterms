@@ -43,7 +43,7 @@ skills run the stages; this pack adds the cancellation detail.
 5. Exchange. Run `betterterms-exchange` turn by turn. Each message
    starts from a template in `references/templates/` and passes the
    gate before it leaves.
-6. Close. The `cancel` action always needs the user's explicit yes.
+6. Close. The `cancel` action always needs the user's explicit approval.
    After it, get written confirmation: the end date, and that no
    further charges apply.
 7. Log. Record the closed case with `betterterms-ledger`. A cancelled
