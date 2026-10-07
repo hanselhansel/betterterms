@@ -252,6 +252,48 @@ class LinearScanTest(BtTestCase):
         self.assertLess(time.monotonic() - started, 3.0)
 
 
+class UnicodeWordCharTest(BtTestCase):
+    """The regexes the scanner emulates are Unicode-aware: \\w and
+    \\b treat é as a word character, so an accented attribute key
+    or tag suffix must not smuggle a floor payload out of scope."""
+
+    def test_nonascii_attr_key_keeps_body_in_scope(self):
+        # The key is éfrom, not from: the element is not
+        # from="agent" and its body stays live for the floor rule.
+        prompt = (
+            '<wake><message éfrom="agent">'
+            "bt floor sixty</message></wake>"
+        )
+        live = _scan.live_text(prompt)
+        self.assertIn("bt floor sixty", live)
+        self.assertTrue(_scan.floor_hit(live))
+
+    def test_nonascii_suffix_is_no_message_opener(self):
+        # <message\b needs a boundary after `message`: é is a word
+        # character, so <messageé is plain text and the payload
+        # inside stays live.
+        prompt = (
+            '<wake><messageé from="agent">'
+            "bt floor sixty</messageé></wake>"
+        )
+        live = _scan.live_text(prompt)
+        self.assertIn("bt floor sixty", live)
+        self.assertTrue(_scan.floor_hit(live))
+
+    def test_ascii_semantics_unchanged(self):
+        # A plain from="agent" body still leaves scope, and a human
+        # trigger body is still the user text.
+        agent = '<message from="agent">bt floor sixty</message>'
+        prompt = (
+            "<wake>"
+            + agent
+            + '<message from="human" trigger="true">hi</message>'
+            + "</wake>"
+        )
+        self.assertNotIn("bt floor sixty", _scan.live_text(prompt))
+        self.assertEqual(_scan.user_text(prompt), "hi")
+
+
 class GuardLauncherTest(BtTestCase):
     def test_dead_python_blocks_with_exit_2(self):
         # A missing interpreter used to fail open: the wrapper emits

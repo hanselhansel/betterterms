@@ -35,11 +35,14 @@ _FLOOR_WORD_AMOUNT = re.compile(
 # word/dash characters with no `="` inside, it would backtrack once
 # per candidate position. ``_attrs`` anchors on `="` instead, walks
 # the key back over the key-character run, and finds the closing
-# quote with str.find -- one pass per pair, no rescanning.
-_KEY_CHARS = frozenset(
-    "abcdefghijklmnopqrstuvwxyz"
-    "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-"
-)
+# quote with str.find -- one pass per pair, no rescanning. The key
+# run is Unicode \w plus dash -- str.isalnum() is exactly \w minus
+# the underscore -- so the key in <message éfrom="agent"> is éfrom,
+# not from, and the body stays in floor scope.
+def _key_char(c):
+    return c.isalnum() or c in "_-"
+
+
 _ENTITIES = (
     ("&lt;", "<"),
     ("&gt;", ">"),
@@ -50,10 +53,12 @@ _ENTITIES = (
 
 _OPEN = "<message"
 _CLOSE = "</message>"
-_WORD_CHARS = frozenset(
-    "abcdefghijklmnopqrstuvwxyz"
-    "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_"
-)
+
+
+def _word_char(c):
+    # Same Unicode boundary as <message\b: é is a word character,
+    # so <messageé is not an element opener.
+    return c.isalnum() or c == "_"
 
 
 def _unescape(text):
@@ -77,7 +82,7 @@ def _attrs(text):
         if eq < 0:
             return pairs
         k = eq
-        while k > 0 and text[k - 1] in _KEY_CHARS:
+        while k > 0 and _key_char(text[k - 1]):
             k -= 1
         if k == eq:
             pos = eq + 1
@@ -109,7 +114,7 @@ def _messages(prompt):
         attr_at = start + len(_OPEN)
         if (
             attr_at < len(prompt)
-            and prompt[attr_at] in _WORD_CHARS
+            and _word_char(prompt[attr_at])
         ):
             pos = attr_at
             continue

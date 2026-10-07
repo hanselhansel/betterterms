@@ -42,11 +42,8 @@ HOOKS_DIR = ROOT / "hooks"
 VERSION_FILE = ROOT / "VERSION"
 
 HOOK_NAMES = (
-    "prompt_commands.py",
-    "prompt-guard.sh",
-    "_btpath.py",
-    "_scan.py",
-    "session-start.sh",
+    "prompt_commands.py", "prompt-guard.sh", "_btpath.py",
+    "_scan.py", "session-start.sh",
 )
 
 HOOK_EVENTS = ("UserPromptSubmit", "SessionStart")
@@ -73,15 +70,13 @@ HOOK_PATHS = {
 
 
 def _call_re(path):
-    """Match an *invocation* of the owned script ``path``: at a
-    command start or after ``;`` ``&`` ``|``, an optional ``env``
-    assignment and/or interpreter, then a token whose final path
-    segment is exactly the owned path -- a prefix like
-    ``$CLAUDE_PROJECT_DIR/`` or any directory is allowed. A
-    ``-custom`` suffix, an ``x.claude`` directory, or a mention as
-    data (``cp <path> dest``) never matches."""
+    """Match an *invocation* of the owned script ``path``: lead,
+    optional ``env`` assignments and interpreter, then a token whose
+    final segment is exactly the owned path (any directory prefix
+    allowed). A ``-custom`` suffix, an ``x.claude`` directory, or a
+    mention as data never matches."""
     return re.compile(
-        r"(?:(?<=^)|(?<=[;&|]))\s*"
+        r"(?P<lead>^|[;&|])\s*"
         r"(?:env\s+[^\s;|&()=]+=[^\s;|&()]+\s+)*"
         r"(?:(?:python3?|bash|sh|exec)\s+)?"
         r"[\"']?(?:[^\"'\s;|&()]*?/)?"
@@ -96,9 +91,22 @@ _CALL_RES = {
 _CALL_RES[_PROMPT_OLD] = _call_re(_PROMPT_OLD)
 
 
-def _owns(command, path):
-    """True when ``command`` invokes exactly the owned script."""
-    return _CALL_RES[path].search(command) is not None
+# A quoted span, the tail of an unterminated quote, or an escaped
+# char is data, never shell syntax: no ``;`` ``&`` ``|`` lead there.
+_QUOTED = re.compile(r"'[^']*('|$)|\"(?:\\.|[^\"\\])*(\"|$)|\\.")
+
+
+def _call_match(command, path):
+    """The ``_call_re`` invocation match, or None when the owned
+    path appears only as data: the ``^`` or ``;`` ``&`` ``|`` lead
+    must sit outside quotes and unescaped."""
+    quoted = bytearray(len(command))
+    for q in _QUOTED.finditer(command):
+        quoted[q.start() : q.end()] = b"\1" * (q.end() - q.start())
+    for m in _CALL_RES[path].finditer(command):
+        if not m.group("lead") or not quoted[m.start("lead")]:
+            return m
+    return None
 
 
 def _skills():
@@ -141,7 +149,7 @@ def _has_hook(entries, path):
             continue
         if any(
             isinstance(h, dict)
-            and _owns(str(h.get("command", "")), path)
+            and _call_match(str(h.get("command", "")), path) is not None
             for h in hooks
         ):
             return True
@@ -200,13 +208,7 @@ def _migrate_prompt(entries):
     command is already registered the old copy is dropped so it
     cannot keep running unguarded. Other commands and fields are
     kept. Returns True when anything changed."""
-    have_new = any(
-        _owns(str(h.get("command", "")), _PROMPT_NEW)
-        for entry in entries
-        if isinstance(entry, dict)
-        for h in entry.get("hooks") or []
-        if isinstance(h, dict)
-    )
+    have_new = _has_hook(entries, _PROMPT_NEW)
     migrated = False
     changed = False
     for entry in entries:
@@ -218,14 +220,14 @@ def _migrate_prompt(entries):
         kept = []
         for h in hooks:
             cmd = str(h.get("command", "")) if isinstance(h, dict) else ""
-            m = _CALL_RES[_PROMPT_OLD].search(cmd)
+            m = _call_match(cmd, _PROMPT_OLD)
             if m is None:
                 kept.append(h)
                 continue
             changed = True
             if not (have_new or migrated):
                 h["command"] = (
-                    cmd[: m.start()]
+                    cmd[: m.end("lead")]
                     + HOOK_COMMANDS["UserPromptSubmit"]
                     + cmd[m.end() :]
                 )
