@@ -21,6 +21,7 @@ from bt_helpers import (
 from btlib import yaml
 
 LIMITS = "outside your limits; escalate to the user"
+REVIEW = "a value in this draft needs your review"
 
 
 class PeriodCase(BtTestCase):
@@ -83,7 +84,8 @@ class ConvertedLimitTest(PeriodCase):
                     send_draft(template="you said {quote:1}"),
                     inbound=inbound_msg(text="x", amounts=amounts),
                 )
-                self.assertIn(
+                self.assertIn(REVIEW, out["reasons"])
+                self.assertNotIn(
                     "converted limit", " ".join(out["reasons"])
                 )
                 self.assertFalse(
@@ -110,7 +112,8 @@ class ConvertedLimitTest(PeriodCase):
                        template="term is {quote:1}"),
             inbound=inbound_msg(text="x", amounts=[5]),
         )
-        self.assertIn("converted limit", " ".join(out["reasons"]))
+        self.assertIn(REVIEW, out["reasons"])
+        self.assertNotIn("converted", " ".join(out["reasons"]))
         out = self.review(
             case_id,
             send_draft(offer=50, period="month",
@@ -213,8 +216,9 @@ class FloorPeriodKeyTest(PeriodCase):
                 proc, out = self.gate(case_id, draft)
                 self.assertEqual(proc.returncode, 3, out)
                 self.assertEqual(out["rendered"], "I can do $720/year")
-                self.assertIn(
-                    "offer is at your limit", out["reasons"]
+                self.assertIn(REVIEW, out["reasons"])
+                self.assertNotIn(
+                    "limit", " ".join(out["reasons"])
                 )
                 proc, out = self.gate(case_id, draft, approved=True)
                 self.assertEqual(proc.returncode, 0, out)
@@ -286,8 +290,9 @@ class UnconvertiblePeriodTest(PeriodCase):
             template="I can do {offer} per month",
         )
         out = self.review(case_id, draft)
-        self.assertIn(
-            "period differs from your limit", out["reasons"]
+        self.assertIn(REVIEW, out["reasons"])
+        self.assertNotIn(
+            "period differs", " ".join(out["reasons"])
         )
         proc, out = self.gate(case_id, draft, approved=True)
         self.assertEqual(proc.returncode, 0, out)
@@ -304,8 +309,9 @@ class UnconvertiblePeriodTest(PeriodCase):
             send_draft(offer=1100, period="once",
                        template="flat {offer}"),
         )
-        self.assertIn(
-            "period differs from your limit", out["reasons"]
+        self.assertIn(REVIEW, out["reasons"])
+        self.assertNotIn(
+            "period differs", " ".join(out["reasons"])
         )
 
     def test_recurring_periods_still_convert(self):
@@ -332,8 +338,9 @@ class UnconvertiblePeriodTest(PeriodCase):
                      "amounts": []},
         )
         self.assertEqual(proc.returncode, 1, out)
-        self.assertIn(
-            "period differs from your limit", out["reasons"]
+        self.assertIn(LIMITS, out["reasons"])
+        self.assertNotIn(
+            "period differs", " ".join(out["reasons"])
         )
 
     def test_accept_inbound_period_mismatch_blocks(self):
@@ -349,8 +356,9 @@ class UnconvertiblePeriodTest(PeriodCase):
                      "amounts": []},
         )
         self.assertEqual(proc.returncode, 1, out)
-        self.assertIn(
-            "period differs from your limit", out["reasons"]
+        self.assertIn(LIMITS, out["reasons"])
+        self.assertNotIn(
+            "period differs", " ".join(out["reasons"])
         )
 
     def test_sign_and_pay_mismatched_period_block(self):
@@ -365,9 +373,7 @@ class UnconvertiblePeriodTest(PeriodCase):
                     approved=True,
                 )
                 self.assertEqual(proc.returncode, 1, out)
-                self.assertIn(
-                    "period differs", " ".join(out["reasons"])
-                )
+                self.assertIn(LIMITS, out["reasons"])
 
     def test_matching_periods_do_not_route(self):
         # Control: an in-band monthly offer against a monthly floor

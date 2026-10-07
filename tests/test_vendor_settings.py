@@ -16,8 +16,8 @@ from pathlib import Path
 from test_install import make_repo, run
 
 PROMPT_CMD = (
-    'python3 "$CLAUDE_PROJECT_DIR/.claude/betterterms/hooks/'
-    'prompt_commands.py"'
+    'bash "$CLAUDE_PROJECT_DIR/.claude/betterterms/hooks/'
+    'prompt-guard.sh"'
 )
 SESSION_CMD = (
     'bash "$CLAUDE_PROJECT_DIR/.claude/betterterms/hooks/'
@@ -62,7 +62,9 @@ class VendorSettingsTest(unittest.TestCase):
             "skills/betterterms-guardrails/scripts/bt.py",
             "skills/.betterterms-version",
             "betterterms/hooks/prompt_commands.py",
+            "betterterms/hooks/prompt-guard.sh",
             "betterterms/hooks/_btpath.py",
+            "betterterms/hooks/_scan.py",
             "betterterms/hooks/session-start.sh",
             "betterterms/.betterterms-version",
         ):
@@ -100,7 +102,7 @@ class VendorSettingsTest(unittest.TestCase):
         self.assertEqual(settings["model"], "sonnet")
         self.assertEqual(
             sorted(self.commands("UserPromptSubmit")),
-            ["echo mine", PROMPT_CMD],
+            sorted(["echo mine", PROMPT_CMD]),
         )
         self.assertEqual(self.commands("SessionStart"), [SESSION_CMD])
 

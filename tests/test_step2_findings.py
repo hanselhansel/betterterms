@@ -6,8 +6,8 @@
 - a ``period`` key present but null on an option or a fact is a
   broken plan: exit 2, never a silent default; on inbound.yaml it
   means "not stated" and defaults like an absent key
-- a blocked draft never reports ``offer is at your limit``: on a
-  block the reason would leak the floor's equality bit
+- a blocked draft never reports a floor-relative review reason: on
+  a block the reason would leak the floor's equality bit
 - the ledger reads a deeply nested line without a recursion crash,
   appends the missing newline a file lacks, and holds a lock across
   the read-dedupe-append sequence so two processes record one case once
@@ -199,8 +199,8 @@ class NullPeriodTest(PriceCase):
 class AtLimitReasonTest(PriceCase):
     def test_block_never_says_at_limit(self):
         # Send offer 60 against floor 60 is the at-limit review hit,
-        # but an unknown placeholder blocks the draft: the at-limit
-        # reason must be dropped, or the block leaks the floor's
+        # but an unknown placeholder blocks the draft: the review hit
+        # must be dropped, or the block leaks the floor's
         # equality bit.
         case_id = self.make_case(
             floor=60, plan=plan_for("pay", 60, target=50)
@@ -212,7 +212,7 @@ class AtLimitReasonTest(PriceCase):
         self.assertEqual(proc.returncode, 1, out)
         self.assertEqual(out["result"], "block")
         self.assertIn("unknown placeholder", " ".join(out["reasons"]))
-        self.assertNotIn("at your limit", " ".join(out["reasons"]))
+        self.assertNotIn("needs your review", " ".join(out["reasons"]))
 
 
 class LedgerRobustnessTest(BtTestCase):

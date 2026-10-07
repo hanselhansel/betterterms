@@ -9,10 +9,13 @@ import {
 } from "./testkit.js";
 
 // The held record's send tuple; the hash the fake CLI reports is the
-// tuple hash, exactly what bt.py computes.
+// tuple hash, exactly what bt.py computes. `inbound` is the reviewed
+// context digest a real record always carries.
 export const REC = {
   action: "cancel", offer: null, period: "once", currency: "USD",
-  rendered: RENDERED, reasons: ["action 'cancel' requires --approved"],
+  rendered: RENDERED,
+  inbound: "0".repeat(64),
+  reasons: ["action 'cancel' requires --approved"],
   held_at: "2026-10-04T12:00:00+00:00",
 };
 export const HASH = heldHash(REC);

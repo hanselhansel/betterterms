@@ -13,7 +13,9 @@ whole prompt. A message whose trimmed text matches the grammar:
                                   case set-terms, pass with a note
 
 ``bt floor`` always blocks, so the walk-away is never forwarded
-to the model; its reason never carries the amount. A message that
+to the model; its reason never carries the amount, and where the
+host honors it the block output suppresses the submitted text. A
+message that
 only resembles a command still blocks, under two different rules.
 Floor is default deny and runs first, at the shared layer: before
 any command is handled, the live text is scanned for ``bt`` and
@@ -44,6 +46,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import _btpath
+import _scan
 
 USAGE = {
     "approve": "bt approve <case> <hash8>",
@@ -69,85 +72,23 @@ _GRAMMAR = (
 _TERMS_KV = re.compile(r"(\w+)=(\S+)")
 _TERMS_KEYS = ("target", "alternative")
 
-# Floor is default deny: `bt` and `floor` adjacent, any whitespace
-# and case. The payload rule lives in _floor_hit.
-_FLOOR_WORDS = re.compile(r"\bbt\s+floor\b", re.I)
-# A case id (name-YYYYMMDD-xxxx) carries digits that are the id, not
-# a typed number: they never count toward the floor rule's digit.
-_CASE_ID_TOKEN = re.compile(r"\b[a-z0-9][a-z0-9-]*-\d{8}-[0-9a-f]{4}\b")
+# The hook reads the prompt once, bounded: a message past the cap is
+# blocked rather than scanned partially (a floor payload could hide
+# past the cut).
+_MAX_PROMPT = 256 * 1024
 # The other lookalikes count only at the start of the trimmed text,
 # after at most one backtick or a leading slash. A `bt <verb>`
 # mention inside prose is chat text, not a command attempt.
 _LOOKALIKE = re.compile(r"[`/]?bt\s+(approve|reject|terms)\b", re.I)
 _HEX_TOKEN = re.compile(r"\b[0-9a-f]{6,}\b", re.I)
-_MESSAGE = re.compile(r"<message\b([^>]*)>(.*?)</message>", re.DOTALL)
-_ATTR = re.compile(r'([\w-]+)="([^"]*)"')
-_ENTITIES = (
-    ("&lt;", "<"),
-    ("&gt;", ">"),
-    ("&#39;", "'"),
-    ("&quot;", '"'),
-    ("&amp;", "&"),  # last, so &amp;lt; stays &lt;
-)
 
-
-def _unescape(text):
-    for src, dst in _ENTITIES:
-        text = text.replace(src, dst)
-    return text
-
-
-def user_text(prompt):
-    """The user's own text inside ``prompt``. A prompt counts as a
-    Projects wake envelope only when its trimmed text starts with
-    ``<wake`` and carries a ``<message`` element; then only the body
-    of the ``<message>`` carrying both ``trigger="true"`` and
-    ``from="human"`` counts (no human trigger: nothing counts). A
-    ``<wake`` substring anywhere else, or a ``<wake`` opener with no
-    ``<message>``, is the user's own words and the whole prompt is
-    used."""
-    t = prompt.lstrip()
-    if not (t.startswith("<wake") and "<message" in t):
-        return prompt
-    for m in _MESSAGE.finditer(prompt):
-        attrs = dict(_ATTR.findall(m.group(1)))
-        if (
-            attrs.get("from") == "human"
-            and attrs.get("trigger") == "true"
-        ):
-            return _unescape(m.group(2))
-    return ""
-
-
-def _live_text(prompt):
-    """Live text for the floor rule: the prompt minus the bodies of
-    well-formed ``from="agent"`` elements. A human body stays in
-    scope even when it is not the trigger: the envelope forwards it
-    to the model, so a walk-away inside must still block."""
-    parts, pos = [], 0
-    for m in _MESSAGE.finditer(prompt):
-        head = m.group(1).rstrip()
-        if head.endswith("/"):
-            continue
-        if dict(_ATTR.findall(head)).get("from") == "agent":
-            parts.append(prompt[pos : m.start(2)])
-            pos = m.end(2)
-    parts.append(prompt[pos:])
-    return "".join(parts)
-
-
-def _floor_hit(text):
-    """The one floor rule: ``bt`` and ``floor`` adjacent, plus a
-    digit outside a case-id token or any non-empty token after one
-    -- a word amount like ``sixty two`` claims the walk-away too."""
-    m = _FLOOR_WORDS.search(text)
-    if m is None:
-        return False
-    tail = text[m.end() :]
-    cid = _CASE_ID_TOKEN.search(tail)
-    if cid is not None and tail[cid.end() :].strip():
-        return True
-    return bool(re.search(r"\d", _CASE_ID_TOKEN.sub(" ", text)))
+# The envelope readers and the default-deny floor scan live in
+# _scan.py: single-pass str.find message parsing, `="-anchored
+# attribute reads and one-pass token matching, no runtime
+# dependency.
+user_text = _scan.user_text
+_live_text = _scan.live_text
+_floor_hit = _scan.floor_hit
 
 
 def _terms_args(pairs_text):
@@ -210,8 +151,18 @@ def _emit(obj):
     print(json.dumps(obj))
 
 
-def _block(reason):
-    _emit({"decision": "block", "reason": reason})
+def _block(reason, suppress=False):
+    out = {"decision": "block", "reason": reason}
+    if suppress:
+        # Where the host honors the field, the block message does
+        # not carry the submitted prompt's text. Local transcript
+        # and history files still record it, which is why the
+        # reason itself never echoes the amount.
+        out["hookSpecificOutput"] = {
+            "hookEventName": "UserPromptSubmit",
+            "suppressOriginalPrompt": True,
+        }
+    _emit(out)
 
 
 def _pass(note):
@@ -250,25 +201,28 @@ def _run_bt(args, stdin_text=None):
 
 def _floor(case_id, raw):
     """Write the walk-away through stdin, then block. The block
-    reason never names the amount."""
+    reason never names the amount and the original prompt is
+    suppressed where the host supports it."""
     from btlib import BtError, cli_extra
 
     try:
         value = cli_extra.parse_amount(raw)
     except BtError:
         _block(
-            "betterterms: bad amount; use a number like 62 or 62.50"
+            "betterterms: bad amount; use a number like 62 or 62.50",
+            suppress=True,
         )
         return
     code, _out, err = _run_bt(
         ["case", "set-floor", case_id], stdin_text=f"{value:.2f}\n"
     )
     if code != 0:
-        _block(f"betterterms: {err}")
+        _block(f"betterterms: {err}", suppress=True)
         return
     _block(
         f"betterterms: walk-away saved for {case_id}; "
-        "this prompt was not sent to the model."
+        "this prompt was not sent to the model.",
+        suppress=True,
     )
 
 
@@ -306,10 +260,12 @@ def _held(verb, case_id, hash8):
         gate = approve_command(case_id)
         _pass(
             f"betterterms: the user approved draft {short} for "
-            f"{case_id}. Run `{gate}` once, "
-            "then send the rendered text it returns verbatim as its "
-            "own argument, nothing added. The marker spends once: a "
-            "second --approved run holds the draft again."
+            f"{case_id}. Run `{gate}` once, then "
+            "send only on a pass verdict: the rendered text it "
+            "returns goes verbatim as its own argument, nothing "
+            "added. A needs_approval or block verdict sends nothing "
+            "and shows the user the reasons. The marker spends "
+            "once: a second --approved run holds the draft again."
         )
     else:
         _pass(
@@ -338,17 +294,30 @@ def _terms(case_id, target, alternative):
 
 
 def _handle(cmd):
+    # Floor prompts may carry the walk-away: every failure on that
+    # path suppresses the original where the host supports it.
+    suppress = cmd["verb"] == "floor"
     try:
         _btpath.import_btlib()
         from btlib import cases
     except Exception:
-        _block("betterterms: cannot reach the bt.py runtime")
+        _block(
+            "betterterms: cannot reach the bt.py runtime",
+            suppress=suppress,
+        )
         return
     cid = cmd["case_id"]
     if not cases.CASE_ID_RE.fullmatch(cid) or not cases.case_dir(
         cid
     ).is_dir():
-        _block(f"betterterms: no case {cid}")
+        # A floor prompt's case field may be part of the payload
+        # (`bt floor sixty two`), so that path never echoes it.
+        _block(
+            "betterterms: no such case"
+            if suppress
+            else f"betterterms: no case {cid}",
+            suppress=suppress,
+        )
         return
     verb = cmd["verb"]
     if verb == "floor":
@@ -361,7 +330,14 @@ def _handle(cmd):
 
 def main():
     try:
-        event = json.loads(sys.stdin.read() or "{}")
+        raw_in = sys.stdin.read(_MAX_PROMPT + 1)
+        if len(raw_in) > _MAX_PROMPT:
+            _block(
+                "betterterms: the prompt is too large to check",
+                suppress=True,
+            )
+            return 0
+        event = json.loads(raw_in or "{}")
         raw = str(event.get("prompt") or "")
         text = user_text(raw)
         cmd = parse(text)
@@ -372,7 +348,10 @@ def main():
             if cmd is not None and cmd["verb"] == "floor":
                 _handle(cmd)
             else:
-                _block(f"betterterms: expected '{USAGE['floor']}'")
+                _block(
+                    f"betterterms: expected '{USAGE['floor']}'",
+                    suppress=True,
+                )
             return 0
         if cmd is not None:
             _handle(cmd)

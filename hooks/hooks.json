@@ -18,7 +18,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/prompt_commands.py\"",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/prompt-guard.sh\"",
             "shell": "bash",
             "async": false,
             "timeout": 10

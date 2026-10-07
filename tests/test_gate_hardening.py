@@ -19,6 +19,7 @@ from bt_helpers import (
 from btlib import yaml
 
 LIMITS = "outside your limits; escalate to the user"
+REVIEW = "a value in this draft needs your review"
 
 
 class HardeningTest(BtTestCase):
@@ -312,7 +313,8 @@ class HardeningTest(BtTestCase):
         )
         self.assertEqual(proc.returncode, 3)
         self.assertEqual(out["result"], "needs_approval")
-        self.assertIn("offer is at your limit", out["reasons"])
+        self.assertIn(REVIEW, out["reasons"])
+        self.assertNotIn("limit", " ".join(out["reasons"]))
 
     def test_offer_nan_or_inf_blocks(self):
         case_id, _ = self.make_case()

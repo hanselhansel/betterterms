@@ -74,9 +74,9 @@ export const DIR = `${HOME}/cases/${CASE_ID}`;
 export const BT = "/p/skills/betterterms-guardrails/scripts/bt.py";
 
 // The same canonical-tuple hash bt.py computes for held/<sha256>.yaml
-// (action, offer in minor units, period, currency, rendered, sorted
-// JSON, SHA-256). Fixtures keep ASCII so JSON.stringify matches
-// json.dumps(ensure_ascii=True).
+// (action, currency, inbound context digest, offer in minor units,
+// period, rendered — sorted JSON, SHA-256). Fixtures keep ASCII so
+// JSON.stringify matches json.dumps(ensure_ascii=True).
 export function heldHash(r) {
   const offer = r.offer === null || r.offer === undefined
     ? null
@@ -84,6 +84,7 @@ export function heldHash(r) {
   const canon = JSON.stringify({
     action: r.action ?? null,
     currency: r.currency ?? null,
+    inbound: r.inbound ?? null,
     offer,
     period: r.period ?? null,
     rendered: r.rendered ?? null,

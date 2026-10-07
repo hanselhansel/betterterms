@@ -11,6 +11,7 @@ import unittest
 from bt_helpers import PriceCase, plan_for, send_draft
 
 LIMITS = "outside your limits; escalate to the user"
+REVIEW = "a value in this draft needs your review"
 
 
 class RenderedValueTest(PriceCase):
@@ -23,7 +24,7 @@ class RenderedValueTest(PriceCase):
     def test_offer_converted_dust_routes_at_limit(self):
         # floor 1200/year; an offer of 100.004/month renders
         # "$100.00/month" and converts to exactly 1200/year: a send
-        # routes "offer is at your limit". The raw value used to
+        # routes to the generic review reason. The raw value used to
         # convert to 1200.048 and block as worse than the floor.
         plan = dict(plan_for("pay", 1200), period="year")
         case_id = self.make_render_case(floor=1200, plan=plan)
@@ -33,19 +34,21 @@ class RenderedValueTest(PriceCase):
                        template="my best is {offer}"),
         )
         self.assertEqual(proc.returncode, 3, out)
-        self.assertIn("offer is at your limit", out["reasons"])
+        self.assertIn(REVIEW, out["reasons"])
+        self.assertNotIn("limit", " ".join(out["reasons"]))
         self.assertEqual(out["rendered"], "my best is $100.00/month")
 
     def test_offer_rounding_on_floor_routes_at_limit(self):
         # 100.005 renders "$100.00": the rendered amount IS the floor,
-        # so a send routes "offer is at your limit", never blocks.
+        # so a send routes to the generic review reason, never blocks.
         case_id = self.make_render_case()
         proc, out = self.gate(
             case_id,
             send_draft(offer=100.005, template="my best is {offer}"),
         )
         self.assertEqual(proc.returncode, 3, out)
-        self.assertIn("offer is at your limit", out["reasons"])
+        self.assertIn(REVIEW, out["reasons"])
+        self.assertNotIn("limit", " ".join(out["reasons"]))
         self.assertEqual(out["rendered"], "my best is $100.00")
 
     def test_rendered_amount_past_floor_blocks(self):

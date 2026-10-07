@@ -262,7 +262,9 @@ describe("edit flow", () => {
     assert.ok(wrote);
     assert.match(wrote.text, /template: \|-/);
     assert.match(wrote.text, /I can pay \$1,200 a year/);
-    assert.match(wrote.text, /action: send/);
+    // The send tuple comes from the held record, not the stale
+    // draft.yaml: the card's action is what the owner reviewed.
+    assert.match(wrote.text, /action: cancel/);
   });
 
   test("a failed draft write keeps the edit text and the held record", async () => {

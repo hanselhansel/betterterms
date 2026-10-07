@@ -173,7 +173,7 @@ export function paneActions(host, snap) {
       // old held record and the typed text in the editor, and never
       // reaches the drop or the re-gate.
       try {
-        await host.fsWrite(`${snap.root}/${c.id}/draft.yaml`, A.draftYaml(c, held, text));
+        await host.fsWrite(`${snap.root}/${c.id}/draft.yaml`, A.draftYaml(held, text));
       } catch (err) {
         A.setEditing(held.hash, text);
         host.toast(

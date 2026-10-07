@@ -20,7 +20,7 @@ from bt_helpers import (
     write_case_files,
     write_draft,
 )
-from btlib import held, yaml
+from btlib import context, held, yaml
 
 HASH_RE = re.compile(r"^[0-9a-f]{64}$")
 NO_APPROVAL = "no approval recorded for this exact text"
@@ -160,11 +160,23 @@ class ApproveFlowTest(HeldCase):
         blocked = send_draft(offer=9000, template="counter")
         proc, out = self.gate(case_id, blocked, approved=True)
         self.assertEqual(proc.returncode, 1, out)
-        # The approval file still stands for its own text.
-        proc, out = self.gate(
-            case_id, self.held_draft(), approved=True
+        # The block verdict retired the old approval: replaying the
+        # approved send is denied, and a second try does not
+        # resurrect the retired marker.
+        proc, out = self.gate(case_id, self.held_draft(), approved=True)
+        self.assertEqual(proc.returncode, 3, out)
+        self.assertIn(NO_APPROVAL, out["reasons"])
+        proc, out = self.gate(case_id, self.held_draft(), approved=True)
+        self.assertEqual(proc.returncode, 3, out)
+        self.assertFalse(
+            (case_dir / "held" / f"{h}.approved").exists()
         )
+        # A fresh approval still spends exactly once.
+        run_bt_json(self.home, "held", "approve", case_id, h[:8])
+        proc, out = self.gate(case_id, self.held_draft(), approved=True)
         self.assertEqual(proc.returncode, 0, out)
+        proc, out = self.gate(case_id, self.held_draft(), approved=True)
+        self.assertEqual(proc.returncode, 3, out)
 
 class TupleBindingTest(HeldCase):
     def test_approval_binds_action_not_just_text(self):
@@ -222,11 +234,12 @@ class TupleBindingTest(HeldCase):
             return real_rename(src, dst, *args, **kwargs)
 
         results = []
+        ctx = context.digest(None)
         threads = [
             threading.Thread(
                 target=lambda: results.append(
                     held.consume_approval(
-                        case_dir, draft, "please end my plan"
+                        case_dir, draft, "please end my plan", ctx
                     )
                 )
             )

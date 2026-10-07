@@ -74,7 +74,8 @@ Exit codes and results:
   the same `held/` files again.
 
 An approval binds to the SHA-256 of the send tuple: action, offer,
-period, currency, and the exact rendered text. Only a
+period, currency, the exact rendered text, and a digest of the
+reviewed inbound context. Only a
 user action writes `held/<hash>.approved`, through one of three
 paths:
 
@@ -91,15 +92,19 @@ paths:
   prompt hook and only after the user typed `bt approve` for that
   draft.
 
-The agent then re-runs the gate with `--approved`. It passes only
+The agent then re-runs the gate with `--approved` exactly once. It
+passes only
 when an approval file matches the hash of the newly rendered tuple,
 and the file is consumed after one use: a changed text, a changed
-action or amount, a second send, or no matching approval holds the
+action or amount, a changed inbound, a second send, or no matching
+approval holds the
 draft again with the reason `no approval recorded for this exact
-text`. Typing "yes" in chat approves nothing. With the mod loaded the
+text`. Only a `pass` sends: a `needs_approval` or `block` verdict
+sends nothing and shows the user the reasons.
+Typing "yes" in chat approves nothing. With the mod loaded the
 pane press writes the marker and submits the instruction; the agent
-runs `gate --approved` once and sends the held text verbatim as its
-own argument. `held reject` is the matching drop:
+runs `gate --approved` once and, on a `pass`, sends the held text
+verbatim as its own argument. `held reject` is the matching drop:
 `bt reject <case_id> <hash8>` or `python3 <bt> held reject` removes
 the held draft and stamps `rejected` in `thread.md`.
 `python3 <bt> held drop
@@ -185,14 +190,14 @@ Hard blocks, in order:
    `accept` needs an in-band inbound offer equal to the draft offer,
    both read in the floor's period. `once` has no conversion factor,
    so a period mismatch where either side is `once` cannot be
-   verified: `send` routes to the user ("period differs from your
-   limit"), `accept`, `sign` and `pay` block, and the same rule
+   verified: `send` routes to the user ("a value in this draft needs
+   your review"), `accept`, `sign` and `pay` block, and the same rule
    covers the inbound offer's period on `accept`.
 7. Any rendered placeholder value equal to the floor: block, except
    the in-band offer itself (an offer exactly at the floor is inside
    the band, but on `send` it routes to the user). A value equal
    only to the floor's x12 or /12 conversion routes to the user
-   instead: "amount matches a converted limit".
+   instead: "a value in this draft needs your review".
    A price value (target, ladder, price option, or fact amount not
    on `send`) worse than the floor blocks too, and a price value
    whose period cannot convert to the floor's fails closed like an
@@ -254,12 +259,13 @@ that carries no numbers:
 - A rendered non-offer value equal to the floor only after an x12 or
   /12 conversion.
 - A `send` draft offer whose digits equal the floor's digits in a
-  period that is not the floor's: "amount matches your limit's
-  digits". `accept`, `sign` and `pay` are exempt because they may
+  period that is not the floor's: "a value in this draft needs your
+  review". `accept`, `sign` and `pay` are exempt because they may
   restate a price the counterparty named.
 - A `send` draft offer equal to the floor after conversion to the
-  floor's period: "offer is at your limit". Sending it reveals the
-  walk-away number. `accept`, `sign` and `pay` may sit exactly on
+  floor's period: the same generic review reason. Sending it reveals
+  the walk-away number, so the reason never names the relationship.
+  `accept`, `sign` and `pay` may sit exactly on
   the floor because they take a price already on the table.
 
 The word lists live in `scripts/btlib/wordlists.py`, the single

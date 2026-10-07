@@ -152,8 +152,10 @@ or ask for their offer when it is not. Then gate, send, and log as below.
      (`the counterparty's message needs your review`).
      The draft is held: `held/<hash>.yaml` in the case folder, `hash`
      in the JSON. The hash binds the whole send tuple (action,
-     offer, period, currency, rendered text), so an approval can
-     never cover a changed draft or a stronger action. Put the draft
+     offer, period, currency, rendered text, and the reviewed
+     inbound's context digest), so an approval can
+     never cover a changed draft, a stronger action, or a message
+     the owner did not review. Put the draft
      in front of the user per the display mode (below). Approval is
      a user action that writes `held/<hash>.approved` for this exact
      tuple: a mod keypress or click, a `bt approve <case_id> <hash8>`
@@ -165,8 +167,11 @@ or ask for their offer when it is not. Then gate, send, and log as below.
      gate call printed: `held approve` refuses any other, so a stale
      card or a hand-written held record can never be approved. Then
      re-run the gate with
-     `--approved`: it consumes the approval once and passes. A
-     changed text or a second send is held again.
+     `--approved` exactly once: it consumes the approval once and
+     passes. Send the returned `rendered` text verbatim only on a
+     `pass` verdict; a `needs_approval` or `block` verdict sends
+     nothing and shows the user the reasons. A changed text or a
+     second send is held again.
      A record `held list` reports as `legacy: true`
      was held by an older version and cannot be approved: re-run the
      gate on `draft.yaml` to hold it under the current hash.

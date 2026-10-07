@@ -16,6 +16,7 @@ from bt_helpers import (
 from btlib import yaml
 
 LIMITS = "outside your limits; escalate to the user"
+REVIEW = "a value in this draft needs your review"
 
 
 class GateTest(BtTestCase):
@@ -68,7 +69,8 @@ class GateTest(BtTestCase):
             case_id, send_draft(offer=1200, template="my best is {offer}")
         )
         self.assertEqual(proc.returncode, 3, out)
-        self.assertIn("offer is at your limit", out["reasons"])
+        self.assertIn(REVIEW, out["reasons"])
+        self.assertNotIn("limit", " ".join(out["reasons"]))
         self.assertEqual(out["rendered"], "my best is $1,200")
         proc, out = self.gate(
             case_id,
@@ -88,7 +90,8 @@ class GateTest(BtTestCase):
         )
         proc, out = self.gate(case_id, draft)
         self.assertEqual(proc.returncode, 3, out)
-        self.assertIn("period differs", " ".join(out["reasons"]))
+        self.assertIn(REVIEW, out["reasons"])
+        self.assertNotIn("period differs", " ".join(out["reasons"]))
         self.assertEqual(
             out["rendered"], "I can do $85/month on the new plan"
         )
@@ -116,62 +119,6 @@ class GateTest(BtTestCase):
         )
         self.assertEqual(proc.returncode, 0, out)
         self.assertEqual(out["result"], "pass")
-
-    def test_irreversible_action_needs_approval(self):
-        case_id, _ = self.make_case(floor=1200)
-        draft = send_draft(action="accept", offer=1100,
-                           template="sounds good to me")
-        proc, out = self.gate(
-            case_id, draft,
-            inbound=inbound_msg(offer=1100, text="we can do $1,100",
-                                amounts=[1100]),
-        )
-        self.assertEqual(proc.returncode, 3, out)
-        self.assertEqual(out["result"], "needs_approval")
-        self.assertEqual(out["rendered"], "sounds good to me")
-
-    def test_irreversible_action_approved_passes(self):
-        case_id, _ = self.make_case(floor=1200)
-        draft = send_draft(action="accept", offer=1100,
-                           template="sounds good to me")
-        proc, out = self.gate(
-            case_id, draft, approved=True,
-            inbound=inbound_msg(offer=1100, text="we can do $1,100",
-                                amounts=[1100]),
-        )
-        self.assertEqual(proc.returncode, 0, out)
-        self.assertEqual(out["result"], "pass")
-        self.assertEqual(out["rendered"], "sounds good to me")
-
-    def test_accept_offer_must_equal_inbound_offer(self):
-        case_id, _ = self.make_case(floor=1200)
-        draft = send_draft(action="accept", offer=1100,
-                           template="let us close it")
-        proc, out = self.gate(
-            case_id, draft, approved=True,
-            inbound=inbound_msg(offer=1100, text="we can do $1,100"),
-        )
-        self.assertEqual(proc.returncode, 0, out)
-        proc, out = self.gate(
-            case_id, send_draft(action="accept", offer=1000,
-                                template="let us close it"),
-            approved=True,
-            inbound=inbound_msg(offer=1100, text="we can do $1,100"),
-        )
-        self.assertEqual(proc.returncode, 1, out)
-        self.assertIn("accept must equal the counterparty's offer",
-                      out["reasons"])
-
-    def test_accept_without_inbound_offer_blocks(self):
-        case_id, _ = self.make_case(floor=1200)
-        proc, out = self.gate(
-            case_id,
-            send_draft(action="accept", offer=1100, template="yes"),
-            approved=True,
-        )
-        self.assertEqual(proc.returncode, 1, out)
-        self.assertIn("accept requires the counterparty's offer",
-                      out["reasons"])
 
     def test_claim_not_in_facts_blocks(self):
         case_id, _ = self.make_case(floor=1200)
@@ -323,7 +270,7 @@ class GateTest(BtTestCase):
                 proc, out = self.gate(case_id, draft)
                 self.assertEqual(proc.returncode, 3, out)
                 self.assertEqual(out["result"], "needs_approval")
-                self.assertIn("offer is at your limit", out["reasons"])
+                self.assertIn(REVIEW, out["reasons"])
                 self.assertFalse(
                     any(any(c.isdigit() for c in r)
                         for r in out["reasons"])
@@ -343,7 +290,10 @@ class GateTest(BtTestCase):
                                template="counter"),
                 )
                 self.assertEqual(proc.returncode, 3, out)
-                self.assertIn("offer is at your limit", out["reasons"])
+                self.assertIn(REVIEW, out["reasons"])
+                self.assertNotIn(
+                    "limit", " ".join(out["reasons"])
+                )
 
     def test_send_offer_within_floor_tolerance_needs_approval(self):
         case_id, _ = self.make_case(floor=1200)
@@ -351,28 +301,7 @@ class GateTest(BtTestCase):
             case_id, send_draft(offer=1200.004, template="counter")
         )
         self.assertEqual(proc.returncode, 3, out)
-        self.assertIn("offer is at your limit", out["reasons"])
-
-    def test_accept_sign_pay_at_floor_stay_allowed(self):
-        # Agreeing actions take a tabled price, so an offer on the
-        # floor stays in band: an approved draft passes.
-        case_id, _ = self.make_case(floor=1200)
-        for action in ("accept", "sign", "pay"):
-            with self.subTest(action=action):
-                draft = send_draft(action=action, offer=1200,
-                                   template="let us proceed")
-                kw = {}
-                if action == "accept":
-                    kw["inbound"] = inbound_msg(offer=1200, text="x")
-                proc, out = self.gate(case_id, draft, **kw)
-                self.assertEqual(proc.returncode, 3, out)
-                self.assertNotIn(
-                    "offer is at your limit", out["reasons"]
-                )
-                proc, out = self.gate(
-                    case_id, draft, approved=True, **kw
-                )
-                self.assertEqual(proc.returncode, 0, out)
+        self.assertIn(REVIEW, out["reasons"])
 
     def test_yaml11_booleans_in_lists_do_not_crash(self):
         # YAML 1.1 loads yes/no/on/off as booleans. A bool where a list

@@ -16,6 +16,7 @@ import sys
 import unittest
 
 from bt_helpers import REPO, BtTestCase
+from btlib import context as context_mod
 from btlib import held as held_mod, yaml
 
 sys.path.insert(0, str(REPO / "hooks"))
@@ -81,7 +82,8 @@ class HookCase(BtTestCase):
         # gate verdict wrote one, and held approve refuses a hash
         # gate.json does not name.
         record = held_mod.make_record(
-            "cancel", None, "once", "USD", rendered
+            "cancel", None, "once", "USD", rendered,
+            context_mod.digest(None),
         )
         h = held_mod.draft_hash(record)
         held = case_dir / "held"
@@ -128,10 +130,13 @@ class FloorCommandTest(HookCase):
         self.assertFalse((d / ".floor").exists())
 
     def test_unknown_case(self):
+        # The floor path never echoes the case field: in a misshaped
+        # command it can be part of the amount payload.
         proc = run_hook(self.home, "bt floor case-9 62")
         out = hook_json(proc)
         self.assertEqual(out["decision"], "block")
-        self.assertIn("no case case-9", out["reason"])
+        self.assertIn("no such case", out["reason"])
+        self.assertNotIn("case-9", out["reason"])
 
     def test_amount_formats(self):
         d = self.make_case()

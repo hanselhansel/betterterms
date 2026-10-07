@@ -16,7 +16,7 @@
 // and hotkey press.
 
 import * as C from "../lib/cases.js";
-import { hash8, onceText, savedText } from "../lib/approvals.js";
+import { hash8, onceText, savedText, tupleText } from "../lib/approvals.js";
 import { termsTree } from "./terms.js";
 import { savingsBody } from "./savings.js";
 
@@ -134,11 +134,18 @@ function heldCard(el, c, held, view, { keys = false, superseded = false } = {}) 
   const { Box, Text, Button, Input } = el;
   const h8 = hash8(held.hash);
   const hotkey = keys ? { approve: "a", edit: "e", reject: "r" } : {};
+  const tuple = tupleText(held);
   const rows = [
     h(Text, { key: `held-h-${h8}`, dimColor: true },
       superseded
         ? `${c.id} · superseded · ${h8}`
         : `${c.id} · held ${held.heldAt || "?"} · ${h8}${held.approved ? " · approved" : ""}`),
+    // The send tuple the approval binds: the owner sees the action,
+    // the exact amount with cents and the period, not a rounded
+    // figure from the rendered text alone.
+    ...(tuple === ""
+      ? []
+      : [h(Text, { key: `held-u-${h8}`, dimColor: true }, tuple)]),
     ...(superseded
       ? [h(Text, { key: `held-t-${h8}`, dimColor: true }, held.rendered)]
       : [moneyText(el, held.rendered, `held-t-${h8}`)]),

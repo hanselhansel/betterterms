@@ -64,8 +64,10 @@ For each inbound message:
    reason is generic, so escalate
    to the user instead of redrafting toward a guessed limit; any other
    block means redraft once, and a second block escalates.
-6. **Send** per the autonomy level, exactly the `rendered` text the
-   gate returned, then log the turn.
+6. **Send** only on a `pass` verdict, per the autonomy level and
+   exactly the `rendered` text the gate returned: a `needs_approval`
+   or `block` verdict sends nothing and shows the user the reasons.
+   Then log the turn.
 7. **Multiple bidders:** wait for all bids or the set time before
    choosing.
 

@@ -19,6 +19,7 @@ from bt_helpers import (
 from btlib import yaml
 
 LIMITS = "outside your limits; escalate to the user"
+REVIEW = "a value in this draft needs your review"
 
 
 class ProbeTest(BtTestCase):
@@ -141,7 +142,8 @@ class QuoteAndPeriodTest(ProbeTest):
                            template="I can do {offer} prepaid")
         proc, out = self.gate(case_id, draft)
         self.assertEqual(proc.returncode, 3, out)
-        self.assertIn("offer is at your limit", out["reasons"])
+        self.assertIn(REVIEW, out["reasons"])
+        self.assertNotIn("limit", " ".join(out["reasons"]))
         self.assertEqual(out["rendered"], "I can do $14,400/year prepaid")
         proc, out = self.gate(case_id, draft, approved=True)
         self.assertEqual(proc.returncode, 0, out)
@@ -190,7 +192,10 @@ class QuoteAndPeriodTest(ProbeTest):
             inbound=inbound_msg(text="$14,400 a year", amounts=[14400]),
         )
         self.assertEqual(proc.returncode, 3, out)
-        self.assertIn("converted limit", " ".join(out["reasons"]))
+        self.assertIn(REVIEW, out["reasons"])
+        self.assertNotIn(
+            "converted limit", " ".join(out["reasons"])
+        )
         proc, out = self.gate(
             case_id, send_draft(template="you said {quote:1}"),
             approved=True,
@@ -333,9 +338,7 @@ class Pass3ProbeTest(ProbeTest):
                 )
                 proc, out = self.gate(case_id, draft)
                 self.assertEqual(proc.returncode, 3, out)
-                self.assertEqual(
-                    out["reasons"], ["period differs from your limit"]
-                )
+                self.assertEqual(out["reasons"], [REVIEW])
                 proc, out = self.gate(case_id, draft, approved=True)
                 self.assertEqual(proc.returncode, 0, out)
 
@@ -349,7 +352,10 @@ class Pass3ProbeTest(ProbeTest):
         )
         proc, out = self.gate(case_id, draft)
         self.assertEqual(proc.returncode, 3, out)
-        self.assertIn("period differs", " ".join(out["reasons"]))
+        self.assertIn(REVIEW, out["reasons"])
+        self.assertNotIn(
+            "period differs", " ".join(out["reasons"])
+        )
         proc, out = self.gate(case_id, draft, approved=True)
         self.assertEqual(proc.returncode, 0, out)
 
@@ -377,7 +383,8 @@ class TemplateShapeTest(ProbeTest):
                     # A recurring offer against the once floor
                     # cannot convert, so it routes to the user.
                     self.assertEqual(proc.returncode, 3, out)
-                    self.assertIn(
+                    self.assertIn(REVIEW, out["reasons"])
+                    self.assertNotIn(
                         "period differs", " ".join(out["reasons"])
                     )
 

@@ -21,7 +21,7 @@ from bt_helpers import (
 from btlib import yaml
 
 LIMITS = "outside your limits; escalate to the user"
-PERIOD_DIFFERS = "period differs from your limit"
+REVIEW = "a value in this draft needs your review"
 
 
 class FailClosedCase(BtTestCase):
@@ -61,8 +61,11 @@ class UnconvertibleSendTest(FailClosedCase):
         )
         proc, out = self.gate(case_id, draft)
         self.assertEqual(proc.returncode, 3, out)
-        self.assertEqual(out["reasons"], [PERIOD_DIFFERS])
+        self.assertEqual(out["reasons"], [REVIEW])
         self.assertNotIn(LIMITS, out["reasons"])
+        self.assertNotIn(
+            "period differs", " ".join(out["reasons"])
+        )
         proc, out = self.gate(case_id, draft, approved=True)
         self.assertEqual(proc.returncode, 0, out)
         self.assertEqual(out["rendered"], "I can do $1,300/month")
@@ -79,7 +82,10 @@ class UnconvertibleSendTest(FailClosedCase):
             ),
         )
         self.assertEqual(proc.returncode, 3, out)
-        self.assertIn(PERIOD_DIFFERS, out["reasons"])
+        self.assertIn(REVIEW, out["reasons"])
+        self.assertNotIn(
+            "period differs", " ".join(out["reasons"])
+        )
 
     def test_agreeing_actions_still_block_on_unconvertible(self):
         # Control: accept, sign and pay keep failing closed.
@@ -101,7 +107,7 @@ class UnconvertibleSendTest(FailClosedCase):
                     **kw,
                 )
                 self.assertEqual(proc.returncode, 1, out)
-                self.assertIn(PERIOD_DIFFERS, out["reasons"])
+                self.assertIn(LIMITS, out["reasons"])
 
 
 class DraftPeriodTest(FailClosedCase):

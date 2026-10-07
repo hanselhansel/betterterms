@@ -20,6 +20,7 @@ from bt_helpers import (
 )
 
 LIMITS = "outside your limits; escalate to the user"
+REVIEW = "a value in this draft needs your review"
 
 
 class GluedTest(BtTestCase):
@@ -158,7 +159,10 @@ class FactAmountAtFloorTest(GluedTest):
             case_id, send_draft(template="note: {fact:mo}")
         )
         self.assertEqual(proc.returncode, 3, out)
-        self.assertIn("converted limit", " ".join(out["reasons"]))
+        self.assertIn(REVIEW, out["reasons"])
+        self.assertNotIn(
+            "converted limit", " ".join(out["reasons"])
+        )
         proc, out = self.gate(
             case_id, send_draft(template="note: {fact:mo}"),
             approved=True,

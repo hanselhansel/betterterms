@@ -332,8 +332,8 @@ class BlockReasonTest(HardenedCase):
 
     def test_converted_limit_reason_also_drops_on_block(self):
         # Same oracle on the other floor-adjacent reason: a quote that
-        # equals the floor x12 routes as "converted limit" on review
-        # but must not appear once the draft blocks.
+        # equals the floor x12 routes as a generic review hit on
+        # review but must not appear once the draft blocks.
         plan = dict(
             PLAN_BILLS,
             period="month",
