@@ -72,13 +72,41 @@ def _quoted_mask(command):
     return mask
 
 
+def _shell_mask(command):
+    """bytearray marking quoted, escaped or comment spans: chars
+    there are data, never shell syntax. An unquoted, unescaped
+    ``#`` at a word start -- command start, after whitespace, or
+    after an unquoted ``;`` ``&`` ``|`` ``(`` ``)`` ``<`` ``>`` --
+    comments out the rest of the line, so an owned path mentioned
+    there was never invoked. A ``#`` mid-word (``a#b``) or right
+    after a quoted word stays literal."""
+    mask = _quoted_mask(command)
+    i, n = 0, len(command)
+    while i < n:
+        if command[i] == "#" and not mask[i] and (
+            i == 0
+            or command[i - 1] in " \t\n"
+            or (command[i - 1] in ";&|()<>" and not mask[i - 1])
+        ):
+            end = command.find("\n", i + 1)
+            if end < 0:
+                end = n
+            mask[i:end] = b"\1" * (end - i)
+            i = end
+        else:
+            i += 1
+    return mask
+
+
 def _call_match(command, path, pos=0):
     """The ``_call_re`` invocation match at or after ``pos``, or
     None when the owned path appears only as data: the ``^`` or
-    ``;`` ``&`` ``|`` lead must sit outside quotes and unescaped."""
-    quoted = _quoted_mask(command)
+    ``;`` ``&`` ``|`` lead must sit outside quotes, unescaped, and
+    outside a shell comment (``echo setup # ; bash <path>`` is a
+    comment, not an invocation)."""
+    mask = _shell_mask(command)
     for m in _CALL_RES[path].finditer(command, pos):
-        if not m.group("lead") or not quoted[m.start("lead")]:
+        if not m.group("lead") or not mask[m.start("lead")]:
             return m
     return None
 
@@ -116,8 +144,9 @@ def _pipe_to_right(cmd, m):
     The invocation's args, flags and redirects run to the next
     ``;`` ``&&`` ``||`` lone ``&`` or text end -- a ``|`` anywhere
     in that extent still pipes it (``old --flag | cat``, ``old >
-    out | cat``). ``>&fd`` is a redirect, not a separator."""
-    mask = _quoted_mask(cmd)
+    out | cat``). ``>&fd`` is a redirect, not a separator; a
+    ``|`` inside a shell comment is data, not a pipe."""
+    mask = _shell_mask(cmd)
     i, n = m.end(), len(cmd)
     while i < n:
         if mask[i]:
@@ -145,12 +174,12 @@ def _pipe_to_right(cmd, m):
 def pipe_adjacent(cmd, m):
     """Whether the owned invocation at match ``m`` sits on either
     side of a single ``|``: a ``||`` lead is logical-or, not a
-    pipe, and a ``|`` inside quotes was already excluded by
-    _call_match."""
+    pipe, and a ``|`` inside quotes or a comment was already
+    excluded by _call_match."""
     lead = cmd[m.start("lead") : m.end("lead")]
     if lead == "|":
         prev = m.start("lead") - 1
-        if prev < 0 or cmd[prev] != "|" or _quoted_mask(cmd)[prev]:
+        if prev < 0 or cmd[prev] != "|" or _shell_mask(cmd)[prev]:
             return True
     return _pipe_to_right(cmd, m)
 

@@ -206,6 +206,12 @@ class VendorPipeTest(unittest.TestCase):
                 f"echo one | cat && {OLD_PROMPT_CMD}",
                 f"echo one | cat && {PROMPT_CMD}",
             ),
+            # A ``|`` inside a trailing shell comment is data, not
+            # a pipe, and the comment bytes survive the rewrite.
+            (
+                f"{OLD_PROMPT_CMD} --flag # note | cat",
+                f"{PROMPT_CMD} --flag # note | cat",
+            ),
         ):
             with self.subTest(command=compound):
                 self.write_settings(settings_with(compound))
