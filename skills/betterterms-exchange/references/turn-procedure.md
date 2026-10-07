@@ -23,7 +23,11 @@ For each inbound message:
    move from the plan.
 4. **Pick one move.** Ask for missing information; counter with a package
    or options, each concession smaller than the last, with a reason; trade
-   low-priority items for high-priority ones; or pause.
+   low-priority items for high-priority ones; or pause. Disclose only
+   what the move needs: on a request for current compensation, employer
+   identity or other protected information, decline politely and
+   redirect to the offer or package the plan approves -- one amount,
+   not a posted range or facts the move does not rely on.
 5. **Gate.** `bt.py gate` checks: the offer inside the band; every
    factual claim id in the fact list; every structural rule fails
    closed. Write `offer` in `draft.yaml` as a plain number or null; a
