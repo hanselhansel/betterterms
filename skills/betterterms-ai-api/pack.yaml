@@ -1,0 +1,46 @@
+name: ai-api
+command: ai-api
+mode: both
+direction: pay
+triggers:
+  - "ai api"
+  - "api pricing"
+  - "api bill"
+  - "api spend"
+  - "cloud bill"
+  - "cloud spend"
+  - "cloud contract"
+  - "model provider"
+  - "llm api"
+  - "inference"
+  - "vendor renewal"
+  - "enterprise agreement"
+  - "committed use"
+  - "usage commit"
+  - "rate limits"
+  - "price lock"
+intake:
+  - "What did you spend on this vendor over the last 12 months, and what is your forecast for the next 12?"
+  - "What is the model or service mix? Which SKUs drive the spend?"
+  - "What minimum commit could you guarantee?"
+  - "Which alternative providers have you tested, and how close are they to production use?"
+  - "What do you need beyond price: rate limits, SLA, data terms?"
+  - "When does the current contract renew or end?"
+  - "When does the vendor's fiscal quarter or year end, if you know it?"
+  - "Where are you (country and state), and is this spend personal or through a company?"
+  - "Who signs the contract on your side?"
+discovery:
+  - source: email
+    find: "vendor invoices, quotes, renewal and price-change notices, and sales threads"
+    window_days: 400
+  - source: files
+    find: "contracts, order forms, usage or spend exports, and card or bank statements the user provides"
+    window_days: 400
+research:
+  - kind: policy
+  - kind: pricing
+  - kind: precedent
+  - kind: rights
+  - kind: market
+savings:
+  formula: "(before - after) * periods_per_year"

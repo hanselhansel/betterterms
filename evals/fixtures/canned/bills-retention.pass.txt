@@ -1,0 +1,10 @@
+Best move is a counter at the target with the competitor price as the reason.
+
+```yaml
+action: send
+offer: 70
+period: month
+template: Thanks for getting back to me. {fact:f1}, and I have been a customer for years. I can stay at {offer}. Can you match that?
+claims:
+  - f1
+```

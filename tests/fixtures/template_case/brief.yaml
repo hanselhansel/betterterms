@@ -1,0 +1,14 @@
+pack: bills
+mode: act
+direction: pay
+goals:
+  - lower bill
+priorities:
+  - price
+  - terms
+ranking_check:
+  passed: true
+  samples: []
+autonomy: 3
+never_disclose: []
+deadline: null

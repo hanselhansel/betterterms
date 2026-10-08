@@ -1,0 +1,40 @@
+name: job-offer
+command: salary
+mode: coach
+direction: receive
+triggers:
+  - "job offer"
+  - "negotiate my offer"
+  - "salary negotiation"
+  - "counter offer"
+  - "counteroffer"
+  - "compensation package"
+  - "comp package"
+  - "offer letter"
+  - "sign on bonus"
+  - "equity offer"
+  - "recruiter call"
+  - "new job salary"
+  - "base salary"
+  - "offer deadline"
+intake:
+  - "Walk me through the full offer: base, bonus, equity type, vesting, strike price, sign-on, level, start date, remote policy, leave, and relocation."
+  - "What is the deadline on this offer, and is the offer in writing?"
+  - "What other interview processes or offers are in play, and what stage is each at?"
+  - "What range was posted for this role, if any?"
+  - "What is your current pay, or the closest comparison you are willing to share?"
+  - "What package would make you sign today?"
+  - "Where will you be working (country and state), and where is the employer based?"
+discovery:
+  - source: email
+    find: "the offer letter, recruiter threads, and the posted job description or range"
+    window_days: 400
+  - source: files
+    find: "the offer letter, equity documents, and current-compensation records the user provides"
+    window_days: 400
+research:
+  - kind: market
+  - kind: precedent
+  - kind: rights
+savings:
+  formula: "(after - before) * periods_per_year"

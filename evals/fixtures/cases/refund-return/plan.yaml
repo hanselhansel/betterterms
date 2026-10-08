@@ -1,0 +1,38 @@
+target: 89
+currency: USD
+floor_period: once
+options:
+  - label: full-refund
+    value: 89
+    terms: return shipped at their cost
+  - label: minus-restocking
+    value: 75
+    terms: they keep a restocking deduction
+ladder:
+  - value: 89
+    reason: full refund owed under policy
+  - value: 75
+    reason: accept a small deduction
+  - value: 60
+    reason: final
+patience:
+  rounds: 3
+  days: 30
+timing: card statement closes 2026-11-05
+channel: email
+facts:
+  - id: f1
+    text: published return policy promises a full refund within 30 days of delivery
+    source: "1"
+    amount: null
+    period: once
+  - id: f2
+    text: item was returned and tracking shows delivery on 2026-09-24
+    source: user statement
+    amount: null
+    period: once
+  - id: f3
+    text: purchase amount was $89
+    source: user statement
+    amount: 89
+    period: once

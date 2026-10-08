@@ -1,0 +1,149 @@
+#!/usr/bin/env python3
+"""Check a machine's betterterms skill installs for drift.
+
+Usage: doctor
+
+Scans $HOME/.agents/skills and $HOME/.claude/skills (HOME comes from
+the environment, so tests can point it at a fixture) and reports:
+
+- platform: bt.py needs Unix file locking, so macOS, Linux and WSL
+  are supported and native Windows is not
+- broken symlinks: a betterterms-* entry that resolves nowhere, or to
+  a folder without SKILL.md
+- duplicates: the same betterterms-* name present in both shared
+  dirs (an agent reading both would load the skill twice)
+- stale versions: a linked install whose repo VERSION differs from
+  this repo's VERSION, or a copied install whose
+  .betterterms-version marker differs or is missing
+
+Prints one line per finding and exits 1 when any exist; prints a
+summary and exits 0 when clean. Exit 2 on usage errors.
+BETTERTERMS_PLATFORM overrides sys.platform for tests.
+"""
+
+import os
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+VERSION = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
+SHARED_DIRS = (".agents/skills", ".claude/skills")
+VERSION_MARKER = ".betterterms-version"
+
+
+def _home():
+    return Path(os.environ.get("HOME") or Path.home())
+
+
+def _entries(d):
+    if not d.is_dir():
+        return []
+    return sorted(
+        p for p in d.iterdir() if p.name.startswith("betterterms-")
+    )
+
+
+def _linked_version(entry, findings, label):
+    """Version of the repo a symlinked skill resolves into, or None
+    when the link is unusable (findings appended)."""
+    try:
+        resolved = entry.resolve()
+    except (OSError, RuntimeError) as e:
+        findings.append(f"{label}: unresolvable symlink ({e})")
+        return None
+    if not resolved.exists():
+        findings.append(f"{label}: broken symlink -> {os.readlink(entry)}")
+        return None
+    if not resolved.is_dir() or not (resolved / "SKILL.md").is_file():
+        findings.append(f"{label}: resolves to {resolved} but no SKILL.md there")
+        return None
+    repo = resolved.parent.parent
+    version_file = repo / "VERSION"
+    if not version_file.is_file():
+        findings.append(f"{label}: resolves to {resolved} but {repo} has no VERSION")
+        return None
+    try:
+        return version_file.read_text(encoding="utf-8").strip()
+    except OSError as e:
+        findings.append(f"{label}: cannot read {version_file} ({e})")
+        return None
+
+
+def _check_shared(shared, findings):
+    """Inspect one shared skills dir; append findings."""
+    entries = _entries(shared)
+    marker = shared / VERSION_MARKER
+    marker_version = None
+    copies = []
+    for entry in entries:
+        kind = "link" if entry.is_symlink() else (
+            "copy" if entry.is_dir() else "file"
+        )
+        label = f"{entry} ({kind})"
+        if entry.is_symlink():
+            v = _linked_version(entry, findings, label)
+            if v is not None and v != VERSION:
+                findings.append(
+                    f"{label}: stale version {v} (this repo is {VERSION})"
+                )
+        elif entry.is_dir():
+            if not (entry / "SKILL.md").is_file():
+                findings.append(f"{label}: directory has no SKILL.md")
+                continue
+            copies.append(entry)
+        else:
+            findings.append(f"{label}: not a directory or symlink")
+    if copies:
+        if not marker.is_file():
+            for entry in copies:
+                findings.append(
+                    f"{entry}: copied install with no {VERSION_MARKER} marker"
+                )
+        else:
+            try:
+                marker_version = marker.read_text(encoding="utf-8").strip()
+            except OSError as e:
+                findings.append(f"{marker}: cannot read ({e})")
+            else:
+                if marker_version != VERSION:
+                    for entry in copies:
+                        findings.append(
+                            f"{entry}: stale copy version {marker_version} "
+                            f"(this repo is {VERSION})"
+                        )
+    return {e.name for e in entries}
+
+
+def main(argv):
+    if argv:
+        print(__doc__.strip(), file=sys.stderr)
+        return 2
+    home = _home()
+    agents, claude = (home / d for d in SHARED_DIRS)
+    findings = []
+    plat = os.environ.get("BETTERTERMS_PLATFORM") or sys.platform
+    if plat.startswith(("win32", "cygwin", "msys")):
+        findings.append(
+            f"platform: native Windows ({plat}) is unsupported; "
+            "bt.py needs Unix file locking, so run under WSL"
+        )
+    seen = {}
+    for shared in (agents, claude):
+        seen[shared] = _check_shared(shared, findings)
+    for name in sorted(seen[agents] & seen[claude]):
+        findings.append(
+            f"{name}: installed in both {agents} and {claude}; "
+            "agents that read both dirs would load it twice"
+        )
+    if findings:
+        print("doctor findings:")
+        for f in findings:
+            print(f"  {f}")
+        return 1
+    total = len(seen[agents] | seen[claude])
+    print(f"doctor: all clear ({total} betterterms skills seen, version {VERSION})")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

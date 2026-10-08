@@ -1,0 +1,19 @@
+pack: subscriptions
+mode: act
+direction: pay
+goals:
+  - lower the streaming bundle price
+priorities:
+  - price
+  - keeping the plan
+ranking_check:
+  passed: true
+  samples:
+    - "$15 a month on the annual plan"
+    - "$17 a month, cancel anytime"
+    - "$20 a month with extras"
+autonomy: 2
+never_disclose:
+  - account email
+deadline: "2026-10-12"
+period: month

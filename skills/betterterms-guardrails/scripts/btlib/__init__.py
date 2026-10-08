@@ -1,0 +1,55 @@
+"""betterterms runtime library. Python stdlib plus the vendored
+PyYAML under ``_vendor``; no network access."""
+
+import math
+
+MAX_TEXT = 64 * 1024
+"""The 64 KB bound on every text the gate or the scorer scans: a
+rendered draft, an inbound message, a fact body. Size is checked
+before any scanning, so hostile length stays cheap."""
+
+MAX_AMOUNT = 1e12
+"""Largest magnitude the toolkit treats as a number: offers, plan
+values, ledger amounts and money-scan results past it parse to
+nothing, never to an uncapped float."""
+
+FLOOR_TOL = 0.005
+"""Absolute tolerance for "equal to the floor" comparisons, so a
+floor entered as 1200.00 still matches a rendered 1200."""
+
+PERIODS = ("once", "month", "year")
+"""The only billing periods a draft, option or inbound offer may
+declare. ``once`` is the default and converts against nothing."""
+
+LIMITS = "outside your limits; escalate to the user"
+"""The one generic reason every floor-related block reports, so the
+output can never leak the floor's value, direction or distance."""
+
+
+def minor(value):
+    """``value`` rounded to the currency minor unit (two decimals),
+    the same form ``money_text`` renders, so every limit comparison
+    reads the number the counterparty would see."""
+    return float(f"{float(value):.2f}")
+
+
+def worse_than_floor(value, floor, direction):
+    """True when ``value`` sits on the wrong side of the walk-away
+    for the case direction: above it on ``pay``, below it on
+    ``receive``. Both sides are compared as rendered (rounded to the
+    minor unit), so a rendered amount can never slip past the floor
+    inside the raw comparison tolerance. A non-finite side or an
+    unknown direction counts as worse: the check fails closed."""
+    v, f = minor(value), minor(floor)
+    if not (math.isfinite(v) and math.isfinite(f)):
+        return True
+    if direction == "receive":
+        return v < f
+    if direction == "pay":
+        return v > f
+    return True
+
+
+class BtError(Exception):
+    """A user-facing runtime error. The CLI prints it as {"error": ...} and
+    exits 2."""

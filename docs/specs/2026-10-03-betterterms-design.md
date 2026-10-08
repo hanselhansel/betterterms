@@ -2,7 +2,11 @@
 
 Better terms on every bill, plan, and offer.
 
-Status: draft for review, not implemented. Date: 2026-10-03. Owner: Hansel.
+Status: implemented in 0.10.0 (release 2026-10-04); this document still
+reads as the day-zero draft. The 2026-10-04 release spec and decisions
+0012 to 0017 record where the shipped kit differs (removed hosts, the
+floor file, held drafts, typed commands, the mod, display modes).
+Date: 2026-10-03. Owner: Hansel.
 Location: `~/conductor/repos/betterterms/docs/specs/`. The folder is not a git repo yet.
 Companion spec: `2026-10-03-betterterms-negotiation-procedure.md` (how the agent negotiates).
 Research behind both: `docs/research/` in this folder.
@@ -192,7 +196,6 @@ betterterms/
   skills/                    # core skills (A), Agent Skills format
   packs/                     # category packs (B)
   scripts/                   # gate, build, verify, bump-version, vendor-into-repo, doctor
-  rules/jurisdictions/       # channel rules per country (AI voice calls, recording consent)
   hooks/                     # session-start bootstrap where supported
   evals/                     # simulated counterparties and scorers
   mod/                       # separate opt-in plugin (E)
@@ -268,7 +271,7 @@ Per-user state lives outside the repo in `~/.betterterms/` (override: `BETTERTER
 
 ```
 ~/.betterterms/
-  config.yaml          # default autonomy, jurisdiction, currency, voice notes
+  config.yaml          # default autonomy, currency, voice notes
   cases/<case-id>/
     brief.yaml         # intake: goals, priorities, ranking check, autonomy, mode
     plan.yaml          # target, floor (gate only), options, ladder, patience, deadline

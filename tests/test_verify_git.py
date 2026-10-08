@@ -11,6 +11,7 @@ from pathlib import Path
 from test_verify import (
     GIT,
     MAC_HOME,
+    SKILL,
     UNIX_HOME,
     assert_failed,
     checks_scan,
@@ -175,6 +176,35 @@ class GitModeTest(unittest.TestCase):
         assert_failed(self, proc, "no-symlinks")
         self.assertIn("plain-link", proc.stdout)
         self.assertIn("PASS no-local-paths", proc.stdout)
+
+    def test_untracked_file_at_evals_holdout_is_skipped(self):
+        # evals/holdout is a skipped path, not only a skipped dir: a
+        # file or link there never reaches the content checks.
+        (self.root / "evals").mkdir()
+        (self.root / "evals" / "holdout").write_text(f"{MAC_HOME}\n")
+        proc = run_verify(self.root)
+        self.assertNotIn("FAIL no-local-paths", proc.stdout)
+
+    @unittest.skipIf(os.name == "nt", "needs POSIX symlinks")
+    def test_skill_names_does_not_descend_linked_skill_dir(self):
+        # The index remembers a real skills/betterterms-ln/SKILL.md while
+        # the worktree now has that folder as a link; the skill-dir guard
+        # keeps check_skill_names from reading through it.
+        d = self.root / "skills" / "betterterms-ln"
+        d.mkdir(parents=True)
+        (d / "SKILL.md").write_text(SKILL.format(name="betterterms-ln"))
+        self.git("add", "-A")
+        (d / "SKILL.md").unlink()
+        d.rmdir()
+        elsewhere = self.root / "elsewhere"
+        elsewhere.mkdir()
+        (elsewhere / "SKILL.md").write_text(SKILL.format(name="other-name"))
+        (self.root / "skills" / "betterterms-ln").symlink_to(
+            elsewhere, target_is_directory=True
+        )
+        proc = run_verify(self.root)
+        assert_failed(self, proc, "no-symlinks")
+        self.assertIn("PASS skill-names", proc.stdout)
 
     def test_git_file_list_computed_once_per_run(self):
         calls = []

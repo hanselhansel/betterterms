@@ -1,0 +1,19 @@
+pack: refunds
+mode: act
+direction: receive
+goals:
+  - get the full refund for the returned router
+priorities:
+  - refund amount
+  - speed
+ranking_check:
+  passed: true
+  samples:
+    - "$89 full refund this week"
+    - "$75 refund, keep the rest as credit"
+    - "$60 refund after a complaint"
+autonomy: 2
+never_disclose:
+  - card ending 4417
+deadline: "2026-11-20"
+period: once

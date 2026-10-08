@@ -1,7 +1,9 @@
-"""Repo-file checks: bin/, instruction files, local paths, source size.
+"""Repo-file checks: bin/, instruction files, symlinks, local paths,
+source size.
 
 file-size measures source files: every scanned file whose suffix is
 .py, .js, .ts or .sh, plus extensionless entry points under scripts/.
+no-symlinks names every link in the tree: the repo holds none.
 """
 
 import json
@@ -19,6 +21,7 @@ from .checks_scan import (
     symlinks,
     texts,
 )
+from .checks_skills import frontmatter_strings
 
 MAX_SOURCE_LINES = 400
 
@@ -27,14 +30,15 @@ MAX_SOURCE_LINES = 400
 # http:, https: or file: scheme, so URLs do not count while PATH
 # entries and host:container mounts do), and after any other char
 # that is not '/', a word char or ':'. file:/// URIs count for the
-# user and root homes; /home/<x> needs a name ended by '/', whitespace,
-# ':' or end of line, and the root home counts like the user homes.
+# user and root homes; /home/<x> needs a name not followed by another
+# word char, '.' or '-' (parens, quotes and sentence punctuation still
+# count), and the root home counts like the user homes.
 # Windows home paths match either slash direction, any case, with the
 # drive letter not preceded by another letter (a URL scheme tail
 # cannot reach it).
 LOCAL_PATH = re.compile(
     r"(?:(?<=-v)|(?<![/\w:])|(?<=:)(?<!http:)(?<!https:)(?<!file:))"
-    r"(?:/(?:root|Users)/|/home/[\w.-]+(?=[/\s:]|$))"
+    r"(?:/(?:root|Users)/|/home/[\w.-]+(?![\w.-]))"
     r"|file:///(?:Users|home|root)/"
     r"|~/[A-Za-z0-9_]"
     r"|(?<![A-Za-z])(?i:[A-Za-z]:[/\\]Users[/\\])"
@@ -85,6 +89,9 @@ def check_no_local_paths(root):
             LOCAL_PATH.search(s) for s in _decoded_strings(rel, text)
         ):
             bad.append(f"{rel}: string value")
+    for rel, s in frontmatter_strings(root):
+        if LOCAL_PATH.search(s):
+            bad.append(f"{rel}: frontmatter")
     return ("FAIL", join(bad)) if bad else ("PASS", "")
 
 

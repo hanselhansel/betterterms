@@ -1,0 +1,38 @@
+target: 70
+currency: USD
+floor_period: month
+options:
+  - label: annual-prepay
+    value: 65
+    terms: 12 months paid upfront
+  - label: monthly
+    value: 75
+    terms: no contract, cancel anytime
+ladder:
+  - value: 70
+    reason: anchor on target
+  - value: 80
+    reason: first concession
+  - value: 90
+    reason: final
+patience:
+  rounds: 4
+  days: 14
+timing: promo pricing ends 2026-10-31
+channel: chat
+facts:
+  - id: f1
+    text: Nimbus Fiber offers the same speed tier at $55 per month at this address
+    source: "1"
+    amount: 55
+    period: month
+  - id: f2
+    text: provider retention policy allows loyalty discounts for tenured accounts
+    source: "2"
+    amount: null
+    period: once
+  - id: f3
+    text: current bill is $120 per month
+    source: user statement
+    amount: 120
+    period: month

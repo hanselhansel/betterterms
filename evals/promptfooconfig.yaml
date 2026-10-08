@@ -1,0 +1,20 @@
+description: betterterms exchange dev suite
+
+prompts:
+  - file://harness/agent_prompt.py:get_prompt
+
+providers:
+  - id: anthropic:claude-agent-sdk
+    config:
+      apiKeyRequired: false
+      tools: []
+
+defaultTest:
+  options:
+    provider:
+      id: openai:codex-sdk
+      config:
+        sandbox_mode: read-only
+
+tests:
+  - file://cases/dev/*.yaml

@@ -6,4 +6,6 @@ __pycache__/
 node_modules/
 dist/
 .promptfoo/
-evals/holdout/
+evals/holdout
+evals/.results/
+.gstack/

@@ -1,0 +1,82 @@
+# 0017. Display modes and the widget fallback for cloud sessions
+
+Status: accepted (release lanes R4 and R7, spec 6.8). Amended by
+0019 and 0020. Amended: cloud plugin loading, 2026-10-06.
+Date: 2026-10-09.
+
+## Context
+
+The mod's pane, band and toasts do not draw in cloud sessions, and
+Codex and plain chat sessions have no pane at all. The owner works in
+Projects (beta) cloud threads and needs the same cases, approvals and
+terms surfaces there. A spike on 2026-10-04 showed a posted widget can
+call `sendPrompt("bt approve <case> <hash8>")` on a button press; the
+text lands in the user's message box and enters the thread as the
+user's own message once they press Enter. A widget can fill the
+message box, never send it.
+
+## Decision
+
+Three display modes, picked at run time by the skills:
+
+- **Mod**: the pane can draw (Claude Code terminal or Desktop). The
+  cockpit from 0012.
+- **Widget**: the session has a tool that posts interactive widgets.
+  `bt.py widget cases|approval <hash>|terms <case>|savings` prints a
+  self-contained HTML fragment from shipped templates under
+  `skills/betterterms-guardrails/assets/widgets/`; the agent posts the
+  output as is. The terms widget never prefills the walk-away (the
+  agent would have to read it to do so) and shows "set" or "not set"
+  with an empty field.
+- **Chat**: everything else (Codex, plain cloud sessions,
+  `claude -p`). Text summaries and the same typed commands.
+
+Widget buttons fill the user's message box with one typed command per
+message: `bt approve`, `bt reject`, `bt floor`, `bt terms`. Each
+widget says "press Enter to send" next to its buttons, so every widget
+action is two steps the user takes. The same commands typed by hand
+work in every Claude Code session.
+
+A `UserPromptSubmit` settings hook (`hooks/prompt_commands.py`) reads
+each prompt before the model and looks only at the user's own text: in
+a Projects wake envelope, the body of the triggering `from="human"`
+message, never text an agent or a counterparty wrote. `bt floor`
+writes the walk-away through `case set-floor` on stdin and blocks the
+prompt so the model never receives it. `bt approve`, `bt reject` and
+`bt terms` are handled first, then let the prompt through with a
+note: `bt approve` writes `held/<hash>.approved` for that exact
+rendered-text hash so the agent resends; `bt reject` and `bt terms`
+write their change. The floor message stays
+visible in the thread to project members and in the session log
+(anthropics/claude-code#96891), so terminal floor entry stays the
+better path. The `PreToolUse` file guard named here was removed in
+0.10.0; see 0019.
+
+## Consequences
+
+Strength, stated plainly (spec 6.8): all three modes land the same
+`.approved` file, spent once by `gate --approved`. The agent runs as
+the user in every mode, so nothing technical stops a forged marker or
+an ungated send; the skills' rule never to write one is the boundary
+there (0019 removed the `PreToolUse` guard that tried to enforce it,
+and 0020 removed the mod's `$.state` approvals and send check). All
+modes share the guarantee that counts most: text inside an
+inbound message can never become a user message, so nothing a
+counterparty writes can approve a draft. Codex has no prompt hook in
+this release, so Codex users set the walk-away in the terminal and
+approve in chat, where the agent runs `bt.py held approve` after the
+user typed `bt approve`.
+
+Amendment 2026-10-06, cloud plugin loading: a cloud session never
+installs plugins declared in a repo's `.claude/settings.json`, so
+`vendor-into-repo` no longer writes `enabledPlugins`. Widget and
+chat typed commands count on a live prompt hook, confirmed by the
+session-start marker "betterterms: typed bt commands are active in
+this session." in context, which prints even with no cases. Projects
+threads load the plugin installed through the cloud environment
+Setup script (`claude plugin marketplace add
+'hanselhansel/betterterms'`, `claude plugin install
+betterterms@betterterms`) into each new thread; other cloud sessions
+vendor skills and hooks into the
+repo, and those hooks apply only when the session has exactly one
+repository.

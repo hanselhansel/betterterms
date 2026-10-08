@@ -64,6 +64,14 @@ class LoadTest(unittest.TestCase):
         self.assertEqual(out, {"price": "$1,200"})
         self.assertIsInstance(out["price"], str)
 
+    def test_overlong_int_loads_as_string(self):
+        # Past Python's int digit limit the constructor degrades the
+        # scalar to a string instead of raising, so a draft offer like
+        # `offer: <5000 digits>` reaches the gate as "not a number".
+        digits = "9" * 5000
+        data = miniyaml.load("offer: " + digits)
+        self.assertEqual(data["offer"], digits)
+
     def test_yaml_error_becomes_error_with_line(self):
         with self.assertRaises(miniyaml.Error) as cm:
             miniyaml.load("\ta: 1\n")
@@ -81,14 +89,20 @@ class LoadTest(unittest.TestCase):
     def test_constructor_value_error_becomes_error_with_line(self):
         # '2026-02-30' parses as a timestamp node, then datetime.date
         # raises ValueError during construction: Error must carry the
-        # offending scalar's line.
+        # offending scalar's line and the constructor's detail. The
+        # detail text is the interpreter's own ("day is out of range
+        # for month" before 3.14, "day 30 must be in range 1..28 for
+        # month 2 in year 2026" since), so assert its stable parts.
         with self.assertRaises(miniyaml.Error) as cm:
             miniyaml.load("a: 1\nd: 2026-02-30\n")
         self.assertEqual(cm.exception.line, 2)
-        self.assertIn("out of range", str(cm.exception))
+        self.assertIn("ValueError", str(cm.exception))
+        self.assertIn("day", str(cm.exception))
+        self.assertIn("month", str(cm.exception))
         with self.assertRaises(miniyaml.Error) as cm:
             miniyaml.load("- 2026-02-30\n")
         self.assertEqual(cm.exception.line, 1)
+        self.assertIn("ValueError", str(cm.exception))
 
     def test_bad_or_unknown_tag_values_become_error_with_line(self):
         # '!!bool maybe' hits a KeyError in the bool constructor; an

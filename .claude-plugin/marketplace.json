@@ -1,0 +1,19 @@
+{
+  "name": "betterterms",
+  "description": "Cross-agent negotiation toolkit: core skills, packs, and a pre-send gate for bills, refunds, cancellations, and offers.",
+  "owner": {
+    "name": "Hansel Wahjono"
+  },
+  "plugins": [
+    {
+      "name": "betterterms",
+      "source": "./",
+      "description": "Cross-agent negotiation toolkit: core skills, packs, and a pre-send gate for bills, refunds, cancellations, and offers."
+    },
+    {
+      "name": "betterterms-mod",
+      "source": "./mod",
+      "description": "Optional Claude Code mod for betterterms: a case-pipeline pane, a draft-approval band and inbound-reply toasts."
+    }
+  ]
+}

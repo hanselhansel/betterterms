@@ -1,0 +1,46 @@
+# Pack manifest for skills/betterterms-promotion/. Keys exactly: name,
+# command, mode, direction, triggers, intake, discovery, research,
+# savings. The pack-schema verify check enforces this shape.
+name: promotion
+command: promotion
+mode: coach
+direction: receive
+triggers:
+  - "promotion"
+  - "promotion case"
+  - "ask for a raise"
+  - "pay raise"
+  - "salary raise"
+  - "merit increase"
+  - "title bump"
+  - "level up"
+  - "relevel"
+  - "comp review"
+  - "salary review"
+  - "promote me"
+intake:
+  - "What is your current level and title, and what level or title are you asking for?"
+  - "What is your current pay: base, bonus, equity, and how it vests?"
+  - "What market data do you have: posted ranges for your level or the next, public levels data, or numbers peers have shared?"
+  - "List your impact over the last 12 months in numbers: revenue, cost saved, scope grown, projects shipped, people led."
+  - "When does your company's budget or comp cycle run, and when is the next review window?"
+  - "Who decides: your manager, a skip-level, a promotion committee, HR?"
+  - "What are your real outside options: active interviews, written offers, recruiter conversations?"
+  - "Which non-cash asks matter: title, scope, equity refresh, remote flexibility, a dated review?"
+discovery:
+  - source: email
+    find: "manager and HR threads about scope, reviews, praise, and comp, plus impact evidence the user sent or received"
+    window_days: 400
+  - source: files
+    find: "review docs, self-assessments, leveling guides, pay statements, and org announcements the user provides"
+    window_days: 400
+  - source: calendar
+    find: "review-cycle meetings and project dates that anchor the impact timeline"
+    window_days: 400
+research:
+  - kind: market
+  - kind: policy
+  - kind: precedent
+  - kind: rights
+savings:
+  formula: "(after - before) * periods_per_year"

@@ -1,0 +1,329 @@
+#!/usr/bin/env python3
+"""Eval runner for betterterms.
+
+  scripts/eval --smoke     offline checks (default; no LLM calls)
+  scripts/eval --dev       promptfoo eval on the dev suite; keeps
+                           evals/.results/dev-latest.json (gitignored)
+                           and prints the pass rate plus one line per
+                           failing case
+  scripts/eval --holdout   promptfoo eval on the holdout config from
+                           $BETTERTERMS_HOLDOUT (default
+                           ~/.betterterms-holdout); keeps
+                           .results/holdout-latest.json under that root,
+                           never inside the repo, prints only the pass
+                           rate, and exits 2 when absent
+
+--dev and --holdout run promptfoo with evals/ as the working directory
+and pass the config as a path relative to it, so the bare SDK packages
+the agent provider and grader load (@anthropic-ai/claude-agent-sdk,
+@openai/codex-sdk) resolve from evals/node_modules while file://
+references still resolve relative to each config file's own directory.
+They exit 2 when evals/node_modules is absent: install it once with
+`npm ci --prefix evals`.
+
+Smoke checks, all offline: fixture case files parse and pass
+`bt.py case show` (and never echo the floor); every dev case file
+parses, names a real fixture, carries a python plus an llm-rubric
+assertion, and has a numeric vars.inbound_offer and a numeric
+vars.inbound_amounts list when those vars are set; the canned outputs
+under evals/fixtures/canned score as expected through
+assert_gate.get_assert.
+"""
+
+import argparse
+import json
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+REPO = Path(__file__).resolve().parents[1]
+EVALS = REPO / "evals"
+FIXTURES = EVALS / "fixtures" / "cases"
+CANNED = EVALS / "fixtures" / "canned"
+DEV_CASES = EVALS / "cases" / "dev"
+CONFIG = EVALS / "promptfooconfig.yaml"
+BT_DIR = REPO / "skills" / "betterterms-guardrails" / "scripts"
+BT = BT_DIR / "bt.py"
+
+sys.path.insert(0, str(BT_DIR))
+sys.path.insert(0, str(REPO / "evals" / "harness"))
+
+import assert_gate  # noqa: E402
+from btlib import cases, yaml  # noqa: E402
+
+_failures = []
+
+
+def _report(name, ok, detail=""):
+    status = "PASS" if ok else "FAIL"
+    print(f"{status} {name}" + (f": {detail}" if detail else ""))
+    if not ok:
+        _failures.append(name)
+
+
+def _load_yaml_file(path):
+    try:
+        data = yaml.load(path.read_text(encoding="utf-8"))
+    except yaml.Error as e:
+        return None, f"{path.name}: {e}"
+    if not isinstance(data, dict):
+        return None, f"{path.name}: expected a mapping"
+    return data, ""
+
+
+def _check_fixture(case_dir, home):
+    cid = case_dir.name
+    floor_path = case_dir / ".floor"
+    floor_text = None
+    for name in ("brief.yaml", "plan.yaml"):
+        path = case_dir / name
+        if not path.is_file():
+            return f"{name} missing"
+        _, err = _load_yaml_file(path)
+        if err:
+            return err
+    if not floor_path.is_file():
+        return ".floor missing"
+    floor_text = floor_path.read_text(encoding="utf-8").strip()
+    try:
+        float(floor_text)
+    except ValueError:
+        return ".floor: not a number"
+
+    dst = home / "cases" / cid
+    shutil.copytree(case_dir, dst)
+    os.chmod(dst / ".floor", 0o600)
+    r = subprocess.run(
+        [sys.executable, str(BT), "case", "show", cid],
+        env={**os.environ, "BETTERTERMS_HOME": str(home)},
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    if r.returncode != 0:
+        return f"case show exit {r.returncode}: {(r.stdout or r.stderr).strip()}"
+    out = json.loads(r.stdout)
+    if not out.get("brief") or not out.get("plan"):
+        return "case show returned an empty brief or plan"
+    if _has_floor_key(out):
+        return "case show exposed a floor field"
+    return ""
+
+
+def _has_floor_key(node):
+    if isinstance(node, dict):
+        return any(
+            k == "floor" or _has_floor_key(v) for k, v in node.items()
+        )
+    if isinstance(node, list):
+        return any(_has_floor_key(item) for item in node)
+    return False
+
+
+def _check_dev_case(path, fixture_ids):
+    data, err = _load_yaml_file(path)
+    if err:
+        return err
+    v = data.get("vars")
+    if not isinstance(v, dict):
+        return "vars missing"
+    if v.get("case_id") not in fixture_ids:
+        return f"vars.case_id {v.get('case_id')!r} has no fixture case"
+    msg = v.get("counterparty_message")
+    if not isinstance(msg, str) or not msg.strip():
+        return "vars.counterparty_message missing"
+    offer = v.get("inbound_offer")
+    if offer is not None and cases.num(offer) is None:
+        return "vars.inbound_offer must be a number"
+    amounts = v.get("inbound_amounts")
+    if amounts is not None and (
+        not isinstance(amounts, list)
+        or any(cases.num(a) is None for a in amounts)
+    ):
+        return "vars.inbound_amounts must be a list of numbers"
+    asserts = data.get("assert")
+    if not isinstance(asserts, list) or not asserts:
+        return "assert missing or empty"
+    types = {a.get("type") for a in asserts if isinstance(a, dict)}
+    if "python" not in types or "llm-rubric" not in types:
+        return "needs a python and an llm-rubric assertion"
+    return ""
+
+
+def _check_canned(path):
+    parts = path.name.split(".")
+    if len(parts) < 3 or parts[-1] != "txt":
+        return "name must be <case_id>.<expected>.txt"
+    case_id = ".".join(parts[:-2])
+    want_pass = parts[-2] == "pass"
+    result = assert_gate.get_assert(
+        path.read_text(encoding="utf-8"), {"vars": {"case_id": case_id}}
+    )
+    if bool(result.get("pass")) == want_pass:
+        return ""
+    return f"expected {'pass' if want_pass else 'fail'}: {result.get('reason')}"
+
+
+def cmd_smoke():
+    if not FIXTURES.is_dir():
+        print("FAIL smoke: evals/fixtures/cases missing")
+        return 1
+    fixture_ids = {d.name for d in FIXTURES.iterdir() if d.is_dir()}
+    with tempfile.TemporaryDirectory() as td:
+        home = Path(td) / "home"
+        (home / "cases").mkdir(parents=True)
+        for name in sorted(fixture_ids):
+            _report(f"smoke fixture {name}", not (why := _check_fixture(FIXTURES / name, home)), why)
+    if DEV_CASES.is_dir():
+        for path in sorted(DEV_CASES.glob("*.yaml")):
+            _report(f"smoke dev-case {path.stem}", not (why := _check_dev_case(path, fixture_ids)), why)
+    else:
+        _report("smoke dev-cases", False, "evals/cases/dev missing")
+    if CANNED.is_dir():
+        for path in sorted(CANNED.glob("*.txt")):
+            _report(f"smoke canned {path.stem}", not (why := _check_canned(path)), why)
+    print(f"smoke: {len(_failures)} failed")
+    return 1 if _failures else 0
+
+
+def _one_line(text):
+    return " ".join(str(text or "").split())
+
+
+def _assert_label(assertion):
+    """Short name for a failed assertion. The dev suite pairs the python
+    gate (harness/assert_gate.py) with an llm-rubric; anything else
+    keeps its own type name."""
+    a = assertion or {}
+    t = a.get("type")
+    if t == "python" and "assert_gate" in str(a.get("value") or ""):
+        return "gate"
+    if t == "llm-rubric":
+        return "rubric"
+    return t or "assertion"
+
+
+def _case_desc(r):
+    tc = r.get("testCase") or {}
+    desc = (
+        r.get("description")
+        or tc.get("description")
+        or (r.get("vars") or {}).get("case_id")
+        or (tc.get("vars") or {}).get("case_id")
+    )
+    return _one_line(desc) or "case"
+
+
+def _failure_lines(data):
+    """'FAIL <desc> [<assert>]: <reason, first 200 chars>' per case whose
+    success is false. <assert> is 'gate', 'rubric', 'gate+rubric' when
+    both fail, or 'error' when the case errored before grading."""
+    results = data.get("results")
+    cases = (
+        results
+        if isinstance(results, list)
+        else (results or {}).get("results") or []
+    )
+    lines = []
+    for r in cases:
+        if not isinstance(r, dict):
+            continue
+        ok = r.get("success")
+        if ok is None:
+            ok = (r.get("gradingResult") or {}).get("pass")
+        if ok is not False:
+            continue
+        grading = r.get("gradingResult") or {}
+        failed = [
+            c
+            for c in grading.get("componentResults") or []
+            if not c.get("pass")
+        ]
+        if failed:
+            labels = "+".join(
+                dict.fromkeys(_assert_label(c.get("assertion")) for c in failed)
+            )
+            reason = failed[0].get("reason")
+        else:
+            labels = "error"
+            reason = grading.get("reason") or r.get("error")
+        lines.append(
+            f"FAIL {_case_desc(r)} [{labels}]: {_one_line(reason)[:200]}"
+        )
+    return lines
+
+
+def _print_summary(out_path, show_failures):
+    try:
+        data = json.loads(out_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return
+    results = data.get("results") or {}
+    stats = results.get("stats") if isinstance(results, dict) else None
+    stats = stats or data.get("stats") or {}
+    s = stats.get("successes", 0)
+    total = s + stats.get("failures", 0) + stats.get("errors", 0)
+    if total:
+        print(f"pass rate: {s}/{total} ({100.0 * s / total:.1f}%)")
+    if show_failures:
+        for line in _failure_lines(data):
+            print(line)
+
+
+def _run_promptfoo(config, out_path, show_failures):
+    if shutil.which("promptfoo") is None:
+        print("promptfoo not installed")
+        return 2
+    if not (EVALS / "node_modules").is_dir():
+        print("evals/node_modules missing: run `npm ci --prefix evals`")
+        return 2
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    r = subprocess.run(
+        ["promptfoo", "eval", "-c", os.path.relpath(config, EVALS),
+         "-o", str(out_path), "--no-progress-bar"],
+        cwd=EVALS,
+    )
+    _print_summary(out_path, show_failures)
+    return r.returncode
+
+
+def cmd_dev():
+    return _run_promptfoo(
+        CONFIG, EVALS / ".results" / "dev-latest.json", show_failures=True
+    )
+
+
+def cmd_holdout():
+    root = Path(
+        os.environ.get("BETTERTERMS_HOLDOUT") or "~/.betterterms-holdout"
+    ).expanduser().resolve()
+    config = root / "promptfooconfig.yaml"
+    if not config.is_file():
+        print(f"no holdout config at {config}")
+        return 2
+    return _run_promptfoo(
+        config,
+        root / ".results" / "holdout-latest.json",
+        show_failures=False,
+    )
+
+
+def main(argv):
+    p = argparse.ArgumentParser(prog="scripts/eval", description=__doc__)
+    g = p.add_mutually_exclusive_group()
+    g.add_argument("--smoke", action="store_true", help="offline checks (default)")
+    g.add_argument("--dev", action="store_true", help="run the dev suite")
+    g.add_argument("--holdout", action="store_true", help="run the holdout suite")
+    args = p.parse_args(argv)
+    if args.dev:
+        return cmd_dev()
+    if args.holdout:
+        return cmd_holdout()
+    return cmd_smoke()
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

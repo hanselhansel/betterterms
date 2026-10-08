@@ -1,0 +1,133 @@
+// betterterms-mod: the opt-in Claude Code mod for betterterms.
+//
+// A function-hook plugin: hooks/hooks.json names this file (modules
+// resolve relative to hooks/, hence "../register.js") and the engine
+// calls register(on) once at load. session.start registers
+// /betterterms (alias /betterterms-cases), opens the pane when cases
+// exist, baselines inbound entries, sets the status line and starts
+// the 3s poll. ui.render draws the AbovePrompt band, the three-tab
+// Pane (Cases, Approvals, Savings; the cases tab hosts the terms
+// editor of spec 6.4) and the gate rows; ui.message relays the
+// price-scale Client's posts; command.run opens the pane.
+//
+// The mod is a cockpit only (decision 0020): it never inspects
+// outgoing tool calls or prompts. The Approvals tab's Approve press
+// runs `bt.py held approve` and submits a prompt telling the agent
+// to run `bt.py gate --approved` once; the gate's hash-bound one-use
+// marker is the only send enforcement.
+//
+// The loader follows `$` only into this file's top-level functions,
+// never across an import. So every $ member the mod needs is bound
+// once into the `host` facade below, each spelled `$.noun.event(...)`
+// with literal names where the audit requires them, and lib/*.js
+// does the work over that plain object (the pattern the bundled diff
+// mod uses for its Host).
+
+import * as C from "./lib/cases.js";
+import * as A from "./lib/approvals.js";
+import * as IO from "./lib/hostio.js";
+import * as S from "./lib/scan.js";
+import * as W from "./lib/wiring.js";
+import * as T from "./ui/terms.js";
+import { paneTree } from "./ui/pane.js";
+import { bandTree } from "./ui/band.js";
+import { gateRow } from "./ui/rows.js";
+
+const PANE_ID = "betterterms";
+// $.state refs must be literals of this file for the audit to list them.
+const REF_TAB = { plugin: "betterterms-mod", key: "tab" };
+const REF_SELECTED = { plugin: "betterterms-mod", key: "selected" };
+
+// The facade lib/hostio.js and lib/wiring.js work through. Every $ the
+// mod touches appears exactly once here, literal where the audit asks
+// (env names, state refs) and variable elsewhere (paths, argv, text).
+export function hostOf($) {
+  return {
+    pluginRoot: $.plugin.root,
+    envBtHome: () => $.env.get("BETTERTERMS_HOME"),
+    envHome: () => $.env.get("HOME"),
+    fsRead: (p) => $.fs.read(p),
+    fsWrite: (p, t) => $.fs.write(p, t),
+    fsStat: (p) => $.fs.stat(p),
+    fsList: (p) => $.fs.list(p),
+    fsExists: (p) => $.fs.exists(p),
+    procRun: (argv, init) => $.process.run(argv, init),
+    stateTab: () => $.state.get(REF_TAB),
+    setTab: (v) => $.state.set(REF_TAB, v),
+    stateSelected: () => $.state.get(REF_SELECTED),
+    setSelected: (v) => $.state.set(REF_SELECTED, v),
+    toast: (t) => $.ui.toast(t),
+    status: (t) => $.ui.status(t),
+    invalidate: () => $.ui.invalidate("ui.render"),
+    openPane: (r) => $.ui.open(r),
+    submit: (e) => $.prompt.submit(e),
+    registerCommand: (s) => $.command.register(s),
+    every: (ms, fn) => $.clock.every(ms, fn),
+  };
+}
+
+// Exported for the unit suites (they drive the same facade the engine
+// sees): the scan every hook shares and the pane's action set.
+export const scanCases = ($) => S.scanCases(hostOf($));
+export const paneActions = ($, snap) => W.paneActions(hostOf($), snap);
+
+export function register(on) {
+  IO.resetBt();
+  S.resetScan();
+  W.resetWiring();
+  on("session.start", async ($, e, next) => W.sessionStart(hostOf($), e, next));
+
+  on("command.run", { command: "betterterms" }, ($) => W.runCommand(hostOf($)));
+  on("command.run", { command: "betterterms-cases" }, ($) => W.runCommand(hostOf($)));
+
+  on("ui.render", { component: "AbovePrompt" }, async ($, e, next) => {
+    if (e.props?.hasSurvey) return next(e);
+    const host = hostOf($);
+    // A redraw or drag storm may call this many times inside the
+    // burst window; the scan is fingerprint-cached anyway.
+    const snap = await S.scanCases(host, { burst: true }).catch(() => A.EMPTY_SNAP);
+    const counts = {
+      held: C.heldTotal(snap.cases),
+      pending: C.pendingWithoutHeld(snap.cases),
+      // A case counts as replied only while its last turn is inbound;
+      // an answer in another channel clears it without waiting a tick.
+      repliers: W.repliedCases(snap),
+    };
+    const el = $.ui.resolve(e);
+    return bandTree(el, counts, () => W.paneActions(host, snap).openTab(2)) ?? next(e);
+  });
+
+  on("ui.render", { component: "Pane", requestId: PANE_ID }, async ($, e) => {
+    const el = $.ui.resolve(e);
+    const host = hostOf($);
+    const snap = await S.scanCases(host, { burst: true }).catch(() => A.EMPTY_SNAP);
+    const act = W.paneActions(host, snap);
+    const view = {
+      tab: await W.getTab(host),
+      selected: await W.getSelected(host),
+      editing: A.getEditing(),
+      editText: A.getEditText(),
+      terms: T.getTerms(),
+      surface: e.surface,
+      savings: undefined,
+    };
+    if (view.tab === 3) view.savings = await act.savingsData().catch(() => null);
+    return paneTree(el, snap, view, act);
+  });
+
+  on("ui.render", { component: "ToolUse" }, async ($, e, next) => {
+    const row = gateRow(e.props ?? {});
+    if (row === null) return next(e);
+    const { Text } = $.ui.resolve(e);
+    return h(Text, { color: row.color }, row.text);
+  });
+
+  // The terms editor's Client posts (drag values, focus, nudges, the
+  // z toggle and save) arrive here. Anything not ours defers.
+  on("ui.message", async ($, e, next) => {
+    if (e?.element !== "scale" || e?.data === null || typeof e.data !== "object") {
+      return next(e);
+    }
+    return T.scaleMessage(hostOf($), e);
+  });
+}

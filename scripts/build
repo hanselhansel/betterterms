@@ -3,16 +3,18 @@
 
 Each generator in GENERATORS is a callable ``gen(root, version) ->
 {relpath: content}`` producing repo-relative files
-(`.claude-plugin/plugin.json`, `plugin.json`, `gemini-extension.json`,
+(`.claude-plugin/plugin.json`, `plugin.json`,
 `commands/*.md`, ...). build passes the VERSION file's version;
 bump-version passes the version being bumped to. When GENERATORS is
 empty, build is a no-op and --check passes.
 
 Build never deletes files: it writes generated files, and --check only
 compares each generated file's expected content with disk. Generated
-paths must be relative, stay inside the repo and not touch `.git/`;
-anything else raises ValueError. So does a write target that resolves
-outside the repo or goes through a symlink: the repo holds no links.
+paths must be relative, normalized (no `//`, `.` or trailing slash),
+stay inside the repo, touch no `.git` segment and never name VERSION or
+kit.config.json; anything else raises ValueError. So does a write
+target that resolves outside the repo, goes through a symlink (the
+repo holds no links) or exists as a non-regular file.
 
 Usage: build [--check]
   (no args)   write every generated file
@@ -22,27 +24,43 @@ Usage: build [--check]
 import sys
 from pathlib import Path, PurePosixPath
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from _lib.gen_agent_plugins import gen as _gen_agent_plugins
+from _lib.gen_claude import gen as _gen_claude
+from _lib.gen_codex import gen as _gen_codex
+
 ROOT = Path(__file__).resolve().parent.parent
 
+# Tests stub the generator list by rewriting this exact assignment;
+# keep the empty literal on its own line and append real generators.
 GENERATORS = []
+GENERATORS += [_gen_claude, _gen_codex, _gen_agent_plugins]
 
 
 def _check_relpath(rel):
-    """Generated paths must be relative, inside the repo, and outside
-    `.git/`; anything else is a generator bug worth crashing on."""
+    """Generated paths must be relative, normalized and inside the
+    repo, touch no `.git` segment and not name VERSION or
+    kit.config.json; anything else is a generator bug worth crashing
+    on. A path that PurePosixPath would rewrite (`a//b`, `./a`, `a/`)
+    aliases another path and is refused outright."""
     parts = PurePosixPath(rel).parts
     if (
         PurePosixPath(rel).is_absolute()
         or not parts
         or ".." in parts
-        or parts[0] == ".git"
+        or any(part.lower() == ".git" for part in parts)
+        or str(PurePosixPath(rel)) != rel
+        or rel.lower() in ("version", "kit.config.json")
     ):
         raise ValueError(f"bad generated path {rel!r}")
 
 
 def _check_write_path(path):
-    """A write target must resolve inside the repo and cross no
-    symlinks: a linked file or parent lands the bytes elsewhere."""
+    """A write target must resolve inside the repo, cross no symlinks
+    (a linked file or parent lands the bytes elsewhere) and be absent
+    or a regular file: a directory under the name errors mid-write and
+    a fifo would block the open forever."""
     if not path.resolve().is_relative_to(ROOT):
         raise ValueError(f"{path} resolves outside the repo")
     p = path
@@ -50,6 +68,8 @@ def _check_write_path(path):
         if p.is_symlink():
             raise ValueError(f"{path} goes through symlink {p}")
         p = p.parent
+    if path.exists() and not path.is_file():
+        raise ValueError(f"{path} exists and is not a regular file")
 
 
 def expected(root, version=None):
@@ -60,11 +80,14 @@ def expected(root, version=None):
     if version is None and GENERATORS:
         version = (root / "VERSION").read_text(encoding="utf-8").strip()
     out = {}
+    seen = set()
     for gen in GENERATORS:
         for rel, content in gen(root, version).items():
             _check_relpath(rel)
-            if rel in out:
+            key = rel.lower()
+            if key in seen:
                 raise ValueError(f"two generators produce {rel}")
+            seen.add(key)
             out[rel] = content
     return out
 

@@ -1,0 +1,284 @@
+#!/usr/bin/env python3
+"""Vendor betterterms into another repo for cloud sessions.
+
+Usage: vendor-into-repo [--no-hooks] REPO
+
+Repo-declared plugins never load in cloud sessions, so the default
+run vendors what a session can read: every skills/betterterms-*
+folder into REPO/.claude/skills/ (with a .betterterms-version
+marker), the hook scripts into REPO/.claude/betterterms/hooks/
+(with a .betterterms-version marker beside them), and the
+UserPromptSubmit and SessionStart entries merged into
+REPO/.claude/settings.json with "$CLAUDE_PROJECT_DIR"-relative
+commands. Every existing key is kept and an entry is never
+duplicated. Repo hooks apply only in a session with one
+repository; a multi-repo project needs the plugin installed
+through a cloud environment setup script instead (see
+docs/guides/install.md).
+
+--no-hooks: copy the skills only. No prompt hook runs then, so a
+typed bt command reaches the model as ordinary chat text and the
+terminal `case set-floor` command is the only safe floor path.
+
+An existing .claude/skills/betterterms-* directory is replaced only
+when it looks like a previous vendored copy (SKILL.md naming the
+folder); a symlinked entry is unlinked, never written through. A
+file under .claude/betterterms/hooks/ is replaced only when it is
+identical or the directory's marker shows an earlier vendored copy.
+Exit 1 on errors, 2 on usage errors and on a settings.json that is
+not a valid JSON object or whose hooks key is a shape the merge
+cannot keep (nothing is written in that case).
+"""
+
+import json
+import shutil
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import _vendor_hooks  # noqa: E402
+
+ROOT = Path(__file__).resolve().parent.parent
+SKILLS_DIR = ROOT / "skills"
+HOOKS_DIR = ROOT / "hooks"
+VERSION_FILE = ROOT / "VERSION"
+
+HOOK_NAMES = (
+    "prompt_commands.py", "prompt-guard.sh", "_btpath.py",
+    "_scan.py", "session-start.sh",
+)
+
+HOOK_EVENTS = ("UserPromptSubmit", "SessionStart")
+
+
+def _skills():
+    return sorted(
+        p for p in SKILLS_DIR.iterdir()
+        if p.is_dir() and not p.is_symlink() and p.name.startswith("betterterms-")
+    )
+
+
+def _is_vendored(dest, name):
+    skill_md = dest / "SKILL.md"
+    if not skill_md.is_file():
+        return False
+    try:
+        head = skill_md.read_text(encoding="utf-8", errors="replace")[:4096]
+    except OSError:
+        return False
+    return f"name: {name}" in head
+
+
+def _load_settings(repo):
+    """REPO/.claude/settings.json as (settings dict, path, existed),
+    or an exit code: 1 when the path is unsafe, 2 when the file holds
+    invalid JSON or a hooks shape the merge cannot keep. Runs before
+    any write, so a nonzero code means nothing was written."""
+    path = repo / ".claude" / "settings.json"
+    if not path.resolve().is_relative_to(repo.resolve()):
+        print(
+            f"refusing: {path} resolves outside {repo} through a symlink",
+            file=sys.stderr,
+        )
+        return 1
+    if path.is_symlink():
+        print(f"refusing: {path} is a symlink", file=sys.stderr)
+        return 1
+    existed = path.exists()
+    if existed:
+        try:
+            settings = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            print(f"error: {path} is not valid JSON", file=sys.stderr)
+            return 2
+        if not isinstance(settings, dict):
+            print(f"error: {path} is not a JSON object", file=sys.stderr)
+            return 2
+    else:
+        settings = {}
+    hooks = settings.setdefault("hooks", {})
+    if not isinstance(hooks, dict):
+        print(
+            f"error: {path} key 'hooks' is not an object",
+            file=sys.stderr,
+        )
+        return 2
+    for event in HOOK_EVENTS:
+        entries = hooks.setdefault(event, [])
+        if not isinstance(entries, list):
+            print(
+                f"error: {path} key 'hooks.{event}' is not a list",
+                file=sys.stderr,
+            )
+            return 2
+    return settings, path, existed
+
+
+def _merge_hooks(settings):
+    """Append each missing hook entry under settings['hooks']; an
+    entry whose command already names the vendored script counts as
+    present. Returns True when anything changed."""
+    hooks = settings["hooks"]
+    changed = _vendor_hooks.migrate_prompt(hooks["UserPromptSubmit"])
+    for event in HOOK_EVENTS:
+        if not _vendor_hooks.has_hook(
+            hooks[event], _vendor_hooks.HOOK_PATHS[event]
+        ):
+            hooks[event].append(_vendor_hooks.hook_entry(event))
+            changed = True
+    return changed
+
+
+def _skills_problems(repo, target):
+    problems = []
+    for skill in _skills():
+        dest = target / skill.name
+        if dest.is_symlink() or not dest.exists():
+            continue
+        if not dest.is_dir():
+            problems.append(f"{dest}: exists and is not a directory")
+        elif not _is_vendored(dest, skill.name):
+            problems.append(f"{dest}: not a vendored betterterms copy")
+    return problems
+
+
+def _hooks_problems(repo, bt_dir):
+    """Refusal list for REPO/.claude/betterterms/hooks/: a symlinked
+    directory or a differing file with no vendored-copy marker. A
+    file identical to ours and any symlinked file are fine."""
+    dest_dir = bt_dir / "hooks"
+    for p in (bt_dir, dest_dir):
+        if p.is_symlink():
+            return [f"{p}: is a symlink"]
+    if not dest_dir.resolve().is_relative_to(repo.resolve()):
+        return [
+            f"{dest_dir}: resolves outside {repo} through a symlink"
+        ]
+    vendored = (bt_dir / ".betterterms-version").is_file()
+    problems = []
+    for name in HOOK_NAMES:
+        dest = dest_dir / name
+        if dest.is_symlink() or not dest.exists():
+            continue
+        if not dest.is_file():
+            problems.append(f"{dest}: exists and is not a file")
+        elif not vendored and dest.read_bytes() != (
+            HOOKS_DIR / name
+        ).read_bytes():
+            problems.append(f"{dest}: not a vendored betterterms copy")
+    return problems
+
+
+def _copy_skills(target):
+    target.mkdir(parents=True, exist_ok=True)
+    for skill in _skills():
+        dest = target / skill.name
+        if dest.is_symlink():
+            dest.unlink()
+            action = "replaced link"
+        elif dest.is_dir():
+            shutil.rmtree(dest)
+            action = "updated"
+        else:
+            action = "vendored"
+        shutil.copytree(
+            skill, dest, ignore=shutil.ignore_patterns("__pycache__")
+        )
+        print(f"{action} {skill.name}")
+    marker = target / ".betterterms-version"
+    marker.write_text(VERSION_FILE.read_text(encoding="utf-8"), encoding="utf-8")
+    print(f"wrote .betterterms-version ({marker.read_text().strip()})")
+
+
+def _copy_hooks(repo, bt_dir):
+    dest_dir = bt_dir / "hooks"
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    for name in HOOK_NAMES:
+        dest = dest_dir / name
+        if dest.is_symlink():
+            dest.unlink()
+        shutil.copy2(HOOKS_DIR / name, dest)
+        print(f"wrote .claude/betterterms/hooks/{name}")
+    marker = bt_dir / ".betterterms-version"
+    marker.write_text(VERSION_FILE.read_text(encoding="utf-8"), encoding="utf-8")
+
+
+def main(argv):
+    flags = [a for a in argv if a.startswith("-")]
+    args = [a for a in argv if not a.startswith("-")]
+    if len(args) != 1 or set(flags) - {"--no-hooks"}:
+        print(__doc__.strip(), file=sys.stderr)
+        return 2
+    repo = Path(args[0]).expanduser()
+    if not repo.is_dir() or repo.is_symlink():
+        print(f"error: {repo} is not a directory", file=sys.stderr)
+        return 1
+    target = repo / ".claude" / "skills"
+    if not target.resolve().is_relative_to(repo.resolve()):
+        print(
+            f"refusing: {target} resolves outside {repo} through a symlink",
+            file=sys.stderr,
+        )
+        return 1
+
+    if "--no-hooks" in flags:
+        problems = _skills_problems(repo, target)
+        if problems:
+            for p in problems:
+                print(f"refusing: {p}", file=sys.stderr)
+            return 1
+        _copy_skills(target)
+        return 0
+
+    # The settings file is read and checked before the first write,
+    # so an unusable file exits 2 with nothing written.
+    loaded = _load_settings(repo)
+    if isinstance(loaded, int):
+        return loaded
+    settings, settings_path, existed = loaded
+
+    bt_dir = repo / ".claude" / "betterterms"
+    problems = (
+        _skills_problems(repo, target)
+        + _hooks_problems(repo, bt_dir)
+        + _vendor_hooks.migrate_problems(
+            settings["hooks"]["UserPromptSubmit"]
+        )
+    )
+    if problems:
+        for p in problems:
+            print(f"refusing: {p}", file=sys.stderr)
+        return 1
+
+    _copy_skills(target)
+    _copy_hooks(repo, bt_dir)
+
+    if _merge_hooks(settings):
+        settings_path.parent.mkdir(parents=True, exist_ok=True)
+        settings_path.write_text(
+            json.dumps(settings, indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+        print(
+            ("updated" if existed else "created")
+            + " .claude/settings.json with the betterterms hooks"
+        )
+    else:
+        print(".claude/settings.json already registers the betterterms hooks")
+
+    enabled = settings.get("enabledPlugins")
+    if isinstance(enabled, dict) and any(
+        str(k).startswith("betterterms@") and v
+        for k, v in enabled.items()
+    ):
+        print(
+            "note: settings.json still enables a betterterms plugin; "
+            "repo-declared plugins never load in cloud sessions and "
+            "would load the skills twice locally. Remove the "
+            "enabledPlugins entry."
+        )
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

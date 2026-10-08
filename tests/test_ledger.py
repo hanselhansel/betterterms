@@ -1,0 +1,344 @@
+import json
+import os
+import stat
+import unittest
+
+from bt_helpers import REPO, BtTestCase, new_case, run_bt_json
+from btlib import yaml
+
+
+class LedgerTest(BtTestCase):
+    def test_ledger_add_monthly(self):
+        case_id, _ = new_case(self.home, pack="bills")
+        proc, out = run_bt_json(
+            self.home,
+            "ledger", "add", case_id,
+            "--before", "80", "--after", "60", "--period", "month",
+        )
+        self.assertEqual(proc.returncode, 0, proc.stdout)
+        self.assertEqual(out["saved_per_year"], 240)
+
+    def test_ledger_add_yearly(self):
+        case_id, _ = new_case(self.home, pack="bills")
+        proc, out = run_bt_json(
+            self.home,
+            "ledger", "add", case_id,
+            "--before", "1200", "--after", "960", "--period", "year",
+        )
+        self.assertEqual(proc.returncode, 0, proc.stdout)
+        self.assertEqual(out["saved_per_year"], 240)
+
+    def test_ledger_add_once_period(self):
+        # A one-time deal is a delta taken once, stored as
+        # saved_once and never counted into saved_per_year.
+        case_id, case_dir = new_case(self.home, pack="bills")
+        proc, out = run_bt_json(
+            self.home,
+            "ledger", "add", case_id,
+            "--before", "1000", "--after", "900", "--period", "once",
+        )
+        self.assertEqual(proc.returncode, 0, proc.stdout)
+        self.assertEqual(out["saved_once"], 100)
+        self.assertNotIn("saved_per_year", out)
+        line = (self.home / "ledger.jsonl").read_text()
+        record = json.loads(line)
+        self.assertEqual(record["saved_once"], 100)
+        self.assertNotIn("saved_per_year", record)
+        proc, out = run_bt_json(self.home, "ledger", "total")
+        self.assertEqual(out["by_currency"], {})
+        self.assertEqual(out["once_by_currency"], {"USD": 100})
+        self.assertEqual(out["by_pack"], {})
+        self.assertEqual(
+            out["once_by_pack"], {"bills": {"USD": 100}}
+        )
+
+    def test_once_and_yearly_total_separately(self):
+        c1, _ = new_case(self.home, pack="bills")
+        c2, _ = new_case(self.home, pack="subscriptions")
+        run_bt_json(
+            self.home, "ledger", "add", c1,
+            "--before", "80", "--after", "60", "--period", "month",
+        )
+        run_bt_json(
+            self.home, "ledger", "add", c2,
+            "--before", "1000", "--after", "900", "--period", "once",
+        )
+        proc, out = run_bt_json(self.home, "ledger", "total")
+        self.assertEqual(proc.returncode, 0, proc.stdout)
+        self.assertEqual(out["by_currency"], {"USD": 240})
+        self.assertEqual(out["once_by_currency"], {"USD": 100})
+
+    def test_record_without_currency_counts_as_unknown(self):
+        # A line with no currency field is reported under "unknown",
+        # never guessed into USD or dropped.
+        case_id, _ = new_case(self.home)
+        run_bt_json(
+            self.home, "ledger", "add", case_id,
+            "--before", "80", "--after", "60", "--period", "month",
+        )
+        ledger = self.home / "ledger.jsonl"
+        ledger.write_text(
+            ledger.read_text()
+            + '{"case_id": "old-1", "pack": "p", "saved_per_year": 10}\n'
+            + '{"case_id": "old-2", "pack": "p", "saved_once": 30}\n'
+        )
+        proc, out = run_bt_json(self.home, "ledger", "total")
+        self.assertEqual(proc.returncode, 0, out)
+        self.assertEqual(
+            out["by_currency"], {"USD": 240, "unknown": 10}
+        )
+        self.assertEqual(
+            out["once_by_currency"], {"unknown": 30}
+        )
+
+    def test_usage_line_names_once(self):
+        # The usage block documents every period ledger add accepts.
+        text = (REPO / "skills/betterterms-guardrails/scripts/bt.py").read_text()
+        self.assertIn("--period once|month|year", text)
+
+    def test_ledger_add_receive_direction(self):
+        case_id, _ = new_case(self.home, pack="job-offer", direction="receive")
+        proc, out = run_bt_json(
+            self.home,
+            "ledger", "add", case_id,
+            "--before", "150000", "--after", "165000", "--period", "year",
+        )
+        self.assertEqual(proc.returncode, 0, proc.stdout)
+        self.assertEqual(out["saved_per_year"], 15000)
+
+    def test_saved_per_year_rounds_to_minor_unit(self):
+        # 10.10 - 10.00 is 0.0999... in binary; the recorded value is
+        # the currency minor unit: 1.20 a year, never 1.1999...
+        case_id, _ = new_case(self.home)
+        proc, out = run_bt_json(
+            self.home,
+            "ledger", "add", case_id,
+            "--before", "10.10", "--after", "10.00", "--period", "month",
+        )
+        self.assertEqual(proc.returncode, 0, proc.stdout)
+        self.assertEqual(out["saved_per_year"], 1.2)
+
+    def test_ledger_total_sums_by_pack(self):
+        c1, _ = new_case(self.home, pack="bills")
+        c2, _ = new_case(self.home, pack="subscriptions")
+        run_bt_json(self.home, "ledger", "add", c1,
+                    "--before", "80", "--after", "60", "--period", "month")
+        run_bt_json(self.home, "ledger", "add", c2,
+                    "--before", "50", "--after", "40", "--period", "month")
+        proc, out = run_bt_json(self.home, "ledger", "total")
+        self.assertEqual(proc.returncode, 0, proc.stdout)
+        self.assertEqual(out["cases"], 2)
+        self.assertEqual(out["by_currency"], {"USD": 360})
+        self.assertEqual(
+            out["by_pack"],
+            {"bills": {"USD": 240}, "subscriptions": {"USD": 120}},
+        )
+
+    def test_ledger_total_empty(self):
+        proc, out = run_bt_json(self.home, "ledger", "total")
+        self.assertEqual(proc.returncode, 0, proc.stdout)
+        self.assertEqual(out["cases"], 0)
+        self.assertEqual(out["by_currency"], {})
+        self.assertEqual(out["by_pack"], {})
+
+    def test_ledger_add_unknown_case_errors(self):
+        proc, _ = run_bt_json(
+            self.home, "ledger", "add", "bills-20000101-0000",
+            "--before", "80", "--after", "60", "--period", "month",
+        )
+        self.assertEqual(proc.returncode, 2)
+
+    # Generated by /ship coverage audit.
+    # Value: protects=ledger add derives the pack from the case id when
+    # brief.yaml has no pack key, so totals still group by pack;
+    # fails_when=the rsplit fallback in ledger.add is dropped;
+    # why_new=fixture briefs always carried a pack; seam=none
+    def test_pack_falls_back_to_case_id_prefix(self):
+        case_id, case_dir = new_case(self.home, pack="job-offer")
+        brief_path = case_dir / "brief.yaml"
+        brief = yaml.load(brief_path.read_text())
+        del brief["pack"]
+        brief_path.write_text(yaml.dump(brief))
+        proc, out = run_bt_json(
+            self.home, "ledger", "add", case_id,
+            "--before", "120", "--after", "100", "--period", "year",
+        )
+        self.assertEqual(proc.returncode, 0, proc.stdout)
+        proc, out = run_bt_json(self.home, "ledger", "total")
+        self.assertEqual(proc.returncode, 0, proc.stdout)
+        self.assertEqual(out["by_pack"], {"job-offer": {"USD": 20}})
+
+    # A corrupt or oversized line no longer sinks the total: the valid
+    # records still report, with a warning count for what was skipped.
+    def test_corrupt_ledger_lines_skipped_with_warnings(self):
+        case_id, _ = new_case(self.home)
+        run_bt_json(
+            self.home, "ledger", "add", case_id,
+            "--before", "100", "--after", "80", "--period", "month",
+        )
+        ledger = self.home / "ledger.jsonl"
+        ledger.write_text(
+            ledger.read_text()
+            + "[1, 2]\n"
+            + "not json\n"
+            + '{"saved_per_year": "x"}\n'
+            + '{"case_id": "huge", "pack": "p", "saved_per_year": 1e13}\n'
+        )
+        proc, out = run_bt_json(self.home, "ledger", "total")
+        self.assertEqual(proc.returncode, 0, out)
+        self.assertEqual(out["cases"], 1)
+        self.assertEqual(out["by_currency"], {"USD": 240})
+        self.assertEqual(out["by_pack"], {"bills": {"USD": 240}})
+        self.assertEqual(out["warnings"], 4)
+
+    # Generated by /ship coverage audit.
+    # Value: protects=a ledger line that is not valid UTF-8 is skipped
+    #   with a warning, never sinking total or add (ledger.py _records
+    #   docstring); fails_when=the ledger is decoded as one strict UTF-8
+    #   string, so one bad byte exits 2 for every total and add;
+    #   why_new=the corrupt-lines test only writes valid UTF-8; seam=none
+    def test_non_utf8_ledger_line_warns_and_never_sinks_the_ledger(self):
+        case_id, _ = new_case(self.home)
+        run_bt_json(
+            self.home, "ledger", "add", case_id,
+            "--before", "100", "--after", "80", "--period", "month",
+        )
+        with (self.home / "ledger.jsonl").open("ab") as f:
+            f.write(b'{"case_id": "x\xff", "saved_per_year": 5}\n')
+        proc, out = run_bt_json(self.home, "ledger", "total")
+        self.assertEqual(proc.returncode, 0, out)
+        self.assertEqual(out["cases"], 1)
+        self.assertEqual(out["by_currency"], {"USD": 240})
+        self.assertEqual(out["warnings"], 1)
+        other, _ = new_case(self.home)
+        proc, out = run_bt_json(
+            self.home, "ledger", "add", other,
+            "--before", "50", "--after", "40", "--period", "month",
+        )
+        self.assertEqual(proc.returncode, 0, out)
+        self.assertEqual(out["saved_per_year"], 120)
+
+    def test_ledger_rejects_amounts_over_cap(self):
+        # Inputs past the 1e12 magnitude cap error before anything is
+        # written to the ledger.
+        case_id, _ = new_case(self.home)
+        for before, after in (("2000000000001", "60"), ("80", "1e13")):
+            with self.subTest(before=before, after=after):
+                proc, out = run_bt_json(
+                    self.home,
+                    "ledger", "add", case_id,
+                    f"--before={before}", f"--after={after}",
+                    "--period", "month",
+                )
+                self.assertEqual(proc.returncode, 2, out)
+                self.assertIn("error", out)
+        self.assertFalse((self.home / "ledger.jsonl").exists())
+
+    def test_ledger_rejects_savings_over_cap(self):
+        # A legal input pair can still compound past the cap: before
+        # 1e12 to 0 monthly saves 1.2e13 a year, which must not land.
+        case_id, _ = new_case(self.home)
+        proc, out = run_bt_json(
+            self.home,
+            "ledger", "add", case_id,
+            "--before=1000000000000", "--after=0", "--period", "month",
+        )
+        self.assertEqual(proc.returncode, 2, out)
+        self.assertIn("error", out)
+        self.assertFalse((self.home / "ledger.jsonl").exists())
+
+    def test_ledger_rejects_non_finite_and_negative(self):
+        case_id, _ = new_case(self.home)
+        rows = [
+            ("nan", "60"),
+            ("inf", "60"),
+            ("80", "inf"),
+            ("-5", "60"),
+            ("80", "-1"),
+            ("-inf", "60"),
+        ]
+        for before, after in rows:
+            with self.subTest(before=before, after=after):
+                proc, out = run_bt_json(
+                    self.home,
+                    "ledger", "add", case_id,
+                    f"--before={before}", f"--after={after}",
+                    "--period", "month",
+                )
+                self.assertEqual(proc.returncode, 2, out)
+                self.assertIn("error", out)
+        self.assertFalse((self.home / "ledger.jsonl").exists())
+
+    def test_ledger_add_invalid_direction_errors(self):
+        # direction comes from cases.direction_of: an unknown value is
+        # broken case data, exit 2, never a silent "pay" default.
+        case_id, case_dir = new_case(self.home)
+        brief_path = case_dir / "brief.yaml"
+        brief = yaml.load(brief_path.read_text())
+        brief["direction"] = "sideways"
+        brief_path.write_text(yaml.dump(brief))
+        proc, out = run_bt_json(
+            self.home,
+            "ledger", "add", case_id,
+            "--before", "80", "--after", "60", "--period", "month",
+        )
+        self.assertEqual(proc.returncode, 2, out)
+        self.assertIn("error", out)
+
+    def test_ledger_file_created_0600(self):
+        # The ledger holds per-case savings; like .floor it is
+        # created owner-only.
+        case_id, _ = new_case(self.home)
+        proc, _ = run_bt_json(
+            self.home, "ledger", "add", case_id,
+            "--before", "80", "--after", "60", "--period", "month",
+        )
+        self.assertEqual(proc.returncode, 0)
+        mode = stat.S_IMODE(os.stat(self.home / "ledger.jsonl").st_mode)
+        self.assertEqual(mode, 0o600, oct(mode))
+
+    def test_ledger_rejects_duplicate_case(self):
+        case_id, _ = new_case(self.home)
+        args = (
+            "ledger", "add", case_id,
+            "--before", "80", "--after", "60", "--period", "month",
+        )
+        proc, _ = run_bt_json(self.home, *args)
+        self.assertEqual(proc.returncode, 0)
+        proc, out = run_bt_json(self.home, *args)
+        self.assertEqual(proc.returncode, 2, out)
+        self.assertIn("error", out)
+        # Only the first entry landed.
+        lines = (self.home / "ledger.jsonl").read_text().splitlines()
+        self.assertEqual(len(lines), 1)
+
+    def test_ledger_refuses_a_symlinked_file(self):
+        # The ledger is appended owner-only; a planted symlink must
+        # never redirect the write outside BETTERTERMS_HOME.
+        case_id, _ = new_case(self.home)
+        target = self.tmp / "elsewhere.jsonl"
+        target.write_text("")
+        os.symlink(target, self.home / "ledger.jsonl")
+        proc, out = run_bt_json(
+            self.home, "ledger", "add", case_id,
+            "--before", "80", "--after", "60", "--period", "month",
+        )
+        self.assertEqual(proc.returncode, 2, out)
+        self.assertIn("error", out)
+        self.assertEqual(target.read_text(), "")
+
+    def test_ledger_refuses_a_non_regular_file(self):
+        # A fifo or directory at the ledger path must fail closed,
+        # never block the process or take a write.
+        case_id, _ = new_case(self.home)
+        os.mkfifo(self.home / "ledger.jsonl")
+        proc, out = run_bt_json(
+            self.home, "ledger", "add", case_id,
+            "--before", "80", "--after", "60", "--period", "month",
+        )
+        self.assertEqual(proc.returncode, 2, out)
+        self.assertIn("error", out)
+
+
+if __name__ == "__main__":
+    unittest.main()

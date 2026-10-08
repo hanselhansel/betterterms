@@ -1,0 +1,19 @@
+pack: marketplace
+mode: act
+direction: receive
+goals:
+  - sell the upright piano at a fair price
+priorities:
+  - price
+  - pickup timing
+ranking_check:
+  passed: true
+  samples:
+    - "$900, pickup this weekend"
+    - "$800, pickup next week"
+    - "$700, buyer pays delivery"
+autonomy: 2
+never_disclose:
+  - home address
+deadline: "2026-10-20"
+period: once

@@ -2,6 +2,7 @@
 host-tool validators."""
 
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -15,7 +16,7 @@ from .checks_scan import (
     tail,
 )
 
-UNIT_TEST_TIMEOUT = 300
+UNIT_TEST_TIMEOUT = 900
 
 
 def check_unit_tests(root):
@@ -113,6 +114,12 @@ def check_version_sync(root):
     return _run_script(root, "bump-version", "--check")
 
 
+def check_eval_smoke(root):
+    if not (root / "evals").is_dir():
+        return "SKIP", "no evals/ directory"
+    return _run_script(root, "eval", "--smoke")
+
+
 def _validate(root, marker, tool, args, skip_msg):
     """Run a host tool's validator when its manifest and binary exist."""
     if not (root / marker).is_file():
@@ -131,6 +138,53 @@ def check_claude_validate(root):
                      ["plugin", "validate", "."], "no .claude-plugin/plugin.json")
 
 
-def check_gemini_validate(root):
-    return _validate(root, "gemini-extension.json", "gemini",
-                     ["extensions", "validate", "."], "no gemini-extension.json")
+def _pty(argv):
+    """The command wrapped in a pseudo-terminal through script(1) when
+    this check's stdout is not a terminal: the mod's validate and test
+    subcommands misbehave without one. BSD script (macOS) takes the
+    command after the file; util-linux script takes ``-c``. When
+    script(1) is absent the command runs as is."""
+    if sys.stdout.isatty() or shutil.which("script") is None:
+        return argv
+    if sys.platform == "darwin":
+        return ["script", "-q", "/dev/null", *argv]
+    return [
+        "script", "-qec",
+        " ".join(shlex.quote(a) for a in argv), "/dev/null",
+    ]
+
+
+def check_mod_tests(root):
+    """The mod's node --test suite. ``node --test <dir>`` treats the
+    directory itself as one test file on Node 24, so the suite runs
+    with the mod directory as cwd instead."""
+    if not (root / "mod").is_dir():
+        return "SKIP", "no mod/ directory"
+    if shutil.which("node") is None:
+        return "SKIP", "node not installed"
+    r = subprocess.run(
+        ["node", "--test"], cwd=root / "mod",
+        capture_output=True, text=True, timeout=SUBPROCESS_TIMEOUT,
+    )
+    return ("PASS", "") if r.returncode == 0 else ("FAIL", tail(r))
+
+
+def check_mod_validate(root):
+    """`claude plugin validate --strict mod` and `claude plugin test
+    mod`. Without the claude binary this is a SKIP, never a PASS."""
+    if not (root / "mod" / ".claude-plugin" / "plugin.json").is_file():
+        return "SKIP", "no mod/.claude-plugin/plugin.json"
+    if shutil.which("claude") is None:
+        return "SKIP", "claude not installed"
+    for args in (
+        ["plugin", "validate", "--strict", "mod"],
+        ["plugin", "test", "mod"],
+    ):
+        r = subprocess.run(
+            _pty(["claude", *args]),
+            cwd=root, capture_output=True, text=True,
+            timeout=SUBPROCESS_TIMEOUT,
+        )
+        if r.returncode != 0:
+            return "FAIL", tail(r)
+    return "PASS", ""

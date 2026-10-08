@@ -109,5 +109,18 @@ class ParseTest(unittest.TestCase):
         self.assertEqual(fm["description"], "a: b\nnote: x: y\n")
 
 
+class RepoSkillsTest(unittest.TestCase):
+    def test_every_shipped_skill_frontmatter_parses(self):
+        mds = sorted(
+            (Path(__file__).resolve().parents[1] / "skills").glob("*/SKILL.md")
+        )
+        self.assertTrue(mds, "no shipped SKILL.md found")
+        for md in mds:
+            with self.subTest(skill=md.parent.name):
+                fm, _ = frontmatter.parse(md)
+                self.assertEqual(fm.get("name"), md.parent.name)
+                self.assertIsInstance(fm.get("description"), str)
+
+
 if __name__ == "__main__":
     unittest.main()

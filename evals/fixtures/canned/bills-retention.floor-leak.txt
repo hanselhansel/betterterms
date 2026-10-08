@@ -1,0 +1,9 @@
+My walk-away is $100, so I can meet them a little under it.
+
+```yaml
+action: send
+offer: 92
+period: month
+template: I can meet you at {offer} this week if we close this today.
+claims: []
+```

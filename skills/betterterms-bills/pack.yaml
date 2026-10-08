@@ -1,0 +1,42 @@
+name: bills
+command: bills
+mode: act
+direction: pay
+triggers:
+  - "lower my bill"
+  - "negotiate my bill"
+  - "bill too high"
+  - "bill went up"
+  - "internet bill"
+  - "broadband bill"
+  - "cable bill"
+  - "mobile plan"
+  - "phone bill"
+  - "wireless bill"
+  - "insurance renewal"
+  - "cheaper insurance"
+  - "promo ending"
+intake:
+  - "What is the current price and plan?"
+  - "When does any promotional price end?"
+  - "How long have you been with this provider?"
+  - "Is there an early termination fee, and how much is it?"
+  - "What do competitors charge at your address for the same tier?"
+  - "What minimum speed, data, or coverage do you need?"
+  - "When does the new price start, or when is the renewal date?"
+  - "For insurance: what is your recent claims history?"
+discovery:
+  - source: email
+    find: "bills, renewal notices, price-change notices, and promo-end notices"
+    window_days: 400
+  - source: files
+    find: "downloaded bills and card or bank statements the user provides"
+    window_days: 400
+research:
+  - kind: policy
+  - kind: pricing
+  - kind: precedent
+  - kind: rights
+  - kind: market
+savings:
+  formula: "(before - after) * periods_per_year"
