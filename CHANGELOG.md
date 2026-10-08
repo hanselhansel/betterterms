@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.10.0] - 2026-10-05
+## [0.10.0] - 2026-10-08
 
 ### Added
 - `~/.betterterms/config.yaml` (`autonomy`, `currency`, `sign_off`,
@@ -9,10 +9,12 @@
 - Held drafts: a `needs_approval` verdict writes `held/<hash>.yaml` in
   the case folder, so drafts survive restarts and are rebuilt into the
   Approvals tab. Approvals bind to the SHA-256 of the send tuple
-  (action, offer, period, currency, rendered text) as
-  `held/<hash>.approved`, are written only by a user action, and are
-  consumed atomically after one send. Held records whose stored fields
-  do not hash back to their filename never list.
+  (action, offer, period, currency, rendered text) plus a digest of
+  the inbound message the user reviewed, as `held/<hash>.approved`,
+  are written only by a user action, and are consumed atomically
+  after one send. A changed or newly flagged inbound needs a fresh
+  approval, even for identical text. Held records whose stored
+  fields do not hash back to their filename never list.
 - `bt.py held drop <case_id> <hash8>` removes the record and marker
   with no thread marker; the mod runs it when an edited draft replaces
   the held one. An approval pressed in the pane or typed through
@@ -35,10 +37,11 @@
   counts as a wake envelope only when it starts with `<wake` and
   carries a `<message>` element; a trailing or mid-text `<wake` tag
   is plain user text.
-  The session-start hook always prints the marker "betterterms: typed
-  bt commands are active in this session." when the plugin or the
-  vendored hooks load, even with no cases; the skills offer typed
-  `bt` commands and widgets only when they see it. The start pointer
+  The session-start hook prints the marker "betterterms: typed bt
+  commands are active in this session." only after the prompt check
+  runs successfully; otherwise it says typed commands are off and
+  held drafts stay held. The skills offer typed `bt` commands and
+  widgets only when they see the marker. The start pointer
   and, in a cloud session, the warning that the betterterms home sits
   in the ephemeral VM home print only when a case exists.
 - `betterterms-mod`, an optional Claude Code cockpit plugin: pane with
@@ -115,8 +118,28 @@
   whole runnable command (`python3 <resolved bt.py> gate <case_id>
   --draft <case dir>/draft.yaml [--inbound <case dir>/inbound.yaml]
   --approved`), told to run exactly once and to send the returned
-  rendered text verbatim as its own argument. The mod's fallback
-  toast on a failed prompt submit carries the same command.
+  rendered text verbatim only on a `pass` verdict; a `needs_approval`
+  or `block` verdict sends nothing. The mod's fallback toast on a
+  failed prompt submit carries the same command.
+- The prompt hook runs through `hooks/prompt-guard.sh`, which blocks
+  the prompt when the check fails, times out (8 seconds at most) or
+  cannot start. Scanning is linear, prompts over 256 KB block, and
+  the floor rule now blocks a walk-away written in number words,
+  spaced or glued, with or without a case id, without echoing it.
+  The session-start marker prints only when this check works.
+- Any blocked input or gate error retires outstanding consent, and
+  every pass, block or new hold supersedes the previous held record
+  and its approval. Floor-relative review reasons read "a value in
+  this draft needs your review" instead of naming the relationship.
+- Approval cards in the pane and the widget show the action, exact
+  amount, currency and period being approved. Editing a held draft
+  in the pane keeps the held record's action, offer and period,
+  drops claims, and round-trips leading spaces and blank lines.
+- Skill prose: only a typed `bt approve <case> <hash8>` or an actual
+  pane or widget click approves; a "yes" in chat approves nothing.
+- `scripts/vendor-into-repo` migrates an older vendored prompt hook
+  to the guarded launcher and refuses, before writing, an owned hook
+  that sits in a pipe.
 - A `bt.py gate` transcript row collapses to the one-line verdict
   only for a plain standalone invocation; a command composed with
   `;`, `&&`, `||`, pipes, redirects, substitutions or a second line
@@ -164,6 +187,22 @@
   ignore them.
 - Approvals bind the send tuple, not the recipient.
 - A decimal comma in an amount parses as a thousands separator.
+- Released with known open review findings (release under owner
+  override, see PR #2):
+  - An approval stays usable after the walk-away, terms, never-disclose
+    list or autonomy change.
+  - A `{quote:n}` placeholder can render a quoted amount above the
+    walk-away and pass the gate at autonomy 3 or 4.
+  - The floor rule misses walk-aways written with non-ASCII digits or
+    full-width or other Unicode letters.
+  - The prompt guard's timeout kill needs `ps`; without it a hung
+    check is not killed.
+  - Vendor migration does not refuse an owned hook chained with `;`,
+    a newline, `&` or `|&`, or a short host timeout.
+  - `scripts/install-skills --copy --target` pointed at the repo's own
+    `skills/` folder deletes the source skills. Do not run it that way.
+  - Control or bidirectional characters in a held draft display raw on
+    the approval card.
 
 ## [0.1.0] - 2026-10-03
 
