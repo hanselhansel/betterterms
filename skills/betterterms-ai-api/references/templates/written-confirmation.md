@@ -19,6 +19,6 @@ Notes:
 
 - This is a `send` action, not an accept. The accept or sign draft
   comes later, after the user reads the written terms and gives an
-  explicit yes.
+  explicit approval.
 - Add items the case needs (rollover, ramp schedule, data terms) to
   the list; drop items that do not apply.

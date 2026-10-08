@@ -19,17 +19,60 @@ _FLOOR_WORDS = re.compile(r"\bbt\s+floor\b", re.I)
 # longer text is not one -- its digits count toward the floor rule.
 _CASE_ID_TOKEN = re.compile(r"[a-z0-9][a-z0-9-]*-\d{8}-[0-9a-f]{4}")
 _TOKEN = re.compile(r"\S+")
-# A word amount claims the walk-away without digits: the same forms
-# btlib.wordlists.NUMBER_WORDS names plus the scale words. ``sixty``
-# alone blocks; ordinary prose ("bt floor is set in the terminal")
-# carries none of these and passes.
-_FLOOR_WORD_AMOUNT = re.compile(
-    r"\b(?:zero|one|two|three|four|five|six|seven|eight|nine|ten|"
-    r"eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|"
-    r"eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|"
-    r"eighty|ninety|hundred|thousand|million|billion|dozen|grand)\b",
-    re.I,
+# A word amount claims the walk-away without digits. The word lists
+# mirror btlib.wordlists verbatim -- inlined because this scanner
+# must work with no runtime installed -- and the same matching rule:
+# a lowercased letter run containing a number word or a scale stem
+# counts even glued ("sixtytwo", "twok", "halfmillion",
+# "thousandfold"), unless the whole run is a listed common English
+# word ("often", "money"); the one- and two-letter scale
+# abbreviations count only as whole tokens ("bt floor a mil", "k")
+# because inside a run they are ordinary letters ("milk", "family").
+_NUMBER_WORDS = frozenset(
+    "zero one two three four five six seven eight nine ten eleven "
+    "twelve thirteen fourteen fifteen sixteen seventeen eighteen "
+    "nineteen twenty thirty forty fifty sixty seventy eighty "
+    "ninety dozen fifth ninth twelfth".split()
 )
+_NUMBER_WORD_EXCEPTIONS = frozenset(
+    "abandoned alone antenna anyone artwork attend attendance "
+    "attended attending attention attentive bitten bone bones clone "
+    "commissioner commissioners competent component components "
+    "consistency consistent consistently content contents done "
+    "everyone existence extend extended extending extends extension "
+    "extensions extensive extent forgotten freight frightened gone "
+    "gotten headphones height heights honest honestly honey hormone "
+    "hydrocodone indonesia indonesian intend intended intense "
+    "intensity intensive intent intention intentionally jones leone "
+    "liechtenstein lightweight listen listened listening lone lonely "
+    "maintenance mentioned microphone milestone milestones monetary "
+    "money network "
+    "networking networks nintendo none nonetheless often oftentimes "
+    "ones opponent opponents ozone patent patents persistent phone "
+    "phoned phones phoning pioneer potential potentially "
+    "practitioner practitioners prisoner prisoners retention "
+    "ringtone ringtones sentence sentences softened someone soonest "
+    "stationery stone stones superintendent telephone tenant tend "
+    "tender tennessee tennis tension tent tenure threatened "
+    "threatening tone toned toner tones weight weighted weights "
+    "written zone zones".split()
+)
+_SCALE_WORD_STEMS = frozenset(
+    "billion crore grand hundred lakh million quadrillion thousand "
+    "trillion".split()
+)
+_SCALE_WORDS = frozenset(
+    "hundred hundreds thousand thousands million millions billion "
+    "billions trillion trillions quadrillion quadrillions lakh lakhs "
+    "crore crores bn mm k m mil thou mn mln bln tn bil".split()
+)
+_LETTER_RUN = re.compile(r"[a-z]+")
+# The gate's token shape: alphanumerics keeping interior
+# apostrophes, so "i'll" is one token and "won't" is not "won".
+_WORD_TOKEN = re.compile(r"[0-9A-Za-z]+(?:'[0-9A-Za-z]+)*")
+# A possessive or contraction suffix hides the word behind it
+# ("deal's", "k's"); "'t" alone never strips, so "won't" is "wo".
+_SUFFIXES = ("'s", "'ll", "'re", "'ve", "'d", "'m", "n't")
 
 # Attribute extraction never uses a `[\w-]+` regex: on a run of
 # word/dash characters with no `="` inside, it would backtrack once
@@ -175,6 +218,58 @@ def _case_id_spans(text):
             yield m.span()
 
 
+# A numeral-style value ("LXII"): two or more Roman digits, caps
+# only -- a lone "I" is a pronoun and lowercase runs are ordinary
+# words, but an all-caps numeral readout is a malformed amount the
+# default-deny path claims.
+_ROMAN_TOKEN = re.compile(r"[IVXLCDM]{2,}")
+# The longest supported scale word; membership checks below only
+# ever need a form this short or shorter.
+_SCALE_MAX = max(len(w) for w in _SCALE_WORDS)
+
+
+def _is_scale_token(tok):
+    """Whether ``tok`` names a scale word or abbreviation, possibly
+    under a chain of contraction suffixes ("mil's" counts). One
+    lowercase copy, then a walk of the trailing ``_SUFFIXES`` with
+    ``str.endswith(suf, 0, end)``: no per-form allocation, so a
+    pathological suffix chain costs its length once. Only a form at
+    most ``_SCALE_MAX`` long can match, so slicing happens for a
+    handful of short forms at the tail."""
+    low = tok.lower()
+    end = len(low)
+    while True:
+        if end <= _SCALE_MAX and low[:end] in _SCALE_WORDS:
+            return True
+        for suf in _SUFFIXES:
+            if end > len(suf) and low.endswith(suf, 0, end):
+                end -= len(suf)
+                break
+        else:
+            return False
+
+
+def _word_amount(text):
+    """True when ``text`` carries a word amount the way the gate's
+    review tier reads it: a lowercased letter run containing a
+    number word or scale stem outside the listed exceptions
+    ("sixtytwo", "two lakh", "twok" count), a token whose
+    suffix-stripped forms hold a whole scale word or abbreviation
+    ("mil", "thou", "bn"), or an all-caps numeral readout ("LXII").
+    One pass per run and per token, no backtracking."""
+    for run in _LETTER_RUN.findall(text.lower()):
+        if run in _NUMBER_WORD_EXCEPTIONS:
+            continue
+        words = _NUMBER_WORDS | _SCALE_WORD_STEMS
+        if any(w in run for w in words):
+            return True
+    for m in _WORD_TOKEN.finditer(text):
+        tok = m.group(0)
+        if _ROMAN_TOKEN.fullmatch(tok) or _is_scale_token(tok):
+            return True
+    return False
+
+
 def floor_hit(text):
     """The one floor rule: ``bt`` and ``floor`` adjacent, plus a
     digit or a number word outside a case-id token, or any non-empty
@@ -194,7 +289,4 @@ def floor_hit(text):
         pos = e
     parts.append(text[pos:])
     scrubbed = "".join(parts)
-    return bool(
-        re.search(r"\d", scrubbed)
-        or _FLOOR_WORD_AMOUNT.search(scrubbed)
-    )
+    return bool(re.search(r"\d", scrubbed) or _word_amount(scrubbed))

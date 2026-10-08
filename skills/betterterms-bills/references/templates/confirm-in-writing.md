@@ -2,7 +2,7 @@
 
 After the counterparty states an offer at or better than the target,
 before the user approves accepting. Acceptance itself is the `accept`
-action and always needs an explicit yes.
+action and always needs an explicit approval.
 
 Draft fields:
 

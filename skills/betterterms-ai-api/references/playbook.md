@@ -106,7 +106,7 @@ new to the user:
 Verbal or chat concessions mean nothing at renewal. Ask for the full
 terms document, compare it against the plan, and only then draft an
 accept or sign action. Accept and sign always need the user's
-explicit yes.
+explicit approval.
 
 ## Eval ideas
 

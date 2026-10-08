@@ -28,7 +28,7 @@ showing the error.
 What it means: for API or cloud charges on a credit card, a billing
 error dispute has a 60-day window from the statement date. Keep
 statement dates in the case file; a dispute is an irreversible action
-and always needs the user's explicit yes.
+and always needs the user's explicit approval.
 
 Source: https://www.consumerfinance.gov/rules-policy/regulations/1026/13/ (read 2026-10-03)
 

@@ -29,4 +29,4 @@ Words that read like accepting ("deal", "agreed", "I accept",
 "works for me") force an approval even in a plain `send`. These
 templates avoid them; keep it that way when editing. Accepting an
 offer in writing is the `accept` action and always needs the user's
-explicit yes, never a recap email.
+explicit approval, never a recap email.

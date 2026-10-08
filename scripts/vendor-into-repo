@@ -31,10 +31,12 @@ cannot keep (nothing is written in that case).
 """
 
 import json
-import re
 import shutil
 import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import _vendor_hooks  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 SKILLS_DIR = ROOT / "skills"
@@ -47,66 +49,6 @@ HOOK_NAMES = (
 )
 
 HOOK_EVENTS = ("UserPromptSubmit", "SessionStart")
-HOOK_COMMANDS = {
-    "UserPromptSubmit": (
-        'bash "$CLAUDE_PROJECT_DIR/.claude/betterterms/'
-        'hooks/prompt-guard.sh"'
-    ),
-    "SessionStart": (
-        'bash "$CLAUDE_PROJECT_DIR/.claude/betterterms/hooks/'
-        'session-start.sh"'
-    ),
-}
-# Exact owned paths only, never a shared prefix: an old vendored
-# prompt_commands.py command is this plugin's hook and is migrated
-# to the guarded launcher, while a similarly named custom hook
-# under the same directory is left untouched.
-_PROMPT_OLD = ".claude/betterterms/hooks/prompt_commands.py"
-_PROMPT_NEW = ".claude/betterterms/hooks/prompt-guard.sh"
-HOOK_PATHS = {
-    "UserPromptSubmit": _PROMPT_NEW,
-    "SessionStart": ".claude/betterterms/hooks/session-start.sh",
-}
-
-
-def _call_re(path):
-    """Match an *invocation* of the owned script ``path``: lead,
-    optional ``env`` assignments and interpreter, then a token whose
-    final segment is exactly the owned path (any directory prefix
-    allowed). A ``-custom`` suffix, an ``x.claude`` directory, or a
-    mention as data never matches."""
-    return re.compile(
-        r"(?P<lead>^|[;&|])\s*"
-        r"(?:env\s+[^\s;|&()=]+=[^\s;|&()]+\s+)*"
-        r"(?:(?:python3?|bash|sh|exec)\s+)?"
-        r"[\"']?(?:[^\"'\s;|&()]*?/)?"
-        + re.escape(path)
-        + r"[\"']?(?=\s|$|[;&|])"
-    )
-
-
-_CALL_RES = {
-    path: _call_re(path) for path in HOOK_PATHS.values()
-}
-_CALL_RES[_PROMPT_OLD] = _call_re(_PROMPT_OLD)
-
-
-# A quoted span, the tail of an unterminated quote, or an escaped
-# char is data, never shell syntax: no ``;`` ``&`` ``|`` lead there.
-_QUOTED = re.compile(r"'[^']*('|$)|\"(?:\\.|[^\"\\])*(\"|$)|\\.")
-
-
-def _call_match(command, path):
-    """The ``_call_re`` invocation match, or None when the owned
-    path appears only as data: the ``^`` or ``;`` ``&`` ``|`` lead
-    must sit outside quotes and unescaped."""
-    quoted = bytearray(len(command))
-    for q in _QUOTED.finditer(command):
-        quoted[q.start() : q.end()] = b"\1" * (q.end() - q.start())
-    for m in _CALL_RES[path].finditer(command):
-        if not m.group("lead") or not quoted[m.start("lead")]:
-            return m
-    return None
 
 
 def _skills():
@@ -125,35 +67,6 @@ def _is_vendored(dest, name):
     except OSError:
         return False
     return f"name: {name}" in head
-
-
-def _hook_entry(event):
-    """The settings.json hooks entry for one event."""
-    hook = {"type": "command", "command": HOOK_COMMANDS[event]}
-    if event == "UserPromptSubmit":
-        hook["timeout"] = 10
-    entry = {"hooks": [hook]}
-    if event == "SessionStart":
-        entry["matcher"] = "startup|resume|clear|compact"
-    return entry
-
-
-def _has_hook(entries, path):
-    """Whether any entry's hooks already invoke the vendored script
-    at ``path``, whatever the entry's other fields."""
-    for entry in entries:
-        if not isinstance(entry, dict):
-            continue
-        hooks = entry.get("hooks")
-        if not isinstance(hooks, list):
-            continue
-        if any(
-            isinstance(h, dict)
-            and _call_match(str(h.get("command", "")), path) is not None
-            for h in hooks
-        ):
-            return True
-    return False
 
 
 def _load_settings(repo):
@@ -201,51 +114,17 @@ def _load_settings(repo):
     return settings, path, existed
 
 
-def _migrate_prompt(entries):
-    """Rewire this plugin's owned unguarded prompt hook in place.
-    The old prompt_commands.py invocation becomes the guarded
-    command, preserving any command around it; when the guarded
-    command is already registered the old copy is dropped so it
-    cannot keep running unguarded. Other commands and fields are
-    kept. Returns True when anything changed."""
-    have_new = _has_hook(entries, _PROMPT_NEW)
-    migrated = False
-    changed = False
-    for entry in entries:
-        if not isinstance(entry, dict):
-            continue
-        hooks = entry.get("hooks")
-        if not isinstance(hooks, list):
-            continue
-        kept = []
-        for h in hooks:
-            cmd = str(h.get("command", "")) if isinstance(h, dict) else ""
-            m = _call_match(cmd, _PROMPT_OLD)
-            if m is None:
-                kept.append(h)
-                continue
-            changed = True
-            if not (have_new or migrated):
-                h["command"] = (
-                    cmd[: m.end("lead")]
-                    + HOOK_COMMANDS["UserPromptSubmit"]
-                    + cmd[m.end() :]
-                )
-                migrated = True
-                kept.append(h)
-        hooks[:] = kept
-    return changed
-
-
 def _merge_hooks(settings):
     """Append each missing hook entry under settings['hooks']; an
     entry whose command already names the vendored script counts as
     present. Returns True when anything changed."""
     hooks = settings["hooks"]
-    changed = _migrate_prompt(hooks["UserPromptSubmit"])
+    changed = _vendor_hooks.migrate_prompt(hooks["UserPromptSubmit"])
     for event in HOOK_EVENTS:
-        if not _has_hook(hooks[event], HOOK_PATHS[event]):
-            hooks[event].append(_hook_entry(event))
+        if not _vendor_hooks.has_hook(
+            hooks[event], _vendor_hooks.HOOK_PATHS[event]
+        ):
+            hooks[event].append(_vendor_hooks.hook_entry(event))
             changed = True
     return changed
 
@@ -359,7 +238,13 @@ def main(argv):
     settings, settings_path, existed = loaded
 
     bt_dir = repo / ".claude" / "betterterms"
-    problems = _skills_problems(repo, target) + _hooks_problems(repo, bt_dir)
+    problems = (
+        _skills_problems(repo, target)
+        + _hooks_problems(repo, bt_dir)
+        + _vendor_hooks.migrate_problems(
+            settings["hooks"]["UserPromptSubmit"]
+        )
+    )
     if problems:
         for p in problems:
             print(f"refusing: {p}", file=sys.stderr)

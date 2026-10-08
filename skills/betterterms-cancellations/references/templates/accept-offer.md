@@ -1,7 +1,8 @@
 # Accept the offer
 
-Use only after the user said yes to accepting: `accept` always comes
-back `needs_approval` until `--approved` follows a real yes. Action:
+Use only after the user approved accepting: `accept` always comes
+back `needs_approval` until `--approved` follows a real approval
+marker. Action:
 `accept`. `{offer}` renders the accepted amount, which must match the
 inbound offer.
 

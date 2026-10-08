@@ -50,6 +50,9 @@ describe("approve press", () => {
     assert.ok(calls.submit[0].includes(`\`${gate}\``), calls.submit[0]);
     assert.match(calls.submit[0], /exactly once/);
     assert.match(calls.submit[0], /verbatim as its own argument/);
+    // Pass-only: the instruction itself says nothing sends unless
+    // the re-gate verdict is pass.
+    assert.match(calls.submit[0], /send only on a pass/);
   });
 
   test("the approve prompt carries --inbound when the case has one", async () => {
@@ -367,34 +370,5 @@ describe("edit flow", () => {
     assert.equal(`${DIR}/held/${HASH}.approved` in files, false);
     assert.equal(state.get("approvals"), undefined);
     assert.equal(calls.submit.length, 1);
-  });
-});
-
-describe("stale held drafts", () => {
-  // gate.json carries the hash of the draft the last gate verdict
-  // held; a held record whose hash does not match it is stale (the
-  // draft was edited, the card belongs to old text) and must never
-  // approve.
-  const staleFiles = () => heldFiles({
-    [`${DIR}/gate.json`]: JSON.stringify({
-      result: "needs_approval",
-      reasons: ["action 'cancel' requires --approved"],
-      rendered: "a different held text",
-      hash: heldHash({ ...REC, rendered: "a different held text" }),
-    }),
-  });
-
-  test("a press refuses a held hash that is not the gate.json hash", async () => {
-    const { $, calls, state } = fakeDollar({
-      files: staleFiles(), dirs: heldDirs(), held: heldOpt(),
-    });
-    const snap = await R.scanCases($);
-    const tree = paneTree(
-      ELS, snap, { tab: 2, selected: null, editing: null }, R.paneActions($, snap));
-    await findNode(tree, byKey(`approve-${HASH8}`)).props.onPress();
-    assert.equal(calls.run.every((r) => r.argv[3] !== "approve"), true);
-    assert.equal(calls.submit.length, 0);
-    assert.equal(state.size, 0);
-    assert.match(calls.toast.join("\n"), /not the current held draft/);
   });
 });

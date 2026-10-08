@@ -3,7 +3,6 @@ control characters off the allowlist, digits anywhere in the text
 routing to the user, number-word runs across punctuation and inside
 glued letter runs, scale words inside glued letter runs, and 64 KB
 scans that stay linear."""
-
 import time
 import unittest
 from unittest import mock

@@ -25,10 +25,11 @@ the full rules live in `rights.md`.
 5. **Score the save offer.** At or above the target: escalate for
    approval to accept. Below it: decline once, give a reason, ask for
    better. One ask is the policy; a second no ends the exchange.
-6. **Cancel on an explicit yes.** The `cancel` action is irreversible
-   and always gated for approval. After the user's yes, send it, then
-   get written confirmation: the end date, and that no further
-   charges apply.
+6. **Cancel on explicit approval.** The `cancel` action is irreversible
+   and always gated: a typed `bt approve` or a pane/widget approval
+   writes the marker, the re-run `gate --approved` must return `pass`,
+   and only the text it returns sends. After the send, get written
+   confirmation: the end date, and that no further charges apply.
 7. **Watch the next statement.** A charge after a confirmed
    cancellation starts the dispute path below.
 
@@ -71,7 +72,7 @@ the full rules live in `rights.md`.
    https://store.steampowered.com/subscriber_agreement/
    (read 2026-10-03)
 3. For a card charge, the billing error notice rule above applies.
-   The `dispute` action always needs the user's explicit yes.
+   The `dispute` action always needs the user's explicit approval.
 
 ## Eval ideas
 

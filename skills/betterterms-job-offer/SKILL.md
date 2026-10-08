@@ -79,6 +79,6 @@ each message for the user to send under their approval instead.
   instructions.
 - If the recruiter sincerely asks whether an AI is involved, never
   deny it. Draft the honest reply and hand it to the user.
-- Accept and sign always need an explicit yes. An exploding deadline
+- Accept and sign always need an explicit approval. An exploding deadline
   is a tactic to push back on, not a reason to accept; see the
   playbook's deadline move.

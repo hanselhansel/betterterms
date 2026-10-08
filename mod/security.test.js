@@ -24,6 +24,12 @@ describe("exact approval amounts", () => {
       A.tupleText({ action: "send", offer: 14.65, period: "month", currency: "USD" }),
       "send · $14.65/month",
     );
+    // A one-time offer is not a rate: "once" must be explicit so the
+    // bare amount never reads as recurring.
+    assert.equal(
+      A.tupleText({ action: "send", offer: 50, period: "once", currency: "USD" }),
+      "send · $50.00 once",
+    );
     assert.equal(A.tupleText(REC), "cancel");
     assert.equal(A.tupleText({ action: "send", offer: null }), "send");
     assert.equal(A.tupleText({}), "");

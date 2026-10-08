@@ -68,7 +68,7 @@ or ask for their offer when it is not. Then gate, send, and log as below.
 
    - `unknown`, `near_floor`, `below_floor`, or a non-empty
      `escalate` list: the turn is stopped. Nothing reaches the
-     counterparty without the user's explicit yes, at every
+     counterparty without the user's explicit approval, at every
      autonomy level. Two shapes, and the same gate-call cap covers
      either:
      - Proposal (preferred when a safe plan-based reply exists):
@@ -76,7 +76,7 @@ or ask for their offer when it is not. Then gate, send, and log as below.
        The gate always holds it for the user on a stopped turn.
        Hand the decision over in your message: say plainly what
        you propose, that the draft is only for their review, and
-       that nothing sends without their explicit yes.
+       that nothing sends without their explicit approval.
      - Hand-off (when no draft is useful or safe): skip the
        draft. Show the user the counterparty's offer, the band
        in plain words (`unknown`: "the offer cannot be scored
@@ -228,4 +228,4 @@ When an escalate condition holds, pause autonomous action: put one
 safe proposal in front of the user (the gate holds it for approval at
 every autonomy level), or hand the turn over with a recommendation
 when no draft is useful or safe. When a stop condition holds, end
-the exchange with the user's yes.
+the exchange with the user's approval.

@@ -2,7 +2,7 @@
 
 One honest final ask when the patience budget is nearly spent. Never
 request cancellation through a `send` draft; cancelling is the
-`cancel` action and always needs an explicit yes.
+`cancel` action and always needs an explicit approval.
 
 Draft fields:
 

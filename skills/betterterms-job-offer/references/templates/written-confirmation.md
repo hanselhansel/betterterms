@@ -28,5 +28,5 @@ Notes:
 
 - This message asks for the written record; it accepts nothing.
   Accept and sign are separate actions that always need the user's
-  explicit yes.
+  explicit approval.
 - Name the components so nothing agreed on the call gets lost.
