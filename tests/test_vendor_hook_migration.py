@@ -262,13 +262,19 @@ class VendorMigrationTest(unittest.TestCase):
     def test_commented_out_owned_invocation_is_not_active(self):
         # An owned path inside a shell comment was never invoked:
         # ``#`` at a word start comments the rest of the line, so a
-        # mention there is data, not registration. It must neither
-        # suppress installing the real guarded hook nor be rewritten
-        # -- the comment command survives byte-exact, exactly one
-        # real guard invocation is added, and a re-run is a no-op.
+        # mention there is data, not registration -- including an
+        # unspaced leading ``#/<path>`` where the ``#`` only looks
+        # like a directory segment. It must neither suppress
+        # installing the real guarded hook nor be rewritten: the
+        # comment command survives byte-exact, exactly one real
+        # guard invocation is added, and a re-run is a no-op.
         for commented in (
             "echo setup # ; " + OLD_PROMPT_CMD,
             "echo setup # ; " + PROMPT_CMD,
+            "#/.claude/betterterms/hooks/prompt-guard.sh",
+            "  #/.claude/betterterms/hooks/prompt-guard.sh",
+            "#/.claude/betterterms/hooks/prompt_commands.py",
+            "  #/.claude/betterterms/hooks/prompt_commands.py",
         ):
             with self.subTest(command=commented):
                 self.settings.parent.mkdir(parents=True, exist_ok=True)
@@ -346,36 +352,45 @@ class VendorMigrationTest(unittest.TestCase):
 
     def test_commented_session_start_path_is_not_registered(self):
         # The same ownership boundary applies to SessionStart: a
-        # commented-out session-start.sh mention does not count as
-        # installed, so the real entry is added and the comment is
-        # left alone.
-        commented = "echo setup # ; " + SESSION_CMD
-        self.settings.parent.mkdir(parents=True)
-        self.settings.write_text(
-            json.dumps(
-                {
-                    "hooks": {
-                        "SessionStart": [
-                            {
-                                "matcher": "startup",
-                                "hooks": [
+        # commented-out session-start.sh mention -- including the
+        # unspaced leading ``#/<path>`` variants -- does not count
+        # as installed, so the real entry is added and the comment
+        # is left alone.
+        for commented in (
+            "echo setup # ; " + SESSION_CMD,
+            "#/.claude/betterterms/hooks/session-start.sh",
+            "  #/.claude/betterterms/hooks/session-start.sh",
+        ):
+            with self.subTest(command=commented):
+                self.settings.parent.mkdir(parents=True, exist_ok=True)
+                self.settings.write_text(
+                    json.dumps(
+                        {
+                            "hooks": {
+                                "SessionStart": [
                                     {
-                                        "type": "command",
-                                        "command": commented,
+                                        "matcher": "startup",
+                                        "hooks": [
+                                            {
+                                                "type": "command",
+                                                "command": commented,
+                                            }
+                                        ],
                                     }
-                                ],
+                                ]
                             }
-                        ]
-                    }
-                }
-            ),
-            encoding="utf-8",
-        )
-        proc = self.vendor()
-        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
-        commands = self.commands("SessionStart")
-        self.assertIn(commented, commands)
-        self.assertIn(SESSION_CMD, commands)
+                        }
+                    ),
+                    encoding="utf-8",
+                )
+                proc = self.vendor()
+                self.assertEqual(
+                    proc.returncode, 0, proc.stdout + proc.stderr
+                )
+                commands = self.commands("SessionStart")
+                self.assertIn(commented, commands)
+                self.assertIn(SESSION_CMD, commands)
+                self.settings.unlink()
 
 
 if __name__ == "__main__":

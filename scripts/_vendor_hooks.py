@@ -72,21 +72,20 @@ def _quoted_mask(command):
     return mask
 
 
-def _shell_mask(command):
-    """bytearray marking quoted, escaped or comment spans: chars
-    there are data, never shell syntax. An unquoted, unescaped
+def _comment_mask(command, quoted):
+    """bytearray marking shell comment spans: an unquoted, unescaped
     ``#`` at a word start -- command start, after whitespace, or
     after an unquoted ``;`` ``&`` ``|`` ``(`` ``)`` ``<`` ``>`` --
     comments out the rest of the line, so an owned path mentioned
     there was never invoked. A ``#`` mid-word (``a#b``) or right
     after a quoted word stays literal."""
-    mask = _quoted_mask(command)
+    mask = bytearray(len(command))
     i, n = 0, len(command)
     while i < n:
-        if command[i] == "#" and not mask[i] and (
+        if command[i] == "#" and not quoted[i] and (
             i == 0
             or command[i - 1] in " \t\n"
-            or (command[i - 1] in ";&|()<>" and not mask[i - 1])
+            or (command[i - 1] in ";&|()<>" and not quoted[i - 1])
         ):
             end = command.find("\n", i + 1)
             if end < 0:
@@ -98,15 +97,31 @@ def _shell_mask(command):
     return mask
 
 
+def _shell_mask(command):
+    """Quoted, escaped or comment spans: chars there are data,
+    never shell syntax."""
+    mask = _quoted_mask(command)
+    comments = _comment_mask(command, mask)
+    for i, c in enumerate(comments):
+        if c:
+            mask[i] = 1
+    return mask
+
+
 def _call_match(command, path, pos=0):
     """The ``_call_re`` invocation match at or after ``pos``, or
     None when the owned path appears only as data: the ``^`` or
     ``;`` ``&`` ``|`` lead must sit outside quotes, unescaped, and
-    outside a shell comment (``echo setup # ; bash <path>`` is a
-    comment, not an invocation)."""
-    mask = _shell_mask(command)
+    the whole match outside a shell comment -- ``echo setup # ;
+    bash <path>`` comments the invocation out, and ``#/<path>`` (or
+    the same after leading whitespace) is a comment line where the
+    ``#`` only looks like a directory segment to the pattern."""
+    quoted = _quoted_mask(command)
+    comments = _comment_mask(command, quoted)
     for m in _CALL_RES[path].finditer(command, pos):
-        if not m.group("lead") or not mask[m.start("lead")]:
+        if any(comments[m.start() : m.end()]):
+            continue
+        if not m.group("lead") or not quoted[m.start("lead")]:
             return m
     return None
 
