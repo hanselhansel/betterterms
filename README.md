@@ -1,5 +1,7 @@
 # betterterms
 
+![Betterterms illustrated approval flow: a $90/month internet bill, a proposed $70/month offer, and a draft held for review.](docs/assets/betterterms-cover.png)
+
 betterterms is an open-source toolkit that teaches your AI agent to negotiate
 for you. It learns what you want, finds the bills and offers worth
 negotiating in your own data, reads the counterparty's policies and the
