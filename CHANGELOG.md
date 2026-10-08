@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.10.1] - 2026-10-08
+
+### Changed
+- The README now illustrates the bill, proposed offer, and draft approval flow with the approved Betterterms cover and descriptive alt text.
+
 ## [0.10.0] - 2026-10-08
 
 ### Added
